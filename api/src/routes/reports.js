@@ -1,0 +1,343 @@
+/**
+ * routes/reports.js — Reportes de ventas y rentabilidad
+ *
+ * Provee los datos agregados para los módulos de análisis del negocio.
+ * Las rutas de exportación Excel requieren el token como ?token= query param
+ * (usando el middleware tokenFromQuery) para que el navegador pueda
+ * iniciar la descarga directamente desde un enlace <a>.
+ *
+ * Rutas:
+ *   GET /api/:businessId/reports/sales                → resumen de ventas (con filtros)
+ *   GET /api/:businessId/reports/export/excel         → exportar ventas a Excel
+ *   GET /api/:businessId/reports/rentabilidad         → cálculo de rentabilidad
+ *   GET /api/:businessId/reports/rentabilidad/excel   → exportar rentabilidad a Excel
+ *
+ * El reporte de rentabilidad calcula:
+ *   Ventas netas - (compras + nómina + arriendo + créditos) = GANANCIA NETA
+ *
+ * Los egresos por categoría se obtienen de los pagos a proveedores
+ * filtrando por el campo `tipo` de cada proveedor.
+ */
+
+const express = require('express');
+const router = express.Router({ mergeParams: true }); // mergeParams: true necesario para :businessId
+const path = require('path');
+const { readJSON, getBusinessPath } = require('../services/fileStorage');
+const { authenticate } = require('../middleware/auth');
+const { generateSalesReport, generateRentabilidadReport } = require('../services/excelGenerator');
+
+const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
+const purchasesPath = (id) => path.join(getBusinessPath(id), 'purchases.json');
+const suppliersPath = (id) => path.join(getBusinessPath(id), 'suppliers.json');
+const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
+const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
+
+// GET /api/:businessId/reports/sales
+router.get('/reports/sales', authenticate, async (req, res) => {
+  try {
+    let sales = await readJSON(salesPath(req.params.businessId)) || [];
+    const { period, date, from, to } = req.query;
+
+    if (date) {
+      const day = new Date(date);
+      const nextDay = new Date(day);
+      nextDay.setDate(nextDay.getDate() + 1);
+      sales = sales.filter(s => {
+        const sd = new Date(s.createdAt);
+        return sd >= day && sd < nextDay;
+      });
+    } else if (from || to) {
+      if (from) sales = sales.filter(s => new Date(s.createdAt) >= new Date(from));
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setDate(toDate.getDate() + 1);
+        sales = sales.filter(s => new Date(s.createdAt) < toDate);
+      }
+    } else if (period) {
+      const now = new Date();
+      if (period === 'day') {
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        sales = sales.filter(s => new Date(s.createdAt) >= today);
+      } else if (period === 'week') {
+        const weekAgo = new Date(now);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        sales = sales.filter(s => new Date(s.createdAt) >= weekAgo);
+      } else if (period === 'month') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        sales = sales.filter(s => new Date(s.createdAt) >= monthStart);
+      }
+    }
+
+    const totalRevenue = sales.reduce((sum, s) => sum + (s.total || 0), 0);
+
+    // Group by payment method
+    const byPayment = {};
+    sales.forEach(s => {
+      const m = s.paymentMethod || 'otro';
+      byPayment[m] = (byPayment[m] || 0) + (s.total || 0);
+    });
+
+    // Group by day
+    const byDay = {};
+    sales.forEach(s => {
+      const day = s.createdAt.slice(0, 10);
+      if (!byDay[day]) byDay[day] = { count: 0, total: 0 };
+      byDay[day].count++;
+      byDay[day].total += s.total || 0;
+    });
+
+    // Top products
+    const products = {};
+    sales.forEach(s => {
+      (s.items || []).forEach(item => {
+        const name = item.name || item.recipeName || 'Sin nombre';
+        if (!products[name]) products[name] = { qty: 0, total: 0 };
+        products[name].qty += item.qty || item.quantity || 1;
+        products[name].total += (item.qty || item.quantity || 1) * (item.price || 0);
+      });
+    });
+
+    const topProducts = Object.entries(products)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
+    res.json({
+      sales,
+      summary: {
+        count: sales.length,
+        totalRevenue,
+        byPayment,
+        byDay,
+        topProducts
+      }
+    });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+function tokenFromQuery(req, res, next) {
+  if (req.query.token && !req.headers['authorization']) {
+    req.headers['authorization'] = `Bearer ${req.query.token}`;
+  }
+  next();
+}
+
+// GET /api/:businessId/reports/export/excel
+router.get('/reports/export/excel', tokenFromQuery, authenticate, async (req, res) => {
+  try {
+    let sales = await readJSON(salesPath(req.params.businessId)) || [];
+    const { from, to } = req.query;
+
+    if (from) sales = sales.filter(s => new Date(s.createdAt) >= new Date(from));
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setDate(toDate.getDate() + 1);
+      sales = sales.filter(s => new Date(s.createdAt) < toDate);
+    }
+
+    const business = await readJSON(profilePath(req.params.businessId)) || {};
+    await generateSalesReport(sales, business, from, to, res);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/:businessId/reports/rentabilidad
+router.get('/reports/rentabilidad', authenticate, async (req, res) => {
+  try {
+    const { period, from, to } = req.query;
+    const now = new Date();
+
+    function filterByRange(items, dateField) {
+      let filtered = items;
+      if (from) filtered = filtered.filter(i => new Date(i[dateField]) >= new Date(from));
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setDate(toDate.getDate() + 1);
+        filtered = filtered.filter(i => new Date(i[dateField]) < toDate);
+      }
+      if (!from && !to && period) {
+        if (period === 'day') {
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          filtered = filtered.filter(i => new Date(i[dateField]) >= today);
+        } else if (period === 'week') {
+          const weekAgo = new Date(now);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          filtered = filtered.filter(i => new Date(i[dateField]) >= weekAgo);
+        } else if (period === 'month') {
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          filtered = filtered.filter(i => new Date(i[dateField]) >= monthStart);
+        }
+      }
+      return filtered;
+    }
+
+    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const allShifts = await readJSON(shiftsPath(req.params.businessId)) || [];
+
+    const sales = filterByRange(allSales, 'createdAt');
+    const purchases = filterByRange(allPurchases, 'date');
+
+    // Retiros de caja — aplanar todos los retiros de todos los turnos y filtrar por fecha
+    const allWithdrawals = allShifts.flatMap(s => s.withdrawals || []);
+    const retirosTotal = filterByRange(allWithdrawals, 'date').reduce((s, w) => s + (w.amount || 0), 0);
+
+    // Ingresos
+    const ventasBruto = sales.reduce((s, x) => s + (x.total || 0), 0);
+    const descuentos = sales.reduce((s, x) => s + (x.discount || 0), 0);
+    const ventasNetas = ventasBruto;
+
+    // Egresos - purchases
+    const compras = purchases.reduce((s, x) => s + (x.total || 0), 0);
+
+    // Egresos - supplier payments filtered by date
+    let nominaTotal = 0, arriendo = 0, creditos = 0;
+    for (const sup of suppliers) {
+      for (const p of (sup.payments || [])) {
+        const pDate = new Date(p.date);
+        let inRange = true;
+        if (from && pDate < new Date(from)) inRange = false;
+        if (to) {
+          const toDate = new Date(to);
+          toDate.setDate(toDate.getDate() + 1);
+          if (pDate >= toDate) inRange = false;
+        }
+        if (!from && !to && period) {
+          if (period === 'day') {
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            if (pDate < today) inRange = false;
+          } else if (period === 'week') {
+            const weekAgo = new Date(now);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            if (pDate < weekAgo) inRange = false;
+          } else if (period === 'month') {
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            if (pDate < monthStart) inRange = false;
+          }
+        }
+        if (!inRange) continue;
+        const tipo = sup.tipo || 'proveedor';
+        if (tipo === 'empleado') nominaTotal += p.amount || 0;
+        else if (tipo === 'arriendo') arriendo += p.amount || 0;
+        else if (tipo === 'credito') creditos += p.amount || 0;
+      }
+    }
+
+    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal;
+    const gananciaNeta = ventasNetas - totalEgresos;
+
+    res.json({
+      ingresos: { ventasBruto, descuentos, ventasNetas },
+      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, total: totalEgresos },
+      gananciaNeta,
+      salesCount: sales.length,
+      purchasesCount: purchases.length
+    });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/:businessId/reports/rentabilidad/excel
+router.get('/reports/rentabilidad/excel', tokenFromQuery, authenticate, async (req, res) => {
+  try {
+    const { period, from, to } = req.query;
+    const now = new Date();
+
+    function filterByRange(items, dateField) {
+      let filtered = items;
+      if (from) filtered = filtered.filter(i => new Date(i[dateField]) >= new Date(from));
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setDate(toDate.getDate() + 1);
+        filtered = filtered.filter(i => new Date(i[dateField]) < toDate);
+      }
+      if (!from && !to && period) {
+        if (period === 'day') {
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          filtered = filtered.filter(i => new Date(i[dateField]) >= today);
+        } else if (period === 'week') {
+          const weekAgo = new Date(now);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          filtered = filtered.filter(i => new Date(i[dateField]) >= weekAgo);
+        } else if (period === 'month') {
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          filtered = filtered.filter(i => new Date(i[dateField]) >= monthStart);
+        }
+      }
+      return filtered;
+    }
+
+    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const allShifts = await readJSON(shiftsPath(req.params.businessId)) || [];
+    const business = await readJSON(profilePath(req.params.businessId)) || {};
+
+    const sales = filterByRange(allSales, 'createdAt');
+    const purchases = filterByRange(allPurchases, 'date');
+
+    // Retiros de caja
+    const allWithdrawals = allShifts.flatMap(s => s.withdrawals || []);
+    const retirosDetail = filterByRange(allWithdrawals, 'date');
+    const retirosTotal = retirosDetail.reduce((s, w) => s + (w.amount || 0), 0);
+
+    const ventasNetas = sales.reduce((s, x) => s + (x.total || 0), 0);
+    const descuentos = sales.reduce((s, x) => s + (x.discount || 0), 0);
+    const compras = purchases.reduce((s, x) => s + (x.total || 0), 0);
+
+    let nominaTotal = 0, arriendo = 0, creditos = 0;
+    const nominaDetail = [], arriendoDetail = [], creditoDetail = [];
+
+    for (const sup of suppliers) {
+      for (const p of (sup.payments || [])) {
+        const pDate = new Date(p.date);
+        let inRange = true;
+        if (from && pDate < new Date(from)) inRange = false;
+        if (to) {
+          const toDate = new Date(to);
+          toDate.setDate(toDate.getDate() + 1);
+          if (pDate >= toDate) inRange = false;
+        }
+        if (!from && !to && period) {
+          if (period === 'day') {
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            if (pDate < today) inRange = false;
+          } else if (period === 'week') {
+            const weekAgo = new Date(now);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            if (pDate < weekAgo) inRange = false;
+          } else if (period === 'month') {
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            if (pDate < monthStart) inRange = false;
+          }
+        }
+        if (!inRange) continue;
+        const tipo = sup.tipo || 'proveedor';
+        const detail = { supplier: sup.name, date: p.date, amount: p.amount, method: p.method, notes: p.notes };
+        if (tipo === 'empleado') { nominaTotal += p.amount || 0; nominaDetail.push(detail); }
+        else if (tipo === 'arriendo') { arriendo += p.amount || 0; arriendoDetail.push(detail); }
+        else if (tipo === 'credito') { creditos += p.amount || 0; creditoDetail.push(detail); }
+      }
+    }
+
+    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal;
+    const gananciaNeta = ventasNetas - totalEgresos;
+
+    const data = {
+      ingresos: { ventasBruto: ventasNetas, descuentos, ventasNetas },
+      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, total: totalEgresos },
+      gananciaNeta, sales, purchases, nominaDetail, arriendoDetail, creditoDetail, retirosDetail
+    };
+
+    await generateRentabilidadReport(data, business, from, to, period, res);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+module.exports = router;

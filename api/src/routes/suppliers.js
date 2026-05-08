@@ -1,0 +1,136 @@
+/**
+ * routes/suppliers.js — CRUD de proveedores, empleados, arriendos y créditos
+ *
+ * Gestiona todas las entidades externas a las que el negocio les paga.
+ * Cada proveedor tiene un `tipo` que define su categoría:
+ *   - proveedor: empresa que vende insumos (afecta compras)
+ *   - empleado:  trabajador (pago semanal de nómina)
+ *   - arriendo:  pago mensual de arriendo del local
+ *   - credito:   deuda/cuota a un banco o persona
+ *
+ * El `tipo` se usa en el reporte de Rentabilidad para clasificar los egresos.
+ *
+ * Cada proveedor tiene un historial de pagos y un totalDebt (deuda acumulada).
+ * La deuda aumenta al registrar compras y disminuye al registrar pagos.
+ *
+ * Rutas:
+ *   GET    /api/:businessId/suppliers                     → listar proveedores
+ *   POST   /api/:businessId/suppliers                     → crear proveedor (admin+)
+ *   PUT    /api/:businessId/suppliers/:id                 → editar proveedor (admin+)
+ *   POST   /api/:businessId/suppliers/:id/payment         → registrar pago (admin+)
+ *   DELETE /api/:businessId/suppliers/:id                 → eliminar proveedor (admin+)
+ */
+
+const express = require('express');
+const router = express.Router({ mergeParams: true }); // mergeParams: true necesario para :businessId
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { authenticate } = require('../middleware/auth');
+
+const suppliersPath = (id) => path.join(getBusinessPath(id), 'suppliers.json');
+
+/** GET — Lista todos los proveedores/empleados/arriendos/créditos del negocio */
+router.get('/suppliers', authenticate, async (req, res) => {
+  try {
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    res.json(suppliers);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /suppliers — Crea un nuevo proveedor/empleado/arriendo/crédito.
+ * El campo `tipo` clasifica el proveedor para el reporte de rentabilidad.
+ * Los cajeros no pueden crear proveedores.
+ */
+router.post('/suppliers', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const newSupplier = {
+      id: uuidv4(),
+      name: req.body.name,
+      tipo: req.body.tipo || 'proveedor',  // Categoría: proveedor | empleado | arriendo | credito
+      contact: req.body.contact || '',
+      phone: req.body.phone || '',
+      nit: req.body.nit || '',
+      email: req.body.email || '',
+      address: req.body.address || '',
+      payments: [],      // Historial de pagos realizados
+      totalDebt: 0,      // Deuda pendiente acumulada
+      createdAt: new Date().toISOString()
+    };
+    suppliers.push(newSupplier);
+    await writeJSON(suppliersPath(req.params.businessId), suppliers);
+    res.status(201).json(newSupplier);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** PUT /suppliers/:id — Actualiza los datos de un proveedor existente */
+router.put('/suppliers/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const idx = suppliers.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Supplier not found' });
+    suppliers[idx] = { ...suppliers[idx], ...req.body, id: req.params.id };
+    await writeJSON(suppliersPath(req.params.businessId), suppliers);
+    res.json(suppliers[idx]);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /suppliers/:id/payment — Registra un pago al proveedor.
+ *
+ * El pago se agrega al historial de pagos del proveedor y
+ * se descuenta del totalDebt (la deuda no puede quedar negativa).
+ * El reporte de Rentabilidad usa estos pagos clasificados por `tipo`
+ * del proveedor para calcular nómina, arriendo y créditos.
+ */
+router.post('/suppliers/:id/payment', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const idx = suppliers.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Supplier not found' });
+
+    const payment = {
+      id: uuidv4(),
+      amount: Number(req.body.amount) || 0,
+      date: new Date().toISOString(),
+      method: req.body.method || 'efectivo',
+      notes: req.body.notes || ''
+    };
+
+    suppliers[idx].payments = suppliers[idx].payments || [];
+    suppliers[idx].payments.push(payment);
+    // La deuda no puede quedar en negativo
+    suppliers[idx].totalDebt = Math.max(0, (suppliers[idx].totalDebt || 0) - payment.amount);
+
+    await writeJSON(suppliersPath(req.params.businessId), suppliers);
+    res.json(suppliers[idx]);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** DELETE /suppliers/:id — Elimina un proveedor por ID */
+router.delete('/suppliers/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    let suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    suppliers = suppliers.filter(s => s.id !== req.params.id);
+    await writeJSON(suppliersPath(req.params.businessId), suppliers);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+module.exports = router;

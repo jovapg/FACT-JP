@@ -1,0 +1,26 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno — nunca subir al repo
+.env
+.env.local
+.env.*.local
+
+# Build del frontend (se regenera con npm run build)
+frontend/dist/
+
+# Logs
+*.log
+logs/
+
+# Datos del negocio — van en el VPS, no en el repo
+# Comenta esta línea si quieres hacer backup de los datos en git
+api/src/data/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
