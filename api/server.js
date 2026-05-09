@@ -47,6 +47,10 @@ const uploadLogo = multer({
 // crossOriginResourcePolicy: false para que las imágenes /uploads sean accesibles desde el frontend
 app.use(helmet({ crossOriginResourcePolicy: false }));
 
+// Railway y otros proxies pasan el IP real en X-Forwarded-For
+// Sin esto, express-rate-limit lanza error y el login no funciona
+app.set('trust proxy', 1);
+
 // Rate limiting en login: máximo 10 intentos por IP cada 15 minutos
 // Previene ataques de fuerza bruta a contraseñas
 const loginLimiter = rateLimit({
@@ -61,7 +65,8 @@ app.use('/api/auth/login', loginLimiter);
 // Middleware
 app.use(cors({
   origin: (origin, callback) => {
-    // Permitir: sin origen (curl/Postman), localhost, y cualquier IP de red local
+    // Permitir: sin origen (curl/Postman), localhost, redes locales,
+    // Railway (.up.railway.app) y el dominio configurado en FRONTEND_URL
     if (
       !origin ||
       origin.startsWith('http://localhost') ||
@@ -69,6 +74,7 @@ app.use(cors({
       origin.startsWith('http://192.168.') ||
       origin.startsWith('http://10.') ||
       origin.startsWith('http://172.') ||
+      origin.endsWith('.railway.app') ||
       origin === FRONTEND_URL
     ) {
       callback(null, true);
