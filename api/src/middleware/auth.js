@@ -13,12 +13,32 @@
  */
 
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const crypto = require('crypto');
 
-// Si no está configurado en .env se usa una clave por defecto (insegura en producción)
-const JWT_SECRET = process.env.JWT_SECRET || 'facjp-secret-key-change-in-production';
-if (!process.env.JWT_SECRET) {
-  console.warn('[ADVERTENCIA] JWT_SECRET no está configurado en .env — usando clave por defecto. Cambia esto antes de producción.');
+// Carga o genera el JWT_SECRET de forma persistente.
+// Prioridad: 1) variable de entorno, 2) archivo en volumen /storage,
+// 3) clave por defecto insegura (solo desarrollo local).
+function loadJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const secretFile = '/storage/.jwt_secret';
+  try {
+    if (fs.existsSync(secretFile)) {
+      const s = fs.readFileSync(secretFile, 'utf-8').trim();
+      if (s) { console.log('[AUTH] JWT_SECRET cargado desde volumen persistente'); return s; }
+    }
+    // Genera uno nuevo y lo guarda en el volumen
+    const newSecret = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(secretFile, newSecret, 'utf-8');
+    console.log('[AUTH] JWT_SECRET generado y guardado en /storage/.jwt_secret');
+    return newSecret;
+  } catch {
+    console.warn('[ADVERTENCIA] JWT_SECRET no configurado y no se pudo acceder al volumen. Usando clave por defecto — inseguro en producción.');
+    return 'facjp-secret-key-change-in-production';
+  }
 }
+
+const JWT_SECRET = loadJwtSecret();
 
 /**
  * Verifica el token JWT del header Authorization.

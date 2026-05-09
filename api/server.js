@@ -16,20 +16,13 @@ if (!process.env.JWT_SECRET) {
   console.warn('[ADVERTENCIA] JWT_SECRET no está configurado. Usando clave por defecto — cámbiala en producción.');
 }
 
-// Ensure data directory exists
-const dataPath = process.env.DATA_PATH || './src/data';
+// Directorio de datos: variable de entorno → volumen Railway → ruta local
+const dataPath = process.env.DATA_PATH ||
+  (fs.existsSync('/storage') ? '/storage' : './src/data');
 if (!fs.existsSync(dataPath)) {
   fs.mkdirSync(dataPath, { recursive: true });
 }
-
-// Diagnóstico de almacenamiento al arrancar
 console.log(`[DATA] Ruta de datos: ${path.resolve(dataPath)}`);
-try {
-  const files = fs.readdirSync(dataPath);
-  console.log(`[DATA] Archivos encontrados: ${files.length > 0 ? files.join(', ') : '(vacío)'}`);
-} catch (e) {
-  console.log(`[DATA] No se pudo leer el directorio: ${e.message}`);
-}
 
 // Multer: saves logo to data/<businessId>/logo.<ext>, one file at a time
 const logoStorage = multer.diskStorage({

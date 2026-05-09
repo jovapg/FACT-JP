@@ -25,8 +25,17 @@
 const fs = require('fs');
 const path = require('path');
 
-// Directorio raíz de los datos (configurable por variable de entorno)
-const DATA_PATH = process.env.DATA_PATH || path.join(__dirname, '../data');
+// Directorio raíz de los datos.
+// Prioridad: 1) variable de entorno DATA_PATH, 2) volumen Railway en /storage,
+// 3) ruta local por defecto (desarrollo).
+function detectDataPath() {
+  if (process.env.DATA_PATH) return process.env.DATA_PATH;
+  try {
+    if (fs.existsSync('/storage')) return '/storage';
+  } catch {}
+  return path.join(__dirname, '../data');
+}
+const DATA_PATH = detectDataPath();
 
 /** Retorna la ruta absoluta del directorio de datos */
 function getDataPath() {
