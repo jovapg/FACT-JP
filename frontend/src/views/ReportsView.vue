@@ -552,7 +552,7 @@ onMounted(loadReport)
 .report-tabs { display: flex; gap: 8px; }
 .report-tab {
   padding: 8px 20px; border-radius: 20px; border: 2px solid var(--border);
-  background: white; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;
 }
 .report-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
 
@@ -579,7 +579,8 @@ onMounted(loadReport)
 .mb-4 { margin-bottom: 24px; }
 
 .stat-card {
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   border-radius: var(--radius);
   padding: 20px;
   display: flex;

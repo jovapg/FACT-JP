@@ -316,7 +316,8 @@ async function handleSaleConfirmed() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: white;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .cart-header {
@@ -386,7 +387,8 @@ async function handleSaleConfirmed() {
   padding: 5px 14px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -414,7 +416,8 @@ async function handleSaleConfirmed() {
   flex-direction: column;
   align-items: flex-start;
   padding: 10px 12px;
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   border: 2px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
@@ -426,7 +429,7 @@ async function handleSaleConfirmed() {
   /* Elimina el retraso de 300ms en pantallas táctiles */
   touch-action: manipulation;
 }
-.product-btn:hover { border-color: var(--accent); background: #fff5f7; }
+.product-btn:hover { border-color: var(--accent); background: var(--surface-2); }
 .product-btn:active { transform: scale(0.97); }
 .product-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .product-btn.in-cart { border-color: var(--success); background: #f0fff4; }

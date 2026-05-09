@@ -71,7 +71,8 @@ function logout() {
 }
 
 .selector-card {
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   border-radius: 20px;
   padding: 40px;
   width: 100%;
@@ -108,7 +109,7 @@ function logout() {
 }
 .biz-card:hover {
   border-color: var(--accent);
-  background: #fff5f7;
+  background: var(--surface-2);
   transform: translateY(-2px);
 }
 .biz-icon { font-size: 32px; margin-bottom: 8px; }

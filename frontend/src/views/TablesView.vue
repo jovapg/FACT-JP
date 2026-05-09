@@ -239,7 +239,8 @@ onMounted(async () => {
   padding: 6px 16px;
   border-radius: 20px;
   border: 1px solid var(--border);
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   font-size: 13px;
   cursor: pointer;
   font-weight: 500;
@@ -276,7 +277,7 @@ onMounted(async () => {
   max-width: 560px;
   height: 100%;
   overflow-y: auto;
-  background: white;
+  background: var(--surface);
   box-shadow: -4px 0 20px rgba(0,0,0,0.15);
 }
 

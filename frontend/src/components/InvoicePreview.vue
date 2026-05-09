@@ -416,6 +416,7 @@ onMounted(async () => {
 
 .invoice-preview {
   background: #fafafa;
+  color: #1a1a1a;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
@@ -536,7 +537,8 @@ onMounted(async () => {
   padding: 12px 8px;
   border: 2px solid var(--border);
   border-radius: 10px;
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;

@@ -316,7 +316,7 @@ onMounted(loadSuppliers)
 .tipo-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .tipo-tab {
   padding: 7px 14px; border-radius: 20px; border: 2px solid var(--border);
-  background: white; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px;
   transition: all 0.2s;
 }
 .tipo-tab.active { background: var(--primary); color: white; border-color: var(--primary); }

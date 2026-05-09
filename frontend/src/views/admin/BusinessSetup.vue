@@ -498,7 +498,7 @@ onMounted(async () => {
 .cat-row {
   display: flex; align-items: center; gap: 16px;
   padding: 10px 14px; border: 1px solid var(--border);
-  border-radius: 8px; background: white;
+  border-radius: 8px; background: var(--surface); color: var(--text);
 }
 .cat-name { font-weight: 600; min-width: 140px; text-transform: capitalize; }
 .cat-check { display: flex; align-items: center; gap: 6px; font-size: 13px; flex: 1; cursor: pointer; }
