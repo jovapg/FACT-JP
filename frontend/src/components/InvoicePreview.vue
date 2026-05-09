@@ -182,8 +182,28 @@
           </div>
         </div>
 
+        <!-- WhatsApp phone input -->
+        <div class="wa-input-row" v-if="showWaInput">
+          <span class="wa-prefix">+57</span>
+          <input
+            v-model="waPhone"
+            class="form-control wa-input"
+            placeholder="3001234567"
+            type="tel"
+            maxlength="10"
+            @keyup.enter="sendWhatsApp"
+            ref="waInputRef"
+          />
+          <button class="btn btn-success" @click="sendWhatsApp">Enviar</button>
+          <button class="btn btn-outline" @click="showWaInput = false; waPhone = ''">✕</button>
+        </div>
+
         <div class="modal-footer confirmed-footer">
           <button class="btn btn-outline" @click="closeSuccess">Cerrar</button>
+          <button class="btn btn-whatsapp" @click="toggleWaInput">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            WhatsApp
+          </button>
           <button v-if="canShare" class="btn btn-outline" @click="sharePdf">
             📤 Compartir
           </button>
@@ -192,7 +212,7 @@
             target="_blank"
             class="btn btn-primary"
           >
-            📄 Descargar PDF
+            📄 PDF
           </a>
         </div>
       </div>
@@ -227,7 +247,7 @@
  * Emits:
  *   confirmed — cuando el usuario cierra la confirmación (la factura ya fue creada)
  */
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useTablesStore } from '../stores/tables.js'
@@ -253,6 +273,9 @@ const clientName = ref('')
 const discount = ref(0)
 const confirming = ref(false)
 const confirmedSale = ref(null)
+const showWaInput = ref(false)
+const waPhone = ref('')
+const waInputRef = ref(null)
 
 const business = computed(() => businessStore.profile)
 const bizId = computed(() => auth.currentBusiness?.id)
@@ -321,6 +344,51 @@ function closeSuccess() {
   confirmedSale.value = null
   emit('confirmed', sale)
   emit('close')
+}
+
+async function toggleWaInput() {
+  showWaInput.value = !showWaInput.value
+  if (showWaInput.value) {
+    await nextTick()
+    waInputRef.value?.focus()
+  }
+}
+
+function buildWaText(sale) {
+  const biz = business.value
+  const lines = []
+  if (biz?.name) lines.push(`*${biz.name}*`)
+  if (biz?.nit) lines.push(`NIT: ${biz.nit}`)
+  lines.push('')
+  lines.push(`🧾 *Factura #${sale.invoiceNumber}*`)
+  lines.push(`📅 Fecha: ${formatDate(new Date(sale.createdAt))}`)
+  if (sale.client) lines.push(`👤 Cliente: ${sale.client}`)
+  if (sale.tableNumber) lines.push(`🪑 Mesa: ${sale.tableNumber}`)
+  lines.push(`💳 Pago: ${sale.paymentMethod}`)
+  lines.push('')
+  lines.push('─────────────────')
+  for (const item of sale.items) {
+    lines.push(`${item.qty}x ${item.name}  ${formatCOP(item.qty * item.price)}`)
+  }
+  lines.push('─────────────────')
+  if (sale.discount > 0) {
+    lines.push(`Subtotal: ${formatCOP(sale.subtotal || sale.total)}`)
+    lines.push(`Descuento: -${formatCOP(sale.discount)}`)
+  }
+  lines.push(`*TOTAL: ${formatCOP(sale.total)}*`)
+  lines.push('')
+  lines.push('¡Gracias por su visita! 🙏')
+  return lines.join('\n')
+}
+
+function sendWhatsApp() {
+  const text = encodeURIComponent(buildWaText(confirmedSale.value))
+  const digits = waPhone.value.replace(/\D/g, '')
+  const number = digits ? `57${digits}` : ''
+  const url = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
+  window.open(url, '_blank')
+  showWaInput.value = false
+  waPhone.value = ''
 }
 
 async function sharePdf() {
@@ -492,7 +560,37 @@ onMounted(async () => {
 }
 .confirmed-check { font-size: 22px; }
 .confirmed-title h3 { font-size: 18px; font-weight: 800; color: var(--success); }
-.confirmed-footer { gap: 8px; }
+.confirmed-footer { gap: 8px; flex-wrap: wrap; }
+
+.btn-whatsapp {
+  background: #25D366;
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.btn-whatsapp:hover { background: #1ebe5d; }
+
+.wa-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+.wa-prefix {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.wa-input {
+  flex: 1;
+  min-width: 0;
+}
 
 .inv-item-readonly {
   display: grid;
