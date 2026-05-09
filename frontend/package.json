@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "sharp": "^0.34.5",
     "vite": "^5.2.0",
     "vite-plugin-pwa": "^0.19.8"
   }
