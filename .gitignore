@@ -6,8 +6,8 @@ node_modules/
 .env.local
 .env.*.local
 
-# Build del frontend (se regenera con npm run build)
-frontend/dist/
+# Build del frontend — incluido en el repo para que Railway lo sirva
+# frontend/dist/
 
 # Logs
 *.log
