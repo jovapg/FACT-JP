@@ -257,6 +257,29 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Storage diagnostic — superadmin only
+// Muestra la ruta de datos activa y el contenido del volumen para verificar persistencia
+app.get('/api/admin/storage', authenticate, (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const resolvedPath = path.resolve(dataPath);
+    const entries = fs.readdirSync(resolvedPath, { withFileTypes: true }).map(e => {
+      if (e.isDirectory()) {
+        const files = fs.readdirSync(path.join(resolvedPath, e.name)).map(f => {
+          const stat = fs.statSync(path.join(resolvedPath, e.name, f));
+          return { name: f, size: stat.size, modified: stat.mtime };
+        });
+        return { name: e.name, type: 'dir', files };
+      }
+      const stat = fs.statSync(path.join(resolvedPath, e.name));
+      return { name: e.name, type: 'file', size: stat.size, modified: stat.mtime };
+    });
+    res.json({ dataPath: resolvedPath, persistent: resolvedPath.startsWith('/storage'), entries });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Sirve el frontend en producción ─────────────────────────────────────────
 // Si existe la carpeta frontend/dist/ (generada con `npm run build`),
 // Express la sirve como archivos estáticos. Cualquier ruta que no sea /api
