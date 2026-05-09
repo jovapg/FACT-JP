@@ -28,7 +28,8 @@ if (!process.env.JWT_SECRET) {
  */
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Extrae el token de "Bearer <token>"
+  // Acepta token del header Authorization o del query param ?token= (para links de PDF en navegador)
+  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
 
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
