@@ -146,6 +146,30 @@
           </div>
         </div>
 
+        <!-- Backup -->
+        <div class="card" v-if="activeTab === 'backup'">
+          <h3 class="section-title">Copia de seguridad</h3>
+          <p class="text-muted mb-3">
+            Descarga todos los datos del negocio en un archivo JSON: ventas, inventario,
+            recetas, turnos, deudas, proveedores y más. Guárdalo en un lugar seguro.
+          </p>
+          <div class="backup-info mb-3">
+            <div class="backup-item">📦 Ventas e historial de facturas</div>
+            <div class="backup-item">📋 Inventario y recetas</div>
+            <div class="backup-item">💰 Turnos de caja y retiros</div>
+            <div class="backup-item">🤝 Proveedores y pagos</div>
+            <div class="backup-item">📒 Deudas y abonos</div>
+            <div class="backup-item">👥 Usuarios del negocio</div>
+          </div>
+          <button class="btn btn-primary" @click="downloadBackup" :disabled="backingUp">
+            <span v-if="backingUp">⏳ Generando...</span>
+            <span v-else>⬇️ Descargar backup</span>
+          </button>
+          <p class="text-muted mt-2" style="font-size:12px">
+            El archivo se descarga con la fecha de hoy en el nombre. Recomendamos hacerlo semanalmente.
+          </p>
+        </div>
+
         <!-- User modal -->
         <div class="modal-overlay" v-if="showUserModal" @click.self="showUserModal = false">
           <div class="modal">
@@ -213,9 +237,11 @@ const tabs = [
   { id: 'profile', label: 'Perfil del negocio' },
   { id: 'categories', label: 'Categorías' },
   { id: 'tables', label: 'Mesas' },
-  { id: 'users', label: 'Usuarios' }
+  { id: 'users', label: 'Usuarios' },
+  { id: 'backup', label: '⬇️ Backup' }
 ]
 const activeTab = ref('profile')
+const backingUp = ref(false)
 
 const profile = reactive({
   name: '', nit: '', address: '', city: '', phone: '',
@@ -412,6 +438,30 @@ async function deleteUser(u) {
  * Al montar la vista: carga el perfil del negocio, las categorías,
  * el estado actual de mesas y la lista de usuarios.
  */
+async function downloadBackup() {
+  backingUp.value = true
+  try {
+    const bizId = authStore.currentBusiness?.id
+    const res = await api.get(`/api/${bizId}/backup`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    // El nombre del archivo viene en el header Content-Disposition del servidor
+    const disposition = res.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    a.download = match ? match[1] : `backup-${new Date().toISOString().slice(0,10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast('Backup descargado correctamente', 'success')
+  } catch {
+    toast('Error al generar el backup', 'error')
+  } finally {
+    backingUp.value = false
+  }
+}
+
 onMounted(async () => {
   await businessStore.fetchProfile()
   if (businessStore.profile) Object.assign(profile, businessStore.profile)
@@ -517,5 +567,22 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.backup-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.backup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-light);
+}
+.backup-item svg {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 </style>

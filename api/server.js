@@ -259,6 +259,32 @@ app.delete('/api/:businessId/users/:id', ...bizAccess, async (req, res) => {
   }
 });
 
+// Backup — descarga todos los JSON del negocio en un solo archivo
+app.get('/api/:businessId/backup', ...bizAccess, async (req, res) => {
+  try {
+    if (!['superadmin', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const bizPath = getBusinessPath(req.params.businessId);
+    const fileNames = ['profile', 'inventory', 'recipes', 'sales', 'tables',
+                       'purchases', 'suppliers', 'shifts', 'debtors'];
+    const backup = { exportedAt: new Date().toISOString(), version: '1.0',
+                     businessId: req.params.businessId, data: {} };
+    for (const name of fileNames) {
+      const data = await readJSON(path.join(bizPath, `${name}.json`));
+      if (data) backup.data[name] = data;
+    }
+    const bizName = (backup.data.profile?.name || req.params.businessId)
+      .replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename="backup-${bizName}-${date}.json"`);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.send(JSON.stringify(backup, null, 2));
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Error al generar el backup' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
