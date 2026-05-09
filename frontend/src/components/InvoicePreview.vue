@@ -252,6 +252,7 @@ import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
+import api from '../services/api.js'
 
 const props = defineProps({
   table: { type: Object, required: true },
@@ -370,13 +371,23 @@ function buildWaText(sale, pdfUrl) {
   return lines.join('\n')
 }
 
-function sendWhatsApp() {
-  const pdfUrl = `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
-  const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
-  const digits = waPhone.value.replace(/\D/g, '')
-  const number = digits ? `57${digits}` : ''
-  const url = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
-  window.open(url, '_blank')
+async function sendWhatsApp() {
+  try {
+    const res = await api.post(`/api/${bizId.value}/invoices/${confirmedSale.value.id}/shortlink`)
+    const pdfUrl = res.data.url
+    const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
+    const digits = waPhone.value.replace(/\D/g, '')
+    const number = digits ? `57${digits}` : ''
+    const waUrl = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
+    window.open(waUrl, '_blank')
+  } catch {
+    // Si falla el shortlink, usar el link largo como fallback
+    const pdfUrl = `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+    const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
+    const digits = waPhone.value.replace(/\D/g, '')
+    const number = digits ? `57${digits}` : ''
+    window.open(number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+  }
   showWaInput.value = false
   waPhone.value = ''
 }

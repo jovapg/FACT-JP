@@ -112,6 +112,7 @@ const reportsRoutes = require('./src/routes/reports');
 const invoicesRoutes = require('./src/routes/invoices');
 const shiftsRoutes = require('./src/routes/shifts');
 const debtorsRoutes = require('./src/routes/debtors');
+const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shortlinks');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -133,6 +134,10 @@ app.use('/api/:businessId', bizAccess, reportsRoutes);
 app.use('/api/:businessId', bizAccess, invoicesRoutes);
 app.use('/api/:businessId', bizAccess, shiftsRoutes);
 app.use('/api/:businessId', bizAccess, debtorsRoutes);
+app.use('/api/:businessId', bizAccess, shortlinksRouter);
+
+// Ruta pública para links cortos de PDF — no requiere autenticación
+app.get('/f/:code', handleShortlink);
 
 // Business profile routes
 const { readJSON, writeJSON, getBusinessPath } = require('./src/services/fileStorage');
