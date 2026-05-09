@@ -37,6 +37,19 @@ async function deductFromSale(businessId, saleItems) {
   const alerts = [];
 
   for (const saleItem of saleItems) {
+    // Item de inventario vendido directamente (sin receta): descontar 1 unidad × qty
+    if (saleItem.inventoryId && !saleItem.recipeId) {
+      const invIdx = inventory.findIndex(i => i.id === saleItem.inventoryId);
+      if (invIdx !== -1) {
+        inventory[invIdx].stock = Math.max(0, (inventory[invIdx].stock || 0) - (saleItem.qty || 1));
+        if (inventory[invIdx].stock <= (inventory[invIdx].minStock || 0)) {
+          alerts.push({ id: inventory[invIdx].id, name: inventory[invIdx].name,
+            stock: inventory[invIdx].stock, minStock: inventory[invIdx].minStock });
+        }
+      }
+      continue;
+    }
+
     // Buscar la receta correspondiente al ítem vendido
     const recipe = recipes.find(r => r.id === saleItem.recipeId);
     if (!recipe || !recipe.ingredients) continue; // Si no tiene receta, no descontar

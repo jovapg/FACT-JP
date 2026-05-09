@@ -377,11 +377,35 @@ const chargeCat    = ref('todas')
 const chargeNote   = ref('')
 
 const chargeCategories = computed(() => {
-  const cats = [...new Set(inventoryStore.recipes.map(r => r.category).filter(Boolean))]
+  const recipeCats = inventoryStore.recipes.map(r => r.category)
+  const invCats = inventoryStore.items.filter(i => (i.salePrice || 0) > 0).map(i => i.category)
+  const cats = [...new Set([...recipeCats, ...invCats].filter(Boolean))]
   return ['todas', ...cats]
 })
+
+// Misma lógica de fusión que OrderCart: recetas + inventario con salePrice
+const chargeSellableItems = computed(() => {
+  const invByName = new Map()
+  for (const i of inventoryStore.items) {
+    if ((i.salePrice || 0) > 0) invByName.set(i.name.toLowerCase().trim(), i)
+  }
+  const result = inventoryStore.recipes
+    .filter(r => r.available)
+    .map(r => {
+      const inv = invByName.get(r.name.toLowerCase().trim())
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price }
+    })
+  const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
+  for (const i of inventoryStore.items) {
+    if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
+      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, available: true })
+    }
+  }
+  return result
+})
+
 const chargeFilteredRecipes = computed(() => {
-  let list = inventoryStore.recipes.filter(r => r.available)
+  let list = chargeSellableItems.value
   if (chargeCat.value !== 'todas') list = list.filter(r => r.category === chargeCat.value)
   if (chargeSearch.value.trim()) {
     const q = chargeSearch.value.trim().toLowerCase()
@@ -392,19 +416,24 @@ const chargeFilteredRecipes = computed(() => {
 const chargeTotal = computed(() =>
   chargeCart.value.reduce((s, i) => s + i.qty * i.price, 0)
 )
-function isInChargeCart(r) { return chargeCart.value.some(i => i.recipeId === r.id) }
-function getChargeQty(r)   { return chargeCart.value.find(i => i.recipeId === r.id)?.qty || 0 }
+function isInChargeCart(r) { return chargeCart.value.some(i => i._itemId === r._itemId) }
+function getChargeQty(r)   { return chargeCart.value.find(i => i._itemId === r._itemId)?.qty || 0 }
 function addToChargeCart(r) {
-  const existing = chargeCart.value.find(i => i.recipeId === r.id)
+  const existing = chargeCart.value.find(i => i._itemId === r._itemId)
   if (existing) existing.qty++
-  else chargeCart.value.push({ recipeId: r.id, name: r.name, price: r.price, qty: 1 })
+  else chargeCart.value.push({
+    _itemId: r._itemId,
+    recipeId: r._invOnly ? undefined : r.id,
+    inventoryId: r._invOnly ? r.id : undefined,
+    name: r.name, price: r.price, qty: 1
+  })
 }
 function decreaseChargeQty(item) {
   if (item.qty > 1) item.qty--
   else removeFromChargeCart(item)
 }
 function removeFromChargeCart(item) {
-  chargeCart.value = chargeCart.value.filter(i => i.recipeId !== item.recipeId)
+  chargeCart.value = chargeCart.value.filter(i => i._itemId !== item._itemId)
 }
 
 const remaining = computed(() =>
@@ -533,6 +562,7 @@ async function doDelete() {
 onMounted(() => {
   debtorsStore.fetchDebtors()
   inventoryStore.fetchRecipes()
+  inventoryStore.fetchInventory()
 })
 </script>
 

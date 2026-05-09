@@ -166,9 +166,14 @@ const clientName = ref('')
  * Al montar el componente, restaura los ítems y el nombre del cliente
  * si la mesa ya tiene una orden guardada previamente.
  */
+// Normaliza un item del carrito añadiendo _itemId para compatibilidad
+function normalizeCartItem(i) {
+  return { ...i, _itemId: i._itemId || i.recipeId || i.inventoryId }
+}
+
 onMounted(() => {
   if (props.table.order?.items) {
-    cartItems.value = props.table.order.items.map(i => ({ ...i }))
+    cartItems.value = props.table.order.items.map(normalizeCartItem)
     clientName.value = props.table.order.client || ''
   }
 })
@@ -180,7 +185,7 @@ onMounted(() => {
  */
 watch(() => props.table, (newTable) => {
   if (newTable.order?.items) {
-    cartItems.value = newTable.order.items.map(i => ({ ...i }))
+    cartItems.value = newTable.order.items.map(normalizeCartItem)
     clientName.value = newTable.order.client || ''
   } else if (newTable.status === 'libre') {
     cartItems.value = []
@@ -189,22 +194,58 @@ watch(() => props.table, (newTable) => {
 }, { deep: true })
 
 /**
- * Lista de categorías disponibles derivada de las recetas del inventario.
- * La opción 'todas' siempre aparece primero.
+ * Lista de categorías disponibles incluyendo tanto recetas como items de
+ * inventario con precio de venta configurado.
  */
 const allCategories = computed(() => {
-  const cats = [...new Set(inventoryStore.recipes.map(r => r.category).filter(Boolean))]
+  const recipeCats = inventoryStore.recipes.map(r => r.category)
+  const invCats = inventoryStore.items.filter(i => (i.salePrice || 0) > 0).map(i => i.category)
+  const cats = [...new Set([...recipeCats, ...invCats].filter(Boolean))]
   return ['todas', ...cats]
 })
 
 /**
- * Lista de recetas visible en el grid de productos, aplicando:
- *   1. Solo recetas disponibles (r.available === true)
- *   2. Filtro por categoría seleccionada
- *   3. Filtro de búsqueda por nombre (insensible a mayúsculas)
+ * Fusiona recetas y items de inventario con salePrice > 0 en una sola lista.
+ * Reglas:
+ *   - Si un item de inventario tiene el mismo nombre que una receta,
+ *     la receta se muestra pero usa el salePrice del inventario (precio autoritativo).
+ *   - Si un item de inventario no tiene receta correspondiente,
+ *     se agrega directamente con su salePrice.
+ * Esto garantiza que nunca se muestre el precio de costo en el POS.
  */
+const sellableItems = computed(() => {
+  // Mapa de items de inventario con salePrice, indexados por nombre normalizado
+  const invByName = new Map()
+  for (const i of inventoryStore.items) {
+    if ((i.salePrice || 0) > 0) {
+      invByName.set(i.name.toLowerCase().trim(), i)
+    }
+  }
+
+  // Recetas disponibles, precio overrideado si hay match en inventario
+  const result = inventoryStore.recipes
+    .filter(r => r.available)
+    .map(r => {
+      const inv = invByName.get(r.name.toLowerCase().trim())
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price }
+    })
+
+  // Items de inventario sin receta correspondiente
+  const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
+  for (const i of inventoryStore.items) {
+    if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
+      result.push({
+        id: i.id, _itemId: i.id, _invOnly: true,
+        name: i.name, price: i.salePrice, category: i.category, available: true
+      })
+    }
+  }
+
+  return result
+})
+
 const filteredRecipes = computed(() => {
-  let list = inventoryStore.recipes.filter(r => r.available)
+  let list = sellableItems.value
   if (selectedCat.value !== 'todas') list = list.filter(r => r.category === selectedCat.value)
   if (search.value.trim()) {
     const q = search.value.trim().toLowerCase()
@@ -223,30 +264,32 @@ function formatCOP(v) {
   return '$' + Number(v || 0).toLocaleString('es-CO')
 }
 
-/** Retorna true si la receta ya está en el carrito */
-function isInCart(recipe) {
-  return cartItems.value.some(i => i.recipeId === recipe.id)
+/** Retorna true si el item ya está en el carrito */
+function isInCart(item) {
+  return cartItems.value.some(i => i._itemId === item._itemId)
 }
 
-/** Retorna la cantidad actual de una receta en el carrito, o 0 si no está */
-function getQty(recipe) {
-  return cartItems.value.find(i => i.recipeId === recipe.id)?.qty || 0
+/** Retorna la cantidad actual de un item en el carrito, o 0 si no está */
+function getQty(item) {
+  return cartItems.value.find(i => i._itemId === item._itemId)?.qty || 0
 }
 
 /**
- * Agrega una receta al carrito o incrementa su cantidad si ya existe.
- * El ítem se almacena con recipeId para identificación y precio snapshot
- * al momento de agregar (no cambia si el precio del menú se modifica después).
+ * Agrega un item al carrito o incrementa su cantidad si ya existe.
+ * Para recetas: guarda recipeId (para descuento de ingredientes en inventario).
+ * Para items de inventario directo: guarda inventoryId (para descuento de stock).
  */
-function addToCart(recipe) {
-  const existing = cartItems.value.find(i => i.recipeId === recipe.id)
+function addToCart(item) {
+  const existing = cartItems.value.find(i => i._itemId === item._itemId)
   if (existing) {
     existing.qty++
   } else {
     cartItems.value.push({
-      recipeId: recipe.id,
-      name: recipe.name,
-      price: recipe.price,
+      _itemId: item._itemId,
+      recipeId: item._invOnly ? undefined : item.id,
+      inventoryId: item._invOnly ? item.id : undefined,
+      name: item.name,
+      price: item.price,
       qty: 1
     })
   }
@@ -263,9 +306,9 @@ function decreaseQty(item) {
   else removeFromCart(item)
 }
 
-/** Elimina completamente un ítem del carrito por su recipeId */
+/** Elimina completamente un ítem del carrito por su _itemId */
 function removeFromCart(item) {
-  cartItems.value = cartItems.value.filter(i => i.recipeId !== item.recipeId)
+  cartItems.value = cartItems.value.filter(i => i._itemId !== item._itemId)
 }
 
 /**

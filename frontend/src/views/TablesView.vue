@@ -148,6 +148,7 @@ const filteredTables = computed(() => {
 function openTable(table) {
   tablesStore.selectTable(table)
   inventoryStore.fetchRecipes()
+  inventoryStore.fetchInventory()
 }
 
 function closePanel() {
