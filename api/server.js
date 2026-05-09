@@ -266,7 +266,7 @@ app.get('/api/:businessId/backup', ...bizAccess, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const bizPath = getBusinessPath(req.params.businessId);
-    const fileNames = ['profile', 'inventory', 'recipes', 'sales', 'tables',
+    const fileNames = ['profile', 'users', 'inventory', 'recipes', 'sales', 'tables',
                        'purchases', 'suppliers', 'shifts', 'debtors'];
     const backup = { exportedAt: new Date().toISOString(), version: '1.0',
                      businessId: req.params.businessId, data: {} };
