@@ -354,7 +354,7 @@ async function toggleWaInput() {
   }
 }
 
-function buildWaText(sale) {
+function buildWaText(sale, pdfUrl) {
   const biz = business.value
   const lines = []
   if (biz?.name) lines.push(`*${biz.name}*`)
@@ -377,12 +377,16 @@ function buildWaText(sale) {
   }
   lines.push(`*TOTAL: ${formatCOP(sale.total)}*`)
   lines.push('')
+  lines.push(`📄 *Ver/Descargar PDF:*`)
+  lines.push(pdfUrl)
+  lines.push('')
   lines.push('¡Gracias por su visita! 🙏')
   return lines.join('\n')
 }
 
 function sendWhatsApp() {
-  const text = encodeURIComponent(buildWaText(confirmedSale.value))
+  const pdfUrl = `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+  const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
   const digits = waPhone.value.replace(/\D/g, '')
   const number = digits ? `57${digits}` : ''
   const url = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
