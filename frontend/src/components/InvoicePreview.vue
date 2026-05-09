@@ -355,32 +355,18 @@ async function toggleWaInput() {
 }
 
 function buildWaText(sale, pdfUrl) {
-  const biz = business.value
+  const bizName = business.value?.name || 'nuestro establecimiento'
+  const greeting = sale.client ? `Hola ${sale.client}! 👋` : 'Hola! 👋'
   const lines = []
-  if (biz?.name) lines.push(`*${biz.name}*`)
-  if (biz?.nit) lines.push(`NIT: ${biz.nit}`)
+  lines.push(greeting)
   lines.push('')
-  lines.push(`🧾 *Factura #${sale.invoiceNumber}*`)
-  lines.push(`📅 Fecha: ${formatDate(new Date(sale.createdAt))}`)
-  if (sale.client) lines.push(`👤 Cliente: ${sale.client}`)
-  if (sale.tableNumber) lines.push(`🪑 Mesa: ${sale.tableNumber}`)
-  lines.push(`💳 Pago: ${sale.paymentMethod}`)
+  lines.push(`Acabas de realizar una compra en *${bizName}*.`)
+  lines.push(`Tu factura *#${sale.invoiceNumber}* por *${formatCOP(sale.total)}* ya está lista.`)
   lines.push('')
-  lines.push('─────────────────')
-  for (const item of sale.items) {
-    lines.push(`${item.qty}x ${item.name}  ${formatCOP(item.qty * item.price)}`)
-  }
-  lines.push('─────────────────')
-  if (sale.discount > 0) {
-    lines.push(`Subtotal: ${formatCOP(sale.subtotal || sale.total)}`)
-    lines.push(`Descuento: -${formatCOP(sale.discount)}`)
-  }
-  lines.push(`*TOTAL: ${formatCOP(sale.total)}*`)
-  lines.push('')
-  lines.push(`📄 *Ver/Descargar PDF:*`)
+  lines.push(`📄 Descarga tu factura en PDF aquí:`)
   lines.push(pdfUrl)
   lines.push('')
-  lines.push('¡Gracias por su visita! 🙏')
+  lines.push(`_Gracias por tu visita, te esperamos pronto!_ 🙌`)
   return lines.join('\n')
 }
 
