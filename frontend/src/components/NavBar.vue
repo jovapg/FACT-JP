@@ -38,6 +38,9 @@
             <router-link to="/select-business" class="dropdown-item" v-if="auth.businesses.length > 1" @click="showMenu = false">
               <ArrowLeftRight :size="15" /> Cambiar negocio
             </router-link>
+            <button class="dropdown-item" @click="showChangePassword = true; showMenu = false">
+              <KeyRound :size="15" /> Cambiar contraseña
+            </button>
             <div class="dropdown-divider"></div>
             <button class="dropdown-item danger" @click="logout">
               <LogOut :size="15" /> Cerrar sesión
@@ -47,6 +50,39 @@
       </div>
     </div>
   </header>
+
+  <!-- Modal cambiar contraseña -->
+  <Teleport to="body">
+    <div class="modal-overlay" v-if="showChangePassword" @click.self="closePasswordModal">
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <h3 class="modal-title">Cambiar contraseña</h3>
+          <button class="btn-close" @click="closePasswordModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Contraseña actual</label>
+            <input v-model="pwForm.current" type="password" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nueva contraseña</label>
+            <input v-model="pwForm.newPass" type="password" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirmar nueva contraseña</label>
+            <input v-model="pwForm.confirm" type="password" class="form-control" />
+          </div>
+          <p v-if="pwError" class="field-error">{{ pwError }}</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closePasswordModal">Cancelar</button>
+          <button class="btn btn-primary" @click="changePassword" :disabled="pwSaving">
+            {{ pwSaving ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -61,7 +97,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useMenu } from '../composables/useMenu.js'
-import { Menu, Store, Sun, Moon, ChevronDown, Settings, Building2, ArrowLeftRight, LogOut } from 'lucide-vue-next'
+import { Menu, Store, Sun, Moon, ChevronDown, Settings, Building2, ArrowLeftRight, LogOut, KeyRound } from 'lucide-vue-next'
 
 defineProps({ title: { type: String, default: 'facJp' } })
 
@@ -72,6 +108,46 @@ const { toggleMenu } = useMenu()
 
 const showMenu = ref(false)
 const menuRef = ref(null)
+const showChangePassword = ref(false)
+const pwSaving = ref(false)
+const pwError = ref('')
+const pwForm = ref({ current: '', newPass: '', confirm: '' })
+
+function closePasswordModal() {
+  showChangePassword.value = false
+  pwError.value = ''
+  pwForm.value = { current: '', newPass: '', confirm: '' }
+}
+
+async function changePassword() {
+  pwError.value = ''
+  if (!pwForm.value.current || !pwForm.value.newPass) {
+    pwError.value = 'Completa todos los campos'
+    return
+  }
+  if (pwForm.value.newPass !== pwForm.value.confirm) {
+    pwError.value = 'Las contraseñas no coinciden'
+    return
+  }
+  if (pwForm.value.newPass.length < 6) {
+    pwError.value = 'La contraseña debe tener al menos 6 caracteres'
+    return
+  }
+  pwSaving.value = true
+  try {
+    const api = (await import('../services/api.js')).default
+    await api.post('/api/auth/change-password', {
+      currentPassword: pwForm.value.current,
+      newPassword: pwForm.value.newPass
+    })
+    closePasswordModal()
+    alert('Contraseña cambiada correctamente')
+  } catch (err) {
+    pwError.value = err.response?.data?.error || 'Error al cambiar la contraseña'
+  } finally {
+    pwSaving.value = false
+  }
+}
 
 // ── Modo oscuro ──────────────────────────────────────────────────
 const isDark = ref(document.documentElement.classList.contains('dark'))
