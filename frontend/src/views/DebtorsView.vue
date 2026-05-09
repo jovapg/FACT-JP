@@ -126,39 +126,90 @@
       </div>
     </div>
 
-    <!-- ── Modal: Registrar fiado ── -->
+    <!-- ── Modal: Registrar fiado (mini-POS) ── -->
     <div class="modal-overlay" v-if="showChargeModal" @click.self="showChargeModal = false">
-      <div class="modal" style="max-width:400px">
+      <div class="modal modal-pos">
         <div class="modal-header">
-          <h3 class="modal-title">Registrar fiado</h3>
-          <button class="btn-close" @click="showChargeModal = false"><X :size="18" /></button>
-        </div>
-        <div class="modal-body">
-          <div class="client-info-bar mb-3">
+          <div class="detail-header-info">
             <div class="client-avatar">{{ activeDebtor?.name.charAt(0).toUpperCase() }}</div>
             <div>
-              <p class="fw-700">{{ activeDebtor?.name }}</p>
+              <h3 class="modal-title">Registrar fiado — {{ activeDebtor?.name }}</h3>
               <p class="text-muted" style="font-size:12px">Saldo actual: <strong class="danger">{{ formatCOP(activeDebtor?.balance) }}</strong></p>
             </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">¿Qué pidió? *</label>
-            <input v-model="chargeForm.description" type="text" class="form-control"
-              :class="{ 'input-error': chargeSubmitted && !chargeForm.description.trim() }"
-              placeholder="Ej: 2 cervezas + papas" />
+          <button class="btn-close" @click="showChargeModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body pos-body">
+
+          <!-- Buscador + categorías -->
+          <div class="pos-search-row">
+            <input v-model="chargeSearch" class="form-control" placeholder="🔍 Buscar producto..." style="flex:1" />
           </div>
-          <div class="form-group">
-            <label class="form-label">Monto *</label>
-            <input v-model.number="chargeForm.amount" type="number" class="form-control"
-              :class="{ 'input-error': chargeSubmitted && !chargeForm.amount }"
-              min="1" step="1000" placeholder="Ej: 15000" />
+          <div class="cat-tabs">
+            <button
+              v-for="cat in chargeCategories"
+              :key="cat"
+              :class="['cat-btn', { active: chargeCat === cat }]"
+              @click="chargeCat = cat"
+            >{{ cat === 'todas' ? '🍽️ Todas' : cat }}</button>
           </div>
+
+          <!-- Grid de productos -->
+          <div class="pos-products-grid">
+            <button
+              v-for="r in chargeFilteredRecipes"
+              :key="r.id"
+              :class="['product-btn', { 'in-cart': isInChargeCart(r) }]"
+              @click="addToChargeCart(r)"
+            >
+              <span class="product-name">{{ r.name }}</span>
+              <span class="product-price">{{ formatCOP(r.price) }}</span>
+              <span v-if="isInChargeCart(r)" class="in-cart-badge">{{ getChargeQty(r) }}</span>
+            </button>
+            <div v-if="chargeFilteredRecipes.length === 0" class="pos-empty">
+              Sin productos disponibles
+            </div>
+          </div>
+
+          <!-- Carrito -->
+          <div class="pos-cart" v-if="chargeCart.length > 0">
+            <p class="section-mini-title mb-2">Pedido</p>
+            <div class="cart-items">
+              <div class="cart-item" v-for="item in chargeCart" :key="item.recipeId">
+                <div class="item-info">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span class="item-unit-price">{{ formatCOP(item.price) }} c/u</span>
+                </div>
+                <div class="item-controls">
+                  <button class="qty-btn" @click="decreaseChargeQty(item)">−</button>
+                  <span class="qty-value">{{ item.qty }}</span>
+                  <button class="qty-btn" @click="item.qty++">+</button>
+                  <span class="item-total">{{ formatCOP(item.qty * item.price) }}</span>
+                  <button class="remove-btn" @click="removeFromChargeCart(item)">×</button>
+                </div>
+              </div>
+            </div>
+            <div class="cart-total-row">
+              <span class="fw-700">Total fiado</span>
+              <span class="cart-total-value">{{ formatCOP(chargeTotal) }}</span>
+            </div>
+          </div>
+          <div v-else class="pos-cart-empty">
+            <p class="text-muted" style="text-align:center;padding:12px 0">Selecciona productos del menú</p>
+          </div>
+
+          <!-- Nota libre opcional -->
+          <div class="form-group mt-2">
+            <label class="form-label">Nota adicional (opcional)</label>
+            <input v-model="chargeNote" type="text" class="form-control" placeholder="Ej: Mesa 3, para llevar..." />
+          </div>
+          <p v-if="chargeSubmitted && chargeCart.length === 0" class="error-hint">Agrega al menos un producto</p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showChargeModal = false">Cancelar</button>
-          <button class="btn btn-danger" @click="handleCharge" :disabled="saving">
+          <button class="btn btn-danger" @click="handleCharge" :disabled="saving || chargeCart.length === 0">
             <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
-            {{ saving ? 'Guardando...' : 'Registrar fiado' }}
+            {{ saving ? 'Guardando...' : `Registrar fiado · ${formatCOP(chargeTotal)}` }}
           </button>
         </div>
       </div>
@@ -279,11 +330,13 @@
 <script setup>
 import { ref, computed, onMounted, inject } from 'vue'
 import { useDebtorsStore } from '../stores/debtors.js'
+import { useInventoryStore } from '../stores/inventory.js'
 import PageLayout from '../components/PageLayout.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { UserPlus, Wallet, X, Plus, Minus } from 'lucide-vue-next'
 
 const debtorsStore = useDebtorsStore()
+const inventoryStore = useInventoryStore()
 const toast = inject('toast')
 
 // ── Filtros ──────────────────────────────────────────────────────
@@ -315,8 +368,44 @@ const chargeSubmitted  = ref(false)
 const paymentSubmitted = ref(false)
 
 const clientForm  = ref({ name: '', phone: '', notes: '' })
-const chargeForm  = ref({ description: '', amount: '' })
 const paymentForm = ref({ amount: '', description: '' })
+
+// ── Mini-POS del fiado ────────────────────────────────────────────
+const chargeCart   = ref([])   // [{ recipeId, name, price, qty }]
+const chargeSearch = ref('')
+const chargeCat    = ref('todas')
+const chargeNote   = ref('')
+
+const chargeCategories = computed(() => {
+  const cats = [...new Set(inventoryStore.recipes.map(r => r.category).filter(Boolean))]
+  return ['todas', ...cats]
+})
+const chargeFilteredRecipes = computed(() => {
+  let list = inventoryStore.recipes.filter(r => r.available)
+  if (chargeCat.value !== 'todas') list = list.filter(r => r.category === chargeCat.value)
+  if (chargeSearch.value.trim()) {
+    const q = chargeSearch.value.trim().toLowerCase()
+    list = list.filter(r => r.name.toLowerCase().includes(q))
+  }
+  return list
+})
+const chargeTotal = computed(() =>
+  chargeCart.value.reduce((s, i) => s + i.qty * i.price, 0)
+)
+function isInChargeCart(r) { return chargeCart.value.some(i => i.recipeId === r.id) }
+function getChargeQty(r)   { return chargeCart.value.find(i => i.recipeId === r.id)?.qty || 0 }
+function addToChargeCart(r) {
+  const existing = chargeCart.value.find(i => i.recipeId === r.id)
+  if (existing) existing.qty++
+  else chargeCart.value.push({ recipeId: r.id, name: r.name, price: r.price, qty: 1 })
+}
+function decreaseChargeQty(item) {
+  if (item.qty > 1) item.qty--
+  else removeFromChargeCart(item)
+}
+function removeFromChargeCart(item) {
+  chargeCart.value = chargeCart.value.filter(i => i.recipeId !== item.recipeId)
+}
 
 const remaining = computed(() =>
   Math.max(0, (activeDebtor.value?.balance || 0) - (paymentForm.value.amount || 0))
@@ -354,7 +443,10 @@ function openEdit(d) {
 
 function openCharge(d) {
   activeDebtor.value = d
-  chargeForm.value = { description: '', amount: '' }
+  chargeCart.value = []
+  chargeSearch.value = ''
+  chargeCat.value = 'todas'
+  chargeNote.value = ''
   chargeSubmitted.value = false
   showChargeModal.value = true
 }
@@ -395,12 +487,16 @@ async function saveClient() {
 
 async function handleCharge() {
   chargeSubmitted.value = true
-  if (!chargeForm.value.description.trim() || !chargeForm.value.amount) return
+  if (chargeCart.value.length === 0) return
   saving.value = true
   try {
-    await debtorsStore.addCharge(activeDebtor.value.id, chargeForm.value.amount, chargeForm.value.description)
+    // Construir descripción automática desde los ítems del carrito
+    const desc = chargeCart.value
+      .map(i => `${i.qty}x ${i.name}`)
+      .join(', ') + (chargeNote.value ? ` — ${chargeNote.value}` : '')
+    await debtorsStore.addCharge(activeDebtor.value.id, chargeTotal.value, desc)
     showChargeModal.value = false
-    toast(`Fiado de ${formatCOP(chargeForm.value.amount)} registrado`, 'success')
+    toast(`Fiado de ${formatCOP(chargeTotal.value)} registrado`, 'success')
   } catch (err) {
     toast(err.response?.data?.error || 'Error al registrar', 'error')
   } finally {
@@ -434,7 +530,10 @@ async function doDelete() {
   }
 }
 
-onMounted(() => debtorsStore.fetchDebtors())
+onMounted(() => {
+  debtorsStore.fetchDebtors()
+  inventoryStore.fetchRecipes()
+})
 </script>
 
 <style scoped>
@@ -586,10 +685,121 @@ onMounted(() => debtorsStore.fetchDebtors())
 .empty-icon { color: var(--text-light); margin-bottom: 12px; }
 .input-error { border-color: var(--danger) !important; }
 
+/* ── Mini-POS modal ── */
+.modal-pos { max-width: 580px; }
+.pos-body { display: flex; flex-direction: column; gap: 10px; }
+.pos-search-row { display: flex; gap: 8px; }
+
+.cat-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cat-btn {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.cat-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a0a00;
+  font-weight: 700;
+}
+.pos-products-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.product-btn {
+  position: relative;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.product-btn:hover { border-color: var(--accent); background: rgba(245,158,11,0.05); }
+.product-btn.in-cart { border-color: var(--accent); background: rgba(245,158,11,0.1); }
+.product-name { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.product-price { font-size: 11.5px; color: var(--text-light); }
+.in-cart-badge {
+  position: absolute;
+  top: 5px; right: 5px;
+  background: var(--accent);
+  color: #1a0a00;
+  font-size: 10px;
+  font-weight: 800;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.pos-empty { grid-column: 1/-1; text-align: center; color: var(--text-light); font-size: 13px; padding: 20px 0; }
+
+.pos-cart { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+.pos-cart-empty { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.cart-items { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.cart-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.item-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.item-name { font-size: 13px; font-weight: 600; }
+.item-unit-price { font-size: 11px; color: var(--text-light); }
+.item-controls { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.qty-btn {
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text);
+}
+.qty-btn:hover { background: var(--accent); border-color: var(--accent); color: #1a0a00; }
+.qty-value { font-size: 13px; font-weight: 700; min-width: 20px; text-align: center; }
+.item-total { font-size: 13px; font-weight: 700; min-width: 56px; text-align: right; }
+.remove-btn {
+  width: 20px; height: 20px;
+  border: none; background: none;
+  color: var(--text-light);
+  cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+}
+.remove-btn:hover { background: #fef2f2; color: var(--danger); }
+.cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--border);
+  margin-top: 4px;
+}
+.cart-total-value { font-size: 18px; font-weight: 900; color: var(--danger); letter-spacing: -0.02em; }
+
+.mt-2 { margin-top: 8px; }
+.mb-2 { margin-bottom: 8px; }
+.error-hint { font-size: 12.5px; color: var(--danger); margin-top: 4px; }
+
 @media (max-width: 768px) {
   .summary-cards { grid-template-columns: 1fr 1fr; }
+  .pos-products-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 480px) {
   .summary-cards { grid-template-columns: 1fr; }
+  .pos-products-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
