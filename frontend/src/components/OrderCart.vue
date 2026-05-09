@@ -475,7 +475,7 @@ async function handleSaleConfirmed() {
 .product-btn:hover { border-color: var(--accent); background: var(--surface-2); }
 .product-btn:active { transform: scale(0.97); }
 .product-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.product-btn.in-cart { border-color: var(--success); background: #f0fff4; }
+.product-btn.in-cart { border-color: var(--success); background: var(--surface-2); color: var(--text); }
 
 .product-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
 .product-price { font-size: 13px; font-weight: 800; color: var(--success); margin-top: 4px; }
