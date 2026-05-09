@@ -111,6 +111,7 @@ const suppliersRoutes = require('./src/routes/suppliers');
 const reportsRoutes = require('./src/routes/reports');
 const invoicesRoutes = require('./src/routes/invoices');
 const shiftsRoutes = require('./src/routes/shifts');
+const debtorsRoutes = require('./src/routes/debtors');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -131,6 +132,7 @@ app.use('/api/:businessId', bizAccess, suppliersRoutes);
 app.use('/api/:businessId', bizAccess, reportsRoutes);
 app.use('/api/:businessId', bizAccess, invoicesRoutes);
 app.use('/api/:businessId', bizAccess, shiftsRoutes);
+app.use('/api/:businessId', bizAccess, debtorsRoutes);
 
 // Business profile routes
 const { readJSON, writeJSON, getBusinessPath } = require('./src/services/fileStorage');

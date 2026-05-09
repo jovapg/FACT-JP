@@ -87,6 +87,12 @@ const routes = [
     meta: { requiresAuth: true, requiresBusiness: true }
   },
   {
+    path: '/debtors',
+    name: 'debtors',
+    component: () => import('../views/DebtorsView.vue'),
+    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin'] }
+  },
+  {
     path: '/admin/setup',
     name: 'business-setup',
     component: () => import('../views/admin/BusinessSetup.vue'),
