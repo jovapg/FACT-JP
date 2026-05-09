@@ -29,6 +29,9 @@
               </div>
             </div>
             <div class="shift-active-actions">
+              <button class="btn btn-outline btn-sm" @click="openGastoModal">
+                <Receipt :size="13" /> Registrar gasto
+              </button>
               <button class="btn btn-outline btn-sm" @click="openRetiroModal">
                 <ArrowDownToLine :size="13" /> Registrar retiro
               </button>
@@ -56,19 +59,40 @@
               <p class="metric-label">Retiros</p>
               <p class="metric-value danger">{{ formatCOP(shiftsStore.currentShift.totalWithdrawals) }}</p>
             </div>
+            <div class="shift-metric">
+              <p class="metric-label">Gastos caja</p>
+              <p class="metric-value danger">{{ formatCOP(shiftsStore.currentShift.totalExpenses) }}</p>
+            </div>
             <div class="shift-metric highlight-main">
               <p class="metric-label">Efectivo esperado</p>
               <p class="metric-value accent">
                 {{ formatCOP(
                   shiftsStore.currentShift.openingCash +
                   shiftsStore.currentShift.totalCashSales -
-                  shiftsStore.currentShift.totalWithdrawals
+                  shiftsStore.currentShift.totalWithdrawals -
+                  (shiftsStore.currentShift.totalExpenses || 0)
                 ) }}
               </p>
             </div>
             <div class="shift-metric">
               <p class="metric-label">Ventas totales</p>
               <p class="metric-value">{{ formatCOP(shiftsStore.currentShift.totalSales) }}</p>
+            </div>
+          </div>
+
+          <!-- Gastos del turno -->
+          <div v-if="shiftsStore.currentShift.expenses?.length" class="withdrawals-section">
+            <p class="withdrawals-title">Gastos de caja menor</p>
+            <div class="withdrawals-list">
+              <div v-for="e in shiftsStore.currentShift.expenses" :key="e.id" class="withdrawal-row">
+                <div class="withdrawal-info">
+                  <Receipt :size="13" />
+                  <span class="expense-badge">{{ e.category }}</span>
+                  <span>{{ e.description }}</span>
+                  <span class="withdrawal-time">{{ formatTime(e.date) }}</span>
+                </div>
+                <span class="withdrawal-amount">-{{ formatCOP(e.amount) }}</span>
+              </div>
             </div>
           </div>
 
@@ -170,6 +194,7 @@
                 <div class="detail-row"><span class="detail-label">Ventas efectivo</span><span class="success">{{ formatCOP(selectedShift.totalCashSales) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Otras ventas</span><span>{{ formatCOP(selectedShift.totalOtherSales) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Retiros</span><span class="danger">-{{ formatCOP(selectedShift.totalWithdrawals) }}</span></div>
+                <div class="detail-row" v-if="selectedShift.totalExpenses"><span class="detail-label">Gastos caja menor</span><span class="danger">-{{ formatCOP(selectedShift.totalExpenses) }}</span></div>
                 <div class="detail-divider"></div>
                 <div class="detail-row"><span class="detail-label">Efectivo esperado</span><span class="fw-700">{{ formatCOP(selectedShift.expectedCash) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Efectivo contado</span><span class="fw-700">{{ formatCOP(selectedShift.closingCash) }}</span></div>
@@ -178,6 +203,20 @@
                   <span :class="['fw-700', selectedShift.difference >= 0 ? 'success' : 'danger']">
                     {{ selectedShift.difference >= 0 ? '+' : '' }}{{ formatCOP(selectedShift.difference) }}
                   </span>
+                </div>
+              </div>
+
+              <div v-if="selectedShift.expenses?.length" class="mt-3">
+                <p class="withdrawals-title">Gastos de caja menor</p>
+                <div class="withdrawals-list">
+                  <div v-for="e in selectedShift.expenses" :key="e.id" class="withdrawal-row">
+                    <div class="withdrawal-info">
+                      <span class="expense-badge">{{ e.category }}</span>
+                      <span>{{ e.description }}</span>
+                      <span class="withdrawal-time">{{ formatTime(e.date) }}</span>
+                    </div>
+                    <span class="withdrawal-amount">-{{ formatCOP(e.amount) }}</span>
+                  </div>
                 </div>
               </div>
 
@@ -262,13 +301,18 @@
                   <span>- Retiros</span>
                   <span class="danger">{{ formatCOP(shiftsStore.currentShift?.totalWithdrawals) }}</span>
                 </div>
+                <div class="cierre-row" v-if="shiftsStore.currentShift?.totalExpenses">
+                  <span>- Gastos caja menor</span>
+                  <span class="danger">{{ formatCOP(shiftsStore.currentShift?.totalExpenses) }}</span>
+                </div>
                 <div class="cierre-row total">
                   <span>= Efectivo esperado</span>
                   <span class="accent fw-700">
                     {{ formatCOP(
                       (shiftsStore.currentShift?.openingCash || 0) +
                       (shiftsStore.currentShift?.totalCashSales || 0) -
-                      (shiftsStore.currentShift?.totalWithdrawals || 0)
+                      (shiftsStore.currentShift?.totalWithdrawals || 0) -
+                      (shiftsStore.currentShift?.totalExpenses || 0)
                     ) }}
                   </span>
                 </div>
@@ -297,6 +341,46 @@
               <button class="btn btn-danger" @click="handleCloseShift" :disabled="saving">
                 <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
                 {{ saving ? 'Cerrando...' : 'Cerrar turno' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Modal: Registrar gasto ────────────────────────────── -->
+        <div class="modal-overlay" v-if="showGastoModal" @click.self="showGastoModal = false">
+          <div class="modal" style="max-width:400px">
+            <div class="modal-header">
+              <h3 class="modal-title">Registrar gasto de caja</h3>
+              <button class="btn-close" @click="showGastoModal = false"><X :size="18" /></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">Categoría</label>
+                <select v-model="gastoForm.category" class="form-control">
+                  <option value="insumos">🧹 Insumos (hielo, servilletas, limpieza…)</option>
+                  <option value="servicios">⚡ Servicios (domicilio, transporte…)</option>
+                  <option value="mercado">🛒 Mercado / Compra rápida</option>
+                  <option value="otros">📌 Otros</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Descripción</label>
+                <input v-model="gastoForm.description" type="text" class="form-control"
+                  :class="{ 'input-error': gastoSubmitted && !gastoForm.description }"
+                  placeholder="Ej: Bolsa de hielo, Domicilio proveedor" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Monto</label>
+                <input v-model.number="gastoForm.amount" type="number" class="form-control"
+                  :class="{ 'input-error': gastoSubmitted && !gastoForm.amount }"
+                  min="1" step="1000" placeholder="Ej: 5000" />
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="showGastoModal = false">Cancelar</button>
+              <button class="btn btn-primary" @click="handleGasto" :disabled="saving">
+                <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
+                {{ saving ? 'Guardando...' : 'Registrar gasto' }}
               </button>
             </div>
           </div>
@@ -361,7 +445,7 @@ import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { useShiftsStore } from '../stores/shifts.js'
 import PageLayout from '../components/PageLayout.vue'
 import {
-  LogIn, LogOut, ArrowDownToLine, AlertTriangle, Clock, X
+  LogIn, LogOut, ArrowDownToLine, AlertTriangle, Clock, X, Receipt
 } from 'lucide-vue-next'
 
 const shiftsStore = useShiftsStore()
@@ -371,17 +455,20 @@ const toast = inject('toast')
 const showAbrirModal  = ref(false)
 const showCierreModal = ref(false)
 const showRetiroModal = ref(false)
+const showGastoModal  = ref(false)
 const selectedShift   = ref(null)
 const saving          = ref(false)
 
 const abrirSubmitted  = ref(false)
 const retiroSubmitted = ref(false)
+const gastoSubmitted  = ref(false)
 
 const openingCashInput = ref(null)
 
 const abrirForm  = ref({ openingCash: 0, notes: '' })
 const cierreForm = ref({ closingCash: '' })
 const retiroForm = ref({ amount: '', reason: '' })
+const gastoForm  = ref({ amount: '', category: 'insumos', description: '' })
 
 // ── Computeds ────────────────────────────────────────────────────
 const closedShifts = computed(() =>
@@ -392,7 +479,7 @@ const closedShifts = computed(() =>
 const calcDiff = computed(() => {
   const s = shiftsStore.currentShift
   if (!s || cierreForm.value.closingCash === '') return 0
-  const expected = (s.openingCash || 0) + (s.totalCashSales || 0) - (s.totalWithdrawals || 0)
+  const expected = (s.openingCash || 0) + (s.totalCashSales || 0) - (s.totalWithdrawals || 0) - (s.totalExpenses || 0)
   return Number(cierreForm.value.closingCash) - expected
 })
 
@@ -440,6 +527,12 @@ function openRetiroModal() {
   showRetiroModal.value = true
 }
 
+function openGastoModal() {
+  gastoForm.value = { amount: '', category: 'insumos', description: '' }
+  gastoSubmitted.value = false
+  showGastoModal.value = true
+}
+
 function selectShift(shift) {
   selectedShift.value = shift
 }
@@ -480,6 +573,26 @@ async function handleCloseShift() {
     }
   } catch (err) {
     toast(err.response?.data?.error || 'Error al cerrar turno', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleGasto() {
+  gastoSubmitted.value = true
+  if (!gastoForm.value.amount || !gastoForm.value.description) return
+  saving.value = true
+  try {
+    await shiftsStore.addExpense(
+      shiftsStore.currentShift.id,
+      gastoForm.value.amount,
+      gastoForm.value.category,
+      gastoForm.value.description
+    )
+    showGastoModal.value = false
+    toast(`Gasto de ${formatCOP(gastoForm.value.amount)} registrado`, 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al registrar gasto', 'error')
   } finally {
     saving.value = false
   }
@@ -582,6 +695,17 @@ onMounted(async () => {
 .withdrawal-by   { color: rgba(255,255,255,0.4); font-size: 11.5px; }
 .withdrawal-time { color: rgba(255,255,255,0.35); font-size: 11px; }
 .withdrawal-amount { font-weight: 700; color: #f87171; font-size: 13px; }
+.expense-badge {
+  background: rgba(251,191,36,0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.35);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
 
 /* Sin turno */
 .no-shift-banner {

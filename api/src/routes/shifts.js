@@ -97,6 +97,8 @@ router.post('/shifts/open', authenticate, async (req, res) => {
       salesCount: 0,             // Número de ventas
       withdrawals: [],           // Retiros registrados durante el turno
       totalWithdrawals: 0,       // Suma de todos los retiros
+      expenses: [],              // Gastos de caja menor durante el turno
+      totalExpenses: 0,          // Suma de todos los gastos
       notes: req.body.notes || '',
       status: 'open'
     };
@@ -129,8 +131,8 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
     const closingCash = Number(req.body.closingCash) || 0;
     const shift = shifts[idx];
 
-    // Cálculo del cierre
-    const expectedCash = shift.openingCash + shift.totalCashSales - shift.totalWithdrawals;
+    // Cálculo del cierre: gastos también reducen el efectivo esperado
+    const expectedCash = shift.openingCash + shift.totalCashSales - shift.totalWithdrawals - (shift.totalExpenses || 0);
     const difference = closingCash - expectedCash;
 
     shifts[idx] = {
@@ -179,6 +181,43 @@ router.post('/shifts/:id/withdrawal', authenticate, async (req, res) => {
 
     shifts[idx].withdrawals = [...(shifts[idx].withdrawals || []), withdrawal];
     shifts[idx].totalWithdrawals = (shifts[idx].totalWithdrawals || 0) + amount;
+
+    await writeJSON(shiftsPath(req.params.businessId), shifts);
+    res.json(shifts[idx]);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /shifts/:id/expense — Registra un gasto de caja menor durante el turno.
+ *
+ * Body: { amount: number, category: string, description: string }
+ * Categorías: insumos | servicios | domicilio | otros
+ *
+ * El gasto reduce el efectivo esperado al cierre.
+ */
+router.post('/shifts/:id/expense', authenticate, async (req, res) => {
+  try {
+    const shifts = await readJSON(shiftsPath(req.params.businessId)) || [];
+    const idx = shifts.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Turno no encontrado' });
+    if (shifts[idx].status !== 'open') return res.status(400).json({ error: 'El turno ya está cerrado' });
+
+    const amount = Number(req.body.amount) || 0;
+    if (amount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
+
+    const expense = {
+      id: uuidv4(),
+      amount,
+      category: req.body.category || 'otros',
+      description: req.body.description || '',
+      date: new Date().toISOString(),
+      registeredBy: req.user.name || req.user.username
+    };
+
+    shifts[idx].expenses = [...(shifts[idx].expenses || []), expense];
+    shifts[idx].totalExpenses = (shifts[idx].totalExpenses || 0) + amount;
 
     await writeJSON(shiftsPath(req.params.businessId), shifts);
     res.json(shifts[idx]);

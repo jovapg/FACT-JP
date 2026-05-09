@@ -82,13 +82,19 @@ export const useShiftsStore = defineStore('shifts', () => {
    */
   async function addWithdrawal(id, amount, reason) {
     const res = await api.post(`/api/${bizId()}/shifts/${id}/withdrawal`, { amount, reason })
-    currentShift.value = res.data // Actualizar turno activo con nuevo retiro
+    currentShift.value = res.data
+    return res.data
+  }
+
+  async function addExpense(id, amount, category, description) {
+    const res = await api.post(`/api/${bizId()}/shifts/${id}/expense`, { amount, category, description })
+    currentShift.value = res.data
     return res.data
   }
 
   return {
     currentShift, shifts, loading,
     fetchCurrentShift, fetchShifts,
-    openShift, closeShift, addWithdrawal
+    openShift, closeShift, addWithdrawal, addExpense
   }
 })

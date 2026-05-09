@@ -182,9 +182,13 @@ router.get('/reports/rentabilidad', authenticate, async (req, res) => {
     const sales = filterByRange(allSales, 'createdAt');
     const purchases = filterByRange(allPurchases, 'date');
 
-    // Retiros de caja — aplanar todos los retiros de todos los turnos y filtrar por fecha
+    // Retiros de caja
     const allWithdrawals = allShifts.flatMap(s => s.withdrawals || []);
     const retirosTotal = filterByRange(allWithdrawals, 'date').reduce((s, w) => s + (w.amount || 0), 0);
+
+    // Gastos de caja menor
+    const allExpenses = allShifts.flatMap(s => s.expenses || []);
+    const gastosTotal = filterByRange(allExpenses, 'date').reduce((s, e) => s + (e.amount || 0), 0);
 
     // Ingresos
     const ventasBruto = sales.reduce((s, x) => s + (x.total || 0), 0);
@@ -227,12 +231,12 @@ router.get('/reports/rentabilidad', authenticate, async (req, res) => {
       }
     }
 
-    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal;
+    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal + gastosTotal;
     const gananciaNeta = ventasNetas - totalEgresos;
 
     res.json({
       ingresos: { ventasBruto, descuentos, ventasNetas },
-      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, total: totalEgresos },
+      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, gastos: gastosTotal, total: totalEgresos },
       gananciaNeta,
       salesCount: sales.length,
       purchasesCount: purchases.length
