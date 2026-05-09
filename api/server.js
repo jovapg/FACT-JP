@@ -54,9 +54,9 @@ app.set('trust proxy', 1);
 // Rate limiting en login: máximo 10 intentos por IP cada 15 minutos
 // Previene ataques de fuerza bruta a contraseñas
 const loginLimiter = rateLimit({
-  windowMs: 2 * 60 * 1000, // 2 minutos
-  max: 20,
-  message: { error: 'Demasiados intentos de login. Intenta de nuevo en 2 minutos.' },
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 10,
+  message: { error: 'Demasiados intentos fallidos. Espera 5 minutos e intenta de nuevo.' },
   standardHeaders: true,
   legacyHeaders: false
 });
