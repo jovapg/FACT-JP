@@ -50,9 +50,9 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 // Rate limiting en login: máximo 10 intentos por IP cada 15 minutos
 // Previene ataques de fuerza bruta a contraseñas
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10,
-  message: { error: 'Demasiados intentos de login. Intenta de nuevo en 15 minutos.' },
+  windowMs: 2 * 60 * 1000, // 2 minutos
+  max: 20,
+  message: { error: 'Demasiados intentos de login. Intenta de nuevo en 2 minutos.' },
   standardHeaders: true,
   legacyHeaders: false
 });
