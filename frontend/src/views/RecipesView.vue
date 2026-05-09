@@ -516,7 +516,8 @@ onMounted(async () => {
 }
 
 .recipe-card {
-  background: white;
+  background: var(--surface);
+  color: var(--text);
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
