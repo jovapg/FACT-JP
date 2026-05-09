@@ -61,6 +61,7 @@ router.post('/inventory', authenticate, async (req, res) => {
       category: req.body.category || 'general',
       minStock: Number(req.body.minStock) || 0,
       supplierId: req.body.supplierId || null,  // Vinculación proveedor-producto para filtros en compras
+      salePrice: Number(req.body.salePrice) || 0,
       createdAt: new Date().toISOString()
     };
     items.push(newItem);

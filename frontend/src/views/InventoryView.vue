@@ -47,6 +47,7 @@
                     <th>Mínimo</th>
                     <th>Unidad</th>
                     <th>Costo</th>
+                    <th>Precio venta</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -62,6 +63,7 @@
                     <td>{{ item.minStock }}</td>
                     <td>{{ item.unit }}</td>
                     <td>{{ formatCOP(item.cost) }}</td>
+                    <td>{{ item.salePrice ? formatCOP(item.salePrice) : '—' }}</td>
                     <td>
                       <div class="action-btns">
                         <button class="btn btn-sm btn-outline" @click="openAdjust(item)" title="Ajustar stock">±</button>
@@ -71,7 +73,7 @@
                     </td>
                   </tr>
                   <tr v-if="filteredItems.length === 0">
-                    <td colspan="7" class="empty-row">No hay productos</td>
+                    <td colspan="8" class="empty-row">No hay productos</td>
                   </tr>
                 </tbody>
               </table>
@@ -126,9 +128,9 @@
                   <label class="form-label">Precio de costo (COP) *</label>
                   <input v-model.number="form.cost" type="number" :class="['form-control', { 'input-error': submitted && !(form.cost > 0) }]" min="0" />
                 </div>
-                <div class="form-group" v-if="isAutoMenuCategory">
-                  <label class="form-label" style="color: var(--accent)">
-                    🍺 Precio de venta (COP)
+                <div class="form-group">
+                  <label class="form-label" :style="isAutoMenuCategory ? 'color:var(--accent)' : ''">
+                    {{ isAutoMenuCategory ? '🍺 ' : '' }}Precio de venta (COP)
                   </label>
                   <input v-model.number="form.salePrice" type="number" class="form-control" min="0" placeholder="Ej: 8000" />
                 </div>
@@ -410,7 +412,7 @@ async function saveItem() {
   if (!(form.cost > 0)) { toast('El precio de costo debe ser mayor a 0', 'warning'); return }
   saving.value = true
   try {
-    const { salePrice, ...itemData } = form   // salePrice no va al inventario, solo a la receta
+    const itemData = { ...form }
     if (editItem.value) {
       await inventoryStore.updateItem(editItem.value.id, itemData)
       // Si la categoría tiene autoRecipe, preguntar si también actualizar la receta del menú
