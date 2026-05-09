@@ -11,10 +11,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// Falla en arranque si no hay JWT_SECRET en producción (evita clave débil por defecto)
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.error('[ERROR FATAL] JWT_SECRET no está configurado. El servidor no puede arrancar en producción sin él.');
-  process.exit(1);
+// Advertencia si no hay JWT_SECRET configurado
+if (!process.env.JWT_SECRET) {
+  console.warn('[ADVERTENCIA] JWT_SECRET no está configurado. Usando clave por defecto — cámbiala en producción.');
 }
 
 // Ensure data directory exists
