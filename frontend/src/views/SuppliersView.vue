@@ -63,7 +63,21 @@
               <span v-if="s.phone">📞 {{ s.phone }}</span>
               <span v-if="s.fechaIngreso">📅 Ingreso: {{ formatDate(s.fechaIngreso) }}</span>
             </div>
-            <!-- Info proveedor/arriendo/crédito -->
+            <!-- Info arriendo -->
+            <div class="supplier-info" v-else-if="s.tipo === 'arriendo'">
+              <span v-if="s.montoMensual">🏠 {{ formatCOP(s.montoMensual) }} / mes</span>
+              <span v-if="s.contact">👤 {{ s.contact }}</span>
+              <span v-if="s.phone">📞 {{ s.phone }}</span>
+              <span v-if="s.address">📍 {{ s.address }}</span>
+            </div>
+            <!-- Info crédito -->
+            <div class="supplier-info" v-else-if="s.tipo === 'credito'">
+              <span v-if="s.montoTotal">💰 Total: {{ formatCOP(s.montoTotal) }}</span>
+              <span v-if="s.cuotaMensual">📅 Cuota: {{ formatCOP(s.cuotaMensual) }}/mes</span>
+              <span v-if="s.contact">🏦 {{ s.contact }}</span>
+              <span v-if="s.phone">📞 {{ s.phone }}</span>
+            </div>
+            <!-- Info proveedor -->
             <div class="supplier-info" v-else>
               <span v-if="s.phone">📞 {{ s.phone }}</span>
               <span v-if="s.email">✉️ {{ s.email }}</span>
@@ -75,7 +89,15 @@
               <button v-if="s.tipo === 'empleado'" class="btn btn-sm btn-success" @click="openNominaPago(s)">
                 💵 Pagar nómina
               </button>
-              <!-- Otros: pagar deuda solo si existe -->
+              <!-- Arriendo: pagar arriendo siempre visible -->
+              <button v-else-if="s.tipo === 'arriendo'" class="btn btn-sm btn-success" @click="openPayment(s, 'arriendo')">
+                🏠 Pagar arriendo
+              </button>
+              <!-- Crédito: registrar cuota siempre visible -->
+              <button v-else-if="s.tipo === 'credito'" class="btn btn-sm btn-success" @click="openPayment(s, 'credito')">
+                💳 Registrar cuota
+              </button>
+              <!-- Proveedor: pagar deuda solo si existe -->
               <button v-else-if="s.totalDebt > 0" class="btn btn-sm btn-success" @click="openPayment(s)">
                 💳 Registrar pago
               </button>
@@ -158,7 +180,48 @@
                   </div>
                 </template>
 
-                <!-- Campos PROVEEDOR / ARRIENDO / CRÉDITO -->
+                <!-- Campos ARRIENDO -->
+                <template v-else-if="form.tipo === 'arriendo'">
+                  <div class="form-group">
+                    <label class="form-label">Monto mensual (COP)</label>
+                    <input v-model.number="form.montoMensual" type="number" min="0" class="form-control" placeholder="Ej: 1500000" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Teléfono propietario</label>
+                    <input v-model="form.phone" class="form-control" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Contacto / Propietario</label>
+                    <input v-model="form.contact" class="form-control" />
+                  </div>
+                  <div class="form-group" style="grid-column:1/-1">
+                    <label class="form-label">Dirección del local</label>
+                    <input v-model="form.address" class="form-control" />
+                  </div>
+                </template>
+
+                <!-- Campos CRÉDITO -->
+                <template v-else-if="form.tipo === 'credito'">
+                  <div class="form-group">
+                    <label class="form-label">Monto total de la deuda (COP)</label>
+                    <input v-model.number="form.montoTotal" type="number" min="0" class="form-control" placeholder="Ej: 5000000" :disabled="!!editSupplier" />
+                    <span class="form-hint" v-if="editSupplier">El monto total no se puede editar. La deuda actual es {{ formatCOP(editSupplier.totalDebt) }}.</span>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Cuota mensual (COP)</label>
+                    <input v-model.number="form.cuotaMensual" type="number" min="0" class="form-control" placeholder="Ej: 300000" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Entidad / Acreedor</label>
+                    <input v-model="form.contact" class="form-control" placeholder="Ej: Bancolombia, Persona X" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Teléfono</label>
+                    <input v-model="form.phone" class="form-control" />
+                  </div>
+                </template>
+
+                <!-- Campos PROVEEDOR (default) -->
                 <template v-else>
                   <div class="form-group">
                     <label class="form-label">NIT</label>
@@ -262,11 +325,25 @@
         <div class="modal-overlay" v-if="paymentSupplier" @click.self="paymentSupplier = null">
           <div class="modal">
             <div class="modal-header">
-              <h3 class="modal-title">💳 Registrar pago — {{ paymentSupplier?.name }}</h3>
+              <h3 class="modal-title">
+                {{ paymentSupplier?.tipo === 'arriendo' ? '🏠 Pagar arriendo' :
+                   paymentSupplier?.tipo === 'credito'  ? '💳 Registrar cuota' : '💳 Registrar pago' }}
+                — {{ paymentSupplier?.name }}
+              </h3>
               <button class="btn-close" @click="paymentSupplier = null">×</button>
             </div>
             <div class="modal-body">
-              <p class="mb-2">Pendiente: <strong class="text-danger">{{ formatCOP(paymentSupplier?.totalDebt) }}</strong></p>
+              <!-- Info arriendo -->
+              <div class="payment-ref-box mb-2" v-if="paymentSupplier?.tipo === 'arriendo'">
+                <span>🏠 Monto mensual: <strong>{{ formatCOP(paymentSupplier?.montoMensual) }}</strong></span>
+              </div>
+              <!-- Info crédito -->
+              <div class="payment-ref-box mb-2" v-else-if="paymentSupplier?.tipo === 'credito'">
+                <span>💰 Deuda restante: <strong class="text-danger">{{ formatCOP(paymentSupplier?.totalDebt) }}</strong></span>
+                <span v-if="paymentSupplier?.cuotaMensual">📅 Cuota mensual: <strong>{{ formatCOP(paymentSupplier?.cuotaMensual) }}</strong></span>
+              </div>
+              <!-- Info proveedor con deuda -->
+              <p class="mb-2" v-else-if="paymentSupplier?.totalDebt > 0">Pendiente: <strong class="text-danger">{{ formatCOP(paymentSupplier?.totalDebt) }}</strong></p>
               <div class="form-group">
                 <label class="form-label">Monto</label>
                 <input v-model.number="paymentForm.amount" type="number" class="form-control" />
@@ -464,7 +541,8 @@ const activeTarifaDiaria = computed(() => tarifaDiariaOf(nominaPagoSupplier.valu
 const form = reactive({
   name: '', tipo: 'proveedor',
   nit: '', phone: '', contact: '', email: '', address: '',
-  cedula: '', cargo: '', salarioBase: 0, periodoPago: 'mensual', fechaIngreso: ''
+  cedula: '', cargo: '', salarioBase: 0, periodoPago: 'mensual', fechaIngreso: '',
+  montoMensual: 0, montoTotal: 0, cuotaMensual: 0
 })
 const paymentForm = reactive({ amount: 0, method: 'efectivo', notes: '' })
 const nominaPagoForm = reactive({ diasTrabajados: 0, amount: 0, period: '', method: 'efectivo', notes: '' })
@@ -484,7 +562,8 @@ function resetForm() {
   Object.assign(form, {
     name: '', tipo: 'proveedor',
     nit: '', phone: '', contact: '', email: '', address: '',
-    cedula: '', cargo: '', salarioBase: 0, periodoPago: 'mensual', fechaIngreso: ''
+    cedula: '', cargo: '', salarioBase: 0, periodoPago: 'mensual', fechaIngreso: '',
+    montoMensual: 0, montoTotal: 0, cuotaMensual: 0
   })
 }
 
@@ -502,7 +581,8 @@ function openEdit(s) {
     email: s.email || '', address: s.address || '',
     cedula: s.cedula || '', cargo: s.cargo || '',
     salarioBase: s.salarioBase || 0, periodoPago: s.periodoPago || 'mensual',
-    fechaIngreso: s.fechaIngreso || ''
+    fechaIngreso: s.fechaIngreso || '',
+    montoMensual: s.montoMensual || 0, montoTotal: s.montoTotal || 0, cuotaMensual: s.cuotaMensual || 0
   })
   showModal.value = true
 }
@@ -526,7 +606,10 @@ async function saveSupplier() {
       if (idx !== -1) suppliers.value[idx] = res.data
       toast(`${label} actualizado`, 'success')
     } else {
-      const res = await api.post(`/api/${bizId.value}/suppliers`, { ...form })
+      const payload = { ...form }
+      // Crédito: la deuda inicial = montoTotal
+      if (form.tipo === 'credito' && form.montoTotal > 0) payload.totalDebt = form.montoTotal
+      const res = await api.post(`/api/${bizId.value}/suppliers`, payload)
       suppliers.value.push(res.data)
       toast(`${label} creado`, 'success')
     }
@@ -584,7 +667,11 @@ async function saveNominaPago() {
 // ── Pago genérico (no empleados) ─────────────────────────────────────────────
 function openPayment(s) {
   paymentSupplier.value = s
-  Object.assign(paymentForm, { amount: s.totalDebt, method: 'efectivo', notes: '' })
+  // Pre-llenar con el monto correspondiente al tipo
+  const prefill = s.tipo === 'arriendo' ? (s.montoMensual || 0)
+                : s.tipo === 'credito'  ? (s.cuotaMensual || s.totalDebt || 0)
+                : (s.totalDebt || 0)
+  Object.assign(paymentForm, { amount: prefill, method: 'efectivo', notes: '' })
 }
 
 async function savePayment() {
@@ -665,6 +752,18 @@ onMounted(loadSuppliers)
 .report-biz-header strong { font-size: 16px; color: var(--text); }
 .report-total-row { background: var(--surface-2); font-weight: 700; }
 .currency { text-align: right; }
+
+.payment-ref-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 @media print {
   body > * { display: none !important; }
   #nomina-report-print { display: block !important; position: fixed; top: 0; left: 0; width: 100%; padding: 20px; }

@@ -58,15 +58,20 @@ router.post('/suppliers', authenticate, async (req, res) => {
       nit: req.body.nit || '',
       email: req.body.email || '',
       address: req.body.address || '',
-      // Campos específicos de empleado
+      // Campos empleado
       cedula: req.body.cedula || '',
       cargo: req.body.cargo || '',
       salarioBase: Number(req.body.salarioBase) || 0,
       periodoPago: req.body.periodoPago || 'mensual',
       fechaIngreso: req.body.fechaIngreso || '',
+      // Campos arriendo
+      montoMensual: Number(req.body.montoMensual) || 0,
+      // Campos crédito
+      montoTotal: Number(req.body.montoTotal) || 0,
+      cuotaMensual: Number(req.body.cuotaMensual) || 0,
       payments: [],
       nominaHistory: [],
-      totalDebt: 0,
+      totalDebt: Number(req.body.totalDebt) || 0,  // crédito inicia con montoTotal como deuda
       createdAt: new Date().toISOString()
     };
     suppliers.push(newSupplier);
