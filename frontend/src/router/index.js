@@ -149,4 +149,23 @@ router.beforeEach((to, from, next) => {
   next()
 })
 
+/**
+ * Cuando un lazy-import falla (chunk no encontrado — típico tras un deploy
+ * con PWA service worker sirviendo assets viejos), hacemos un hard reload
+ * hacia la ruta destino para que el navegador pida los archivos frescos.
+ * Esto evita que la transición de página quede colgada indefinidamente.
+ */
+router.onError((error, to) => {
+  const isChunkError = (
+    error?.message?.includes('Failed to fetch dynamically imported module') ||
+    error?.message?.includes('Importing a module script failed') ||
+    error?.message?.includes('Unable to preload CSS') ||
+    error?.name === 'ChunkLoadError'
+  )
+  if (isChunkError) {
+    console.warn('[router] Chunk load error — reloading to', to.fullPath)
+    window.location.href = to.fullPath
+  }
+})
+
 export default router

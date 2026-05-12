@@ -451,7 +451,7 @@
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="showNominaReport = false">Cerrar</button>
-              <button class="btn btn-primary" @click="window.print()">🖨️ Imprimir</button>
+              <button class="btn btn-primary" @click="printNominaReport">🖨️ Imprimir</button>
             </div>
           </div>
         </div>
@@ -690,6 +690,8 @@ async function savePayment() {
 }
 
 function openPayments(s) { paymentsSupplier.value = s }
+
+function printNominaReport() { window.print() }
 
 onMounted(loadSuppliers)
 </script>
