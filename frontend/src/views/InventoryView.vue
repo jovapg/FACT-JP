@@ -272,7 +272,7 @@
               <button class="btn-close" @click="showSyncModal = false">×</button>
             </div>
             <div class="modal-body">
-              <p class="text-muted mb-2">Estas bebidas/licores no están en el menú aún. Ingresa el precio de venta de cada una:</p>
+              <p class="text-muted mb-2">Estos productos tienen precio de venta pero aún no están en el menú. Confirma o ajusta el precio antes de agregar:</p>
               <div v-for="item in syncItems" :key="item.id" class="sync-row">
                 <div class="sync-item-info">
                   <strong>{{ item.name }}</strong>
@@ -280,7 +280,7 @@
                 </div>
                 <div class="sync-price">
                   <label class="form-label">Precio venta</label>
-                  <input v-model.number="item.salePrice" type="number" class="form-control" min="0" placeholder="Ej: 8000" />
+                  <input v-model.number="item.salePrice" type="number" class="form-control" min="0" />
                 </div>
               </div>
             </div>
@@ -634,7 +634,7 @@ async function confirmUpdateRecipe() {
  * para que el admin solo ajuste los que quiera cambiar.
  */
 function openSyncModal() {
-  syncItems.value = pendingSync.value.map(i => ({ ...i, salePrice: i.cost || 0 }))
+  syncItems.value = pendingSync.value.map(i => ({ ...i, salePrice: i.salePrice || i.cost || 0 }))
   showSyncModal.value = true
 }
 
