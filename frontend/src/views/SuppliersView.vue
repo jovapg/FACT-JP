@@ -428,7 +428,13 @@ function openEdit(s) {
 function closeModal() { showModal.value = false }
 
 async function saveSupplier() {
-  if (!form.name) return
+  if (!form.name.trim()) return
+  // Validar duplicado por nombre (solo al crear)
+  if (!editSupplier.value) {
+    const nombre = form.name.trim().toLowerCase()
+    const existe = suppliers.value.some(s => s.name.trim().toLowerCase() === nombre)
+    if (existe) { toast(`Ya existe un registro con el nombre "${form.name.trim()}"`, 'warning'); return }
+  }
   saving.value = true
   try {
     const label = form.tipo === 'empleado' ? 'Empleado' : 'Proveedor'

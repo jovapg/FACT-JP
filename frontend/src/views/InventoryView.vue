@@ -425,6 +425,12 @@ async function saveItem() {
   if (!form.category.trim()) { toast('La categoría es obligatoria', 'warning'); return }
   if (!form.unit.trim()) { toast('La unidad es obligatoria', 'warning'); return }
   if (!(form.cost > 0)) { toast('El precio de costo debe ser mayor a 0', 'warning'); return }
+  // Validar duplicado por nombre (solo al crear)
+  if (!editItem.value) {
+    const nombre = form.name.trim().toLowerCase()
+    const existe = inventoryStore.items.some(i => i.name.trim().toLowerCase() === nombre)
+    if (existe) { toast(`Ya existe un producto llamado "${form.name.trim()}"`, 'warning'); return }
+  }
   saving.value = true
   try {
     const itemData = { ...form }
