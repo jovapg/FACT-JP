@@ -9,7 +9,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'facJp - Gestión Bar/Restaurante',
+        name: 'facJp · Sistema de Facturación',
         short_name: 'facJp',
         theme_color: '#1a1a2e',
         background_color: '#ffffff',
