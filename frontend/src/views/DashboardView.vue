@@ -63,6 +63,42 @@
           </template>
         </div>
 
+        <!-- Nómina del mes -->
+        <div class="card nomina-card mb-4" v-if="!loadingData && suppliers.some(s => s.tipo === 'empleado')">
+          <div class="nomina-header">
+            <div class="nomina-title-wrap">
+              <div class="nomina-icon-wrap">
+                <Users :size="18" color="#7c3aed" />
+              </div>
+              <div>
+                <h3 class="section-title">Nómina — {{ new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' }) }}</h3>
+                <p class="section-sub">Total pagado a empleados este mes</p>
+              </div>
+            </div>
+            <div class="nomina-total-badge">
+              <span class="nomina-total-label">Total</span>
+              <span class="nomina-total-val">{{ formatCOP(totalNominaMes) }}</span>
+            </div>
+          </div>
+
+          <div class="nomina-rows" v-if="nominaMes.length">
+            <div v-for="emp in nominaMes" :key="emp.id" class="nomina-row">
+              <div class="nomina-emp-info">
+                <span class="nomina-emp-name">{{ emp.name }}</span>
+                <span class="nomina-emp-cargo" v-if="emp.cargo">{{ emp.cargo }}</span>
+              </div>
+              <div class="nomina-bar-wrap">
+                <div class="nomina-bar">
+                  <div class="nomina-bar-fill" :style="{ width: (emp.total / maxNominaEmp * 100) + '%' }"></div>
+                </div>
+                <span class="nomina-emp-total">{{ formatCOP(emp.total) }}</span>
+              </div>
+              <span class="nomina-emp-count">{{ emp.pagos }} pago{{ emp.pagos !== 1 ? 's' : '' }}</span>
+            </div>
+          </div>
+          <div v-else class="nomina-empty">Sin pagos de nómina registrados este mes</div>
+        </div>
+
         <!-- Gráfica de ventas de los últimos 7 días -->
         <div class="card mb-4">
           <div class="chart-header">
@@ -207,12 +243,13 @@ import { useAuthStore } from '../stores/auth.js'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
+import api from '../services/api.js'
 import PageLayout from '../components/PageLayout.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import {
   RefreshCw, DollarSign, ShoppingBag, AlertTriangle, TrendingUp,
   BarChart3, UtensilsCrossed, Package, Receipt, Banknote, CreditCard, Smartphone,
-  Table as TableIcon
+  Table as TableIcon, Users
 } from 'lucide-vue-next'
 
 // Registrar módulos de Chart.js
@@ -228,11 +265,28 @@ const todaySales = ref({ total: 0, count: 0 })
 const recentSales = ref([])
 const weekSales = ref([])     // Array de { date, total } para la gráfica
 const paymentMethods = ref([]) // Array de { method, count, total } para hoy
+const suppliers = ref([])
 
 const lowStock = computed(() => inventoryStore.lowStockItems)
 const occupiedTables = computed(() => tablesStore.occupiedCount)
 const totalTables = computed(() => tablesStore.tables.length)
 const weekTotal = computed(() => weekSales.value.reduce((s, d) => s + d.total, 0))
+
+// ── Nómina del mes ───────────────────────────────────────────────
+const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+
+const nominaMes = computed(() => {
+  const empleados = suppliers.value.filter(s => s.tipo === 'empleado')
+  return empleados.map(emp => {
+    const pagos = (emp.payments || []).filter(p => p.date?.slice(0, 7) === currentMonth)
+    const total = pagos.reduce((s, p) => s + (p.amount || 0), 0)
+    return { id: emp.id, name: emp.name, cargo: emp.cargo || '', total, pagos: pagos.length }
+  }).filter(e => e.total > 0 || e.pagos === 0)
+    .sort((a, b) => b.total - a.total)
+})
+
+const totalNominaMes = computed(() => nominaMes.value.reduce((s, e) => s + e.total, 0))
+const maxNominaEmp = computed(() => Math.max(...nominaMes.value.map(e => e.total), 1))
 
 // ── Gráfica de ventas 7 días ─────────────────────────────────────
 const isDark = computed(() => document.documentElement.classList.contains('dark'))
@@ -322,7 +376,13 @@ function paymentIcon(method) {
 async function loadData() {
   loadingData.value = true
   try {
-    await Promise.all([inventoryStore.fetchInventory(), tablesStore.fetchTables()])
+    const bizId = auth.currentBusiness?.id
+    const [, , suppRes] = await Promise.all([
+      inventoryStore.fetchInventory(),
+      tablesStore.fetchTables(),
+      api.get(`/api/${bizId}/suppliers`)
+    ])
+    suppliers.value = suppRes.data || []
 
     // Reporte del día: ventas de hoy y métricas de pago
     const dayReport = await salesStore.fetchReports({ period: 'day' })
@@ -479,6 +539,55 @@ onMounted(loadData)
   padding: 2px 7px;
   border-radius: 5px;
   border: 1px solid var(--border);
+}
+
+/* Nómina del mes */
+.nomina-card { padding: 20px; }
+.nomina-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.nomina-title-wrap { display: flex; align-items: center; gap: 12px; }
+.nomina-icon-wrap {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: #ede9fe; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.nomina-total-badge {
+  display: flex; flex-direction: column; align-items: flex-end;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 16px;
+}
+.nomina-total-label { font-size: 11px; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: .05em; }
+.nomina-total-val { font-size: 20px; font-weight: 800; color: #7c3aed; letter-spacing: -0.02em; }
+
+.nomina-rows { display: flex; flex-direction: column; gap: 10px; }
+.nomina-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.nomina-emp-info { display: flex; flex-direction: column; min-width: 0; }
+.nomina-emp-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nomina-emp-cargo { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.nomina-bar-wrap { display: flex; align-items: center; gap: 10px; }
+.nomina-bar { flex: 1; height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.nomina-bar-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 99px; transition: width .4s ease; }
+.nomina-emp-total { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.nomina-emp-count { font-size: 11.5px; color: var(--text-light); text-align: right; }
+.nomina-empty { text-align: center; padding: 16px; color: var(--text-light); font-size: 13px; }
+
+@media (max-width: 600px) {
+  .nomina-row { grid-template-columns: 1fr; gap: 6px; }
+  .nomina-emp-count { text-align: left; }
 }
 
 /* Spinner en botón refresh */
