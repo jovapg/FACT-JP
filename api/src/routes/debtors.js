@@ -136,17 +136,21 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
     const amount = Number(req.body.amount);
     if (!amount || amount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
 
+    // Capear el abono al saldo actual para que historial y saldo sean consistentes
+    const currentBalance = debtors[idx].balance || 0;
+    const actualAmount = Math.min(amount, currentBalance);
+
     const transaction = {
       id: uuidv4(),
       type: 'payment',
-      amount,
+      amount: actualAmount,
       description: req.body.description || 'Abono',
       date: new Date().toISOString(),
       registeredBy: req.user.name || req.user.username
     };
 
     debtors[idx].transactions = [...(debtors[idx].transactions || []), transaction];
-    debtors[idx].balance = Math.max(0, (debtors[idx].balance || 0) - amount);
+    debtors[idx].balance = Math.max(0, currentBalance - actualAmount);
 
     await writeJSON(debtorsPath(req.params.businessId), debtors);
     res.json(debtors[idx]);

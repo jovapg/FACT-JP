@@ -59,6 +59,12 @@ router.post('/invoices/:id/shortlink', authenticate, async (req, res) => {
       expiresAt: new Date(Date.now() + EXPIRE_DAYS * 864e5).toISOString()
     };
 
+    // Limpiar entradas vencidas para que el archivo no crezca indefinidamente
+    const now = new Date();
+    for (const k of Object.keys(links)) {
+      if (new Date(links[k].expiresAt) < now) delete links[k];
+    }
+
     await writeJSON(shortlinksFile(), links);
 
     const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;

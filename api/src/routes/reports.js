@@ -193,7 +193,7 @@ router.get('/reports/rentabilidad', authenticate, async (req, res) => {
     // Ingresos
     const ventasBruto = sales.reduce((s, x) => s + (x.total || 0), 0);
     const descuentos = sales.reduce((s, x) => s + (x.discount || 0), 0);
-    const ventasNetas = ventasBruto;
+    const ventasNetas = ventasBruto - descuentos;
 
     // Egresos - purchases
     const compras = purchases.reduce((s, x) => s + (x.total || 0), 0);
@@ -290,8 +290,14 @@ router.get('/reports/rentabilidad/excel', tokenFromQuery, authenticate, async (r
     const retirosDetail = filterByRange(allWithdrawals, 'date');
     const retirosTotal = retirosDetail.reduce((s, w) => s + (w.amount || 0), 0);
 
-    const ventasNetas = sales.reduce((s, x) => s + (x.total || 0), 0);
+    // Gastos de caja menor
+    const allExpenses = allShifts.flatMap(s => s.expenses || []);
+    const gastosDetail = filterByRange(allExpenses, 'date');
+    const gastosTotal = gastosDetail.reduce((s, e) => s + (e.amount || 0), 0);
+
+    const ventasBruto = sales.reduce((s, x) => s + (x.total || 0), 0);
     const descuentos = sales.reduce((s, x) => s + (x.discount || 0), 0);
+    const ventasNetas = ventasBruto - descuentos;
     const compras = purchases.reduce((s, x) => s + (x.total || 0), 0);
 
     let nominaTotal = 0, arriendo = 0, creditos = 0;
@@ -329,13 +335,13 @@ router.get('/reports/rentabilidad/excel', tokenFromQuery, authenticate, async (r
       }
     }
 
-    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal;
+    const totalEgresos = compras + nominaTotal + arriendo + creditos + retirosTotal + gastosTotal;
     const gananciaNeta = ventasNetas - totalEgresos;
 
     const data = {
-      ingresos: { ventasBruto: ventasNetas, descuentos, ventasNetas },
-      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, total: totalEgresos },
-      gananciaNeta, sales, purchases, nominaDetail, arriendoDetail, creditoDetail, retirosDetail
+      ingresos: { ventasBruto, descuentos, ventasNetas },
+      egresos: { compras, nomina: nominaTotal, arriendo, creditos, retiros: retirosTotal, gastos: gastosTotal, total: totalEgresos },
+      gananciaNeta, sales, purchases, nominaDetail, arriendoDetail, creditoDetail, retirosDetail, gastosDetail
     };
 
     await generateRentabilidadReport(data, business, from, to, period, res);

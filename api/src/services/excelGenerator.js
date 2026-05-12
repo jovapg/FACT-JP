@@ -241,8 +241,8 @@ async function generateRentabilidadReport(data, business, fromDate, toDate, peri
 
   // INGRESOS
   addTitle('INGRESOS', 'FF27AE60');
-  addRow('Ventas totales', data.ingresos.ventasBruto, false);
-  if (data.ingresos.descuentos > 0) addRow('(-) Descuentos aplicados', -data.ingresos.descuentos, false);
+  addRow('Ventas brutas', data.ingresos.ventasBruto, false);
+  if (data.ingresos.descuentos > 0) addRow('(-) Descuentos aplicados', data.ingresos.descuentos, false);
   addRow('Ventas netas', data.ingresos.ventasNetas, true, 'FFD5F5E3');
 
   sheet.addRow([]);
@@ -254,6 +254,7 @@ async function generateRentabilidadReport(data, business, fromDate, toDate, peri
   addRow('Arriendo', data.egresos.arriendo, false);
   addRow('Créditos', data.egresos.creditos, false);
   if (data.egresos.retiros > 0) addRow('Retiros de caja', data.egresos.retiros, false);
+  if (data.egresos.gastos > 0) addRow('Gastos de caja menor', data.egresos.gastos, false);
   addRow('Total egresos', data.egresos.total, true, 'FFFDE8E8');
 
   sheet.addRow([]);
@@ -342,7 +343,26 @@ async function generateRentabilidadReport(data, business, fromDate, toDate, peri
     rtTotal.getCell(4).numFmt = '"$"#,##0';
   }
 
-  // ── Sheet 6: Arriendo & Créditos ──────────────────────
+  // ── Sheet 6: Gastos de caja menor ─────────────────────
+  if (data.gastosDetail && data.gastosDetail.length > 0) {
+    const gastSheet = workbook.addWorksheet('Gastos Caja Menor');
+    gastSheet.columns = [{ width: 5 }, { width: 20 }, { width: 30 }, { width: 20 }];
+    const gh = gastSheet.addRow(['#', 'Fecha', 'Descripción', 'Monto']);
+    gh.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF78350F' } };
+    });
+    data.gastosDetail.forEach((e, i) => {
+      const row = gastSheet.addRow([i + 1, new Date(e.date).toLocaleString('es-CO'), e.description || e.reason || '', e.amount || 0]);
+      row.getCell(4).numFmt = '"$"#,##0';
+    });
+    const gtRow = gastSheet.addRow(['', '', 'TOTAL:', data.gastosDetail.reduce((s, e) => s + (e.amount || 0), 0)]);
+    gtRow.getCell(3).font = { bold: true };
+    gtRow.getCell(4).font = { bold: true };
+    gtRow.getCell(4).numFmt = '"$"#,##0';
+  }
+
+  // ── Sheet 7: Arriendo & Créditos ──────────────────────
   const otherPayments = [...data.arriendoDetail.map(p => ({ ...p, tipo: 'Arriendo' })), ...data.creditoDetail.map(p => ({ ...p, tipo: 'Crédito' }))];
   if (otherPayments.length > 0) {
     const otherSheet = workbook.addWorksheet('Arriendo y Créditos');
