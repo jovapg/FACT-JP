@@ -45,6 +45,27 @@ const uploadLogo = multer({
   }
 });
 
+// Multer: saves product images to data/<businessId>/inv_<id>.<ext>
+const productImgStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(path.resolve(dataPath), req.params.businessId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    cb(null, `inv_${req.params.businessId}_${req.params.id}${ext}`);
+  }
+});
+const uploadProductImg = multer({
+  storage: productImgStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes'));
+  }
+});
+
 // Helmet: cabeceras de seguridad HTTP (HSTS, XSS protection, no-sniff, etc.)
 // crossOriginResourcePolicy: false para que las imágenes /uploads sean accesibles desde el frontend
 app.use(helmet({ crossOriginResourcePolicy: false }));
@@ -124,6 +145,7 @@ app.use('/api/businesses', businessRoutes);
 const { authenticate, requireBusinessAccess } = require('./src/middleware/auth');
 const bizAccess = [authenticate, requireBusinessAccess];
 
+app.use('/api/:businessId/inventory/:id/image', bizAccess, uploadProductImg.single('image'));
 app.use('/api/:businessId', bizAccess, inventoryRoutes);
 app.use('/api/:businessId', bizAccess, recipesRoutes);
 app.use('/api/:businessId', bizAccess, tablesRoutes);

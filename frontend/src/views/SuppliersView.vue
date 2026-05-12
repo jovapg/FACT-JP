@@ -5,7 +5,12 @@
             <h1 class="page-title">Proveedores y Empleados</h1>
             <p class="page-subtitle">Gestión de proveedores, empleados, arriendos y créditos</p>
           </div>
-          <button class="btn btn-primary" @click="openCreate">+ Nuevo</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button v-if="filterTipo === 'empleado'" class="btn btn-outline" @click="showNominaReport = true">
+              📊 Reporte nómina
+            </button>
+            <button class="btn btn-primary" @click="openCreate">+ Nuevo</button>
+          </div>
         </div>
 
         <!-- Filter tabs -->
@@ -317,6 +322,63 @@
           </div>
         </div>
 
+        <!-- Modal: Reporte de nómina -->
+        <div class="modal-overlay" v-if="showNominaReport" @click.self="showNominaReport = false">
+          <div class="modal" style="max-width:640px">
+            <div class="modal-header">
+              <h3 class="modal-title">📊 Reporte de nómina</h3>
+              <button class="btn-close" @click="showNominaReport = false">×</button>
+            </div>
+            <div class="modal-body" id="nomina-report-print">
+              <div class="report-biz-header">
+                <strong>{{ auth?.currentBusiness?.name || 'Negocio' }}</strong>
+                <span>Reporte de nómina</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <label class="form-label" style="margin:0;white-space:nowrap">Período:</label>
+                <input v-model="reportMonth" type="month" class="form-control" style="max-width:180px" />
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Empleado</th>
+                      <th>Cargo</th>
+                      <th>Salario ref.</th>
+                      <th>Pagos</th>
+                      <th>Total pagado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="emp in nominaReportData" :key="emp.name">
+                      <td><strong>{{ emp.name }}</strong></td>
+                      <td>{{ emp.cargo }}</td>
+                      <td>{{ formatCOP(emp.salarioBase) }} / {{ emp.periodoPago }}</td>
+                      <td><span class="badge badge-default">{{ emp.pagos }}</span></td>
+                      <td class="currency"><strong>{{ formatCOP(emp.totalPagado) }}</strong></td>
+                    </tr>
+                    <tr v-if="nominaReportData.length === 0">
+                      <td colspan="5" style="text-align:center;color:var(--text-light);padding:20px">
+                        Sin empleados registrados
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr class="report-total-row">
+                      <td colspan="4"><strong>Total nómina {{ reportMonth }}</strong></td>
+                      <td class="currency"><strong>{{ formatCOP(reportTotal) }}</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="showNominaReport = false">Cerrar</button>
+              <button class="btn btn-primary" @click="window.print()">🖨️ Imprimir</button>
+            </div>
+          </div>
+        </div>
+
   </PageLayout>
 </template>
 
@@ -338,6 +400,8 @@ const paymentsSupplier = ref(null)
 const nominaPagoSupplier = ref(null)
 const filterTipo = ref('todos')
 const saving = ref(false)
+const showNominaReport = ref(false)
+const reportMonth = ref(new Date().toISOString().slice(0, 7))
 
 const tipoOptions = [
   { value: 'todos',     label: 'Todos',       icon: '📋' },
@@ -354,6 +418,24 @@ const filteredSuppliers = computed(() => {
 
 const empleados = computed(() => suppliers.value.filter(s => s.tipo === 'empleado'))
 const totalNomina = computed(() => empleados.value.reduce((s, e) => s + (e.salarioBase || 0), 0))
+
+const nominaReportData = computed(() => {
+  return suppliers.value
+    .filter(s => s.tipo === 'empleado')
+    .map(emp => {
+      const pagos = (emp.payments || []).filter(p => p.date?.slice(0, 7) === reportMonth.value)
+      return {
+        name: emp.name,
+        cargo: emp.cargo || '—',
+        salarioBase: emp.salarioBase || 0,
+        periodoPago: emp.periodoPago || 'mensual',
+        pagos: pagos.length,
+        totalPagado: pagos.reduce((s, p) => s + (p.amount || 0), 0),
+        detalle: pagos
+      }
+    })
+})
+const reportTotal = computed(() => nominaReportData.value.reduce((s, e) => s + e.totalPagado, 0))
 
 function countByTipo(tipo) {
   if (tipo === 'todos') return suppliers.value.length
@@ -578,4 +660,13 @@ onMounted(loadSuppliers)
 .supplier-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .text-muted { color: var(--text-light); font-size: 13px; }
 .text-danger { color: var(--danger); }
+
+.report-biz-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; font-size: 14px; color: var(--text-light); border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+.report-biz-header strong { font-size: 16px; color: var(--text); }
+.report-total-row { background: var(--surface-2); font-weight: 700; }
+.currency { text-align: right; }
+@media print {
+  body > * { display: none !important; }
+  #nomina-report-print { display: block !important; position: fixed; top: 0; left: 0; width: 100%; padding: 20px; }
+}
 </style>

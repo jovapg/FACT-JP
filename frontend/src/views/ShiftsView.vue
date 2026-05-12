@@ -430,6 +430,98 @@
           </div>
         </div>
 
+        <!-- ── Modal: Resumen del turno cerrado ────────────────────── -->
+        <div class="modal-overlay" v-if="showResumenModal" @click.self="showResumenModal = false">
+          <div class="modal resumen-modal" style="max-width:500px">
+            <div class="modal-header">
+              <h3 class="modal-title">✅ Turno cerrado — Resumen</h3>
+              <button class="btn-close" @click="showResumenModal = false"><X :size="18" /></button>
+            </div>
+            <div class="modal-body resumen-body" id="resumen-print">
+              <!-- Header info -->
+              <div class="resumen-header-info">
+                <div class="resumen-biz">{{ auth.currentBusiness?.name }}</div>
+                <div class="resumen-sub">
+                  Cajero: <strong>{{ resumenShift?.cashierName }}</strong> ·
+                  {{ formatDateTime(resumenShift?.openedAt) }} → {{ formatDateTime(resumenShift?.closedAt) }} ·
+                  {{ calcDuration(resumenShift?.openedAt, resumenShift?.closedAt) }}
+                </div>
+              </div>
+
+              <!-- Ventas -->
+              <div class="resumen-section">
+                <p class="resumen-section-title">💰 Ventas del turno</p>
+                <div class="resumen-row">
+                  <span>Total ventas</span>
+                  <span class="resumen-val success">{{ formatCOP(resumenShift?.totalSales) }}</span>
+                </div>
+                <div class="resumen-row">
+                  <span>Ventas ({{ resumenShift?.salesCount || 0 }} transacciones)</span>
+                  <span></span>
+                </div>
+                <div class="resumen-row indent">
+                  <span>💵 Efectivo</span>
+                  <span>{{ formatCOP(resumenShift?.totalCashSales) }}</span>
+                </div>
+                <div class="resumen-row indent">
+                  <span>💳 Otras (tarjeta / transferencia)</span>
+                  <span>{{ formatCOP(resumenShift?.totalOtherSales) }}</span>
+                </div>
+              </div>
+
+              <!-- Movimientos -->
+              <div class="resumen-section" v-if="(resumenShift?.totalWithdrawals || 0) > 0 || (resumenShift?.totalExpenses || 0) > 0">
+                <p class="resumen-section-title">📤 Salidas de caja</p>
+                <div class="resumen-row" v-if="resumenShift?.totalWithdrawals > 0">
+                  <span>Retiros</span>
+                  <span class="danger">-{{ formatCOP(resumenShift?.totalWithdrawals) }}</span>
+                </div>
+                <div class="resumen-row" v-if="resumenShift?.totalExpenses > 0">
+                  <span>Gastos caja menor</span>
+                  <span class="danger">-{{ formatCOP(resumenShift?.totalExpenses) }}</span>
+                </div>
+              </div>
+
+              <!-- Cuadre -->
+              <div class="resumen-section resumen-cuadre">
+                <p class="resumen-section-title">🏦 Cuadre de caja</p>
+                <div class="resumen-row">
+                  <span>Efectivo inicial</span>
+                  <span>{{ formatCOP(resumenShift?.openingCash) }}</span>
+                </div>
+                <div class="resumen-row">
+                  <span>Efectivo esperado</span>
+                  <span class="fw-700">{{ formatCOP(resumenShift?.expectedCash) }}</span>
+                </div>
+                <div class="resumen-row">
+                  <span>Efectivo contado</span>
+                  <span class="fw-700">{{ formatCOP(resumenShift?.closingCash) }}</span>
+                </div>
+                <div class="resumen-row resumen-diff-row">
+                  <span>Diferencia</span>
+                  <span :class="['resumen-diff', (resumenShift?.difference || 0) >= 0 ? 'success' : 'danger']">
+                    {{ (resumenShift?.difference || 0) >= 0 ? '+' : '' }}{{ formatCOP(resumenShift?.difference) }}
+                    {{ (resumenShift?.difference || 0) === 0 ? '✅ Cuadre perfecto' : (resumenShift?.difference || 0) > 0 ? '⬆️ Sobrante' : '⬇️ Faltante' }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Gastos detalle -->
+              <div class="resumen-section" v-if="resumenShift?.expenses?.length">
+                <p class="resumen-section-title">🧾 Gastos de caja menor</p>
+                <div class="resumen-row" v-for="e in resumenShift.expenses" :key="e.id">
+                  <span>{{ e.category }} — {{ e.description }}</span>
+                  <span class="danger">-{{ formatCOP(e.amount) }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="showResumenModal = false">Cerrar</button>
+              <button class="btn btn-primary" @click="printResumen">🖨️ Imprimir resumen</button>
+            </div>
+          </div>
+        </div>
+
   </PageLayout>
 </template>
 
@@ -443,12 +535,14 @@
  */
 import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { useShiftsStore } from '../stores/shifts.js'
+import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 import {
   LogIn, LogOut, ArrowDownToLine, AlertTriangle, Clock, X, Receipt
 } from 'lucide-vue-next'
 
 const shiftsStore = useShiftsStore()
+const auth = useAuthStore()
 const toast = inject('toast')
 
 // ── Estado de modales ────────────────────────────────────────────
@@ -458,6 +552,8 @@ const showRetiroModal = ref(false)
 const showGastoModal  = ref(false)
 const selectedShift   = ref(null)
 const saving          = ref(false)
+const showResumenModal = ref(false)
+const resumenShift = ref(null)
 
 const abrirSubmitted  = ref(false)
 const retiroSubmitted = ref(false)
@@ -563,14 +659,8 @@ async function handleCloseShift() {
     // Recargar historial para que aparezca el turno cerrado
     await shiftsStore.fetchShifts()
     showCierreModal.value = false
-    const diff = closed.difference
-    if (diff === 0) {
-      toast('Turno cerrado. Cuadre perfecto!', 'success')
-    } else if (diff > 0) {
-      toast(`Turno cerrado. Sobrante: ${formatCOP(diff)}`, 'info')
-    } else {
-      toast(`Turno cerrado. Faltante: ${formatCOP(Math.abs(diff))}`, 'warning')
-    }
+    resumenShift.value = closed
+    showResumenModal.value = true
   } catch (err) {
     toast(err.response?.data?.error || 'Error al cerrar turno', 'error')
   } finally {
@@ -615,6 +705,10 @@ async function handleWithdrawal() {
   } finally {
     saving.value = false
   }
+}
+
+function printResumen() {
+  window.print()
 }
 
 onMounted(async () => {
@@ -781,5 +875,32 @@ onMounted(async () => {
 }
 @media (max-width: 480px) {
   .shift-metrics { grid-template-columns: 1fr 1fr; }
+}
+
+/* Resumen de turno */
+.resumen-body { padding: 0 !important; }
+.resumen-header-info {
+  background: var(--primary);
+  color: white;
+  padding: 16px 20px;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.resumen-biz { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.resumen-sub { font-size: 12px; color: rgba(255,255,255,0.7); }
+.resumen-section { padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.resumen-section:last-child { border-bottom: none; }
+.resumen-section-title { font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+.resumen-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13.5px; color: var(--text-secondary); padding: 4px 0;
+}
+.resumen-row.indent { padding-left: 16px; font-size: 13px; color: var(--text-light); }
+.resumen-val { font-weight: 700; font-size: 15px; }
+.resumen-cuadre { background: var(--surface-2); }
+.resumen-diff-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.resumen-diff { font-weight: 700; font-size: 14px; }
+@media print {
+  body > * { display: none !important; }
+  #resumen-print { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
 }
 </style>

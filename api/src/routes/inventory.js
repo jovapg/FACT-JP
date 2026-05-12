@@ -118,4 +118,25 @@ router.patch('/inventory/:id/adjust', authenticate, async (req, res) => {
   }
 });
 
+// Image upload for multer - configured in server.js and passed via router
+// POST /inventory/:id/image — upload product image
+router.post('/inventory/:id/image', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
+
+    const inventory = await readJSON(inventoryPath(req.params.businessId)) || [];
+    const idx = inventory.findIndex(i => i.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    const imageUrl = `/uploads/${req.params.businessId}/${req.file.filename}`;
+    inventory[idx].imageUrl = imageUrl;
+    await writeJSON(inventoryPath(req.params.businessId), inventory);
+    res.json({ imageUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

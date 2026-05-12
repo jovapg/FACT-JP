@@ -54,7 +54,12 @@
                 </thead>
                 <tbody>
                   <tr v-for="item in filteredItems" :key="item.id">
-                    <td><strong>{{ item.name }}</strong></td>
+                    <td>
+                      <div class="item-name-cell">
+                        <img v-if="item.imageUrl" :src="item.imageUrl" class="item-thumb" alt="" />
+                        <strong>{{ item.name }}</strong>
+                      </div>
+                    </td>
                     <td><span class="badge badge-default">{{ item.category }}</span></td>
                     <td>
                       <span :class="['badge', item.stock <= item.minStock ? 'badge-danger' : 'badge-success']">
@@ -110,6 +115,19 @@
                     <small>Solo se usa en recetas, no se vende</small>
                   </span>
                 </label>
+              </div>
+
+              <!-- Imagen del producto (solo al editar) -->
+              <div class="img-upload-row mb-3" v-if="editItem">
+                <div class="img-preview">
+                  <img v-if="form.imageUrl" :src="form.imageUrl" class="product-img-thumb" alt="foto" />
+                  <div v-else class="img-placeholder">📷</div>
+                </div>
+                <div>
+                  <label class="form-label">Foto del producto</label>
+                  <input type="file" accept="image/*" class="form-control" @change="handleImageUpload" :disabled="uploadingImage" />
+                  <p class="form-hint" style="margin-top:4px">{{ uploadingImage ? 'Subiendo...' : 'JPG, PNG o WEBP. Máx 2 MB.' }}</p>
+                </div>
               </div>
 
               <div class="grid grid-2">
@@ -349,8 +367,10 @@ const adjustReason = ref('')    // Motivo del ajuste (para trazabilidad)
 const form = reactive({
   name: '', category: '', unit: 'unidad',
   stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '',
-  esIngrediente: false
+  esIngrediente: false, imageUrl: ''
 })
+
+const uploadingImage = ref(false)
 
 
 /**
@@ -382,7 +402,7 @@ function formatCOP(v) {
 function openCreate() {
   editItem.value = null
   submitted.value = false
-  Object.assign(form, { name: '', category: '', unit: 'unidad', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false })
+  Object.assign(form, { name: '', category: '', unit: 'unidad', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false, imageUrl: '' })
   showModal.value = true
 }
 
@@ -394,7 +414,7 @@ function openCreate() {
 function openEdit(item) {
   editItem.value = item
   submitted.value = false
-  Object.assign(form, { supplierId: '', esIngrediente: false, ...item })
+  Object.assign(form, { supplierId: '', esIngrediente: false, imageUrl: '', ...item })
   showModal.value = true
 }
 
@@ -402,6 +422,28 @@ function closeModal() {
   showModal.value = false
   editItem.value = null
   submitted.value = false
+}
+
+async function handleImageUpload(event) {
+  const file = event.target.files?.[0]
+  if (!file || !editItem.value) return
+  uploadingImage.value = true
+  try {
+    const fd = new FormData()
+    fd.append('image', file)
+    const res = await api.post(`/api/${auth.currentBusiness?.id}/inventory/${editItem.value.id}/image`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    form.imageUrl = res.data.imageUrl
+    // also update store
+    const idx = inventoryStore.items.findIndex(i => i.id === editItem.value.id)
+    if (idx !== -1) inventoryStore.items[idx].imageUrl = res.data.imageUrl
+    toast('Imagen actualizada', 'success')
+  } catch {
+    toast('Error al subir imagen', 'error')
+  } finally {
+    uploadingImage.value = false
+  }
 }
 
 /**
@@ -571,7 +613,7 @@ onMounted(async () => {
   inventoryStore.fetchInventory()
   inventoryStore.fetchRecipes()
   const res = await api.get(`/api/${auth.currentBusiness?.id}/suppliers`)
-  suppliers.value = res.data
+  suppliers.value = (res.data || []).filter(s => !s.tipo || s.tipo === 'proveedor')
 })
 </script>
 
@@ -637,4 +679,12 @@ onMounted(async () => {
 
 /* Hint campo unidad */
 .form-hint { font-size: 10.5px; color: var(--text-light); font-weight: 400; margin-left: 4px; }
+
+/* Imagen producto */
+.img-upload-row { display: flex; align-items: center; gap: 16px; }
+.img-preview { flex-shrink: 0; width: 72px; height: 72px; border-radius: var(--radius); border: 2px solid var(--border); overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--surface-2); }
+.product-img-thumb { width: 100%; height: 100%; object-fit: cover; }
+.img-placeholder { font-size: 28px; color: var(--text-light); }
+.item-name-cell { display: flex; align-items: center; gap: 10px; }
+.item-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
 </style>
