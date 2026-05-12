@@ -144,18 +144,47 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">Categoría *</label>
-                  <input v-model="form.category" :class="['form-control', { 'input-error': submitted && !form.category.trim() }]" list="cats" />
-                  <datalist id="cats">
-                    <option v-for="c in catNames" :key="c" :value="c" />
-                  </datalist>
+                  <div class="combo-wrap" ref="catComboRef">
+                    <input
+                      v-model="form.category"
+                      :class="['form-control', { 'input-error': submitted && !form.category.trim() }]"
+                      placeholder="Selecciona o escribe..."
+                      autocomplete="off"
+                      @focus="showCatDropdown = true"
+                      @input="showCatDropdown = true"
+                      @blur="closeCatDropdown"
+                    />
+                    <div class="combo-dropdown" v-if="showCatDropdown && filteredCatNames.length">
+                      <div
+                        v-for="c in filteredCatNames"
+                        :key="c"
+                        class="combo-option"
+                        @mousedown.prevent="selectCat(c)"
+                      >{{ c }}</div>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Unidad * <span class="form-hint">¿en qué se mide? (kg, litro, unidad…)</span></label>
-                  <input v-model="form.unit" :class="['form-control', { 'input-error': submitted && !form.unit.trim() }]" list="units" />
-                  <datalist id="units">
-                    <option value="unidad" /><option value="litro" />
-                    <option value="kg" /><option value="gramo" /><option value="porción" />
-                  </datalist>
+                  <div class="combo-wrap" ref="unitComboRef">
+                    <input
+                      v-model="form.unit"
+                      :class="['form-control', { 'input-error': submitted && !form.unit.trim() }]"
+                      placeholder="unidad, kg, litro..."
+                      autocomplete="off"
+                      @focus="showUnitDropdown = true"
+                      @input="showUnitDropdown = true"
+                      @blur="closeUnitDropdown"
+                    />
+                    <div class="combo-dropdown" v-if="showUnitDropdown && filteredUnitNames.length">
+                      <div
+                        v-for="u in filteredUnitNames"
+                        :key="u"
+                        class="combo-option"
+                        @mousedown.prevent="selectUnit(u)"
+                      >{{ u }}</div>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Stock actual</label>
@@ -299,7 +328,7 @@
  *   - Aumento de stock al registrar compras
  *   - Alertas de stock bajo en dashboard y menú lateral
  */
-import { ref, reactive, computed, onMounted, inject } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useAuthStore } from '../stores/auth.js'
@@ -371,6 +400,33 @@ const form = reactive({
 })
 
 const uploadingImage = ref(false)
+
+// ── Combo de categoría ───────────────────────────────────────────────────────
+const showCatDropdown = ref(false)
+const catComboRef = ref(null)
+
+const filteredCatNames = computed(() => {
+  const q = (form.category || '').toLowerCase()
+  if (!q) return catNames.value
+  return catNames.value.filter(c => c.toLowerCase().includes(q))
+})
+
+function selectCat(c) { form.category = c; showCatDropdown.value = false }
+function closeCatDropdown() { setTimeout(() => { showCatDropdown.value = false }, 150) }
+
+// ── Combo de unidad ──────────────────────────────────────────────────────────
+const UNIT_OPTIONS = ['unidad', 'litro', 'kg', 'gramo', 'porción', 'caja', 'botella', 'paquete']
+const showUnitDropdown = ref(false)
+const unitComboRef = ref(null)
+
+const filteredUnitNames = computed(() => {
+  const q = (form.unit || '').toLowerCase()
+  if (!q) return UNIT_OPTIONS
+  return UNIT_OPTIONS.filter(u => u.toLowerCase().includes(q))
+})
+
+function selectUnit(u) { form.unit = u; showUnitDropdown.value = false }
+function closeUnitDropdown() { setTimeout(() => { showUnitDropdown.value = false }, 150) }
 
 
 /**
@@ -687,4 +743,27 @@ onMounted(async () => {
 .img-placeholder { font-size: 28px; color: var(--text-light); }
 .item-name-cell { display: flex; align-items: center; gap: 10px; }
 .item-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
+
+/* Combo dropdown (categoría / unidad) */
+.combo-wrap { position: relative; }
+.combo-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.combo-option {
+  padding: 9px 14px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.combo-option:hover { background: var(--surface-2); }
 </style>
