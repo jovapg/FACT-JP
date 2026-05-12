@@ -6,7 +6,7 @@
         <div v-else class="logo-icon-wrap">
           <UtensilsCrossed :size="20" color="#1a0a00" />
         </div>
-        <span class="logo-text" v-if="!isCollapsed">facJp</span>
+        <span class="logo-text" v-if="!isCollapsed">{{ businessStore.profile?.name || 'facJp' }}</span>
       </div>
       <button class="collapse-btn" @click="isCollapsed = !isCollapsed" :title="isCollapsed ? 'Expandir' : 'Colapsar'">
         <ChevronLeft v-if="!isCollapsed" :size="16" />
@@ -131,13 +131,14 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
 .sidebar {
   width: var(--sidebar-width);
   min-height: 100vh;
-  background: var(--primary);
+  background: linear-gradient(180deg, #0d1424 0%, #0f172a 60%, #0c1120 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   transition: width 0.25s cubic-bezier(0.4,0,0.2,1);
   position: relative;
   z-index: 200;
+  border-right: 1px solid rgba(255,255,255,0.04);
 }
 .sidebar.collapsed { width: 64px; }
 
@@ -146,8 +147,9 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
   align-items: center;
   justify-content: space-between;
   padding: 14px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  min-height: 60px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  min-height: 64px;
+  background: rgba(255,255,255,0.02);
 }
 .sidebar-logo {
   display: flex;
@@ -167,11 +169,14 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
 }
 .logo-img { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; flex-shrink: 0; }
 .logo-text {
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 15px;
+  font-weight: 700;
   color: white;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .collapse-btn {
@@ -214,11 +219,14 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
   /* Elimina el retraso de 300ms en pantallas táctiles */
   touch-action: manipulation;
 }
-.nav-item:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); }
+.nav-item:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.95); }
 .nav-item.active {
-  background: var(--accent);
-  color: #1a0a00;
+  background: linear-gradient(135deg, rgba(245,158,11,0.22) 0%, rgba(249,115,22,0.14) 100%);
+  color: #fbbf24;
   font-weight: 700;
+  border-left: 3px solid #f59e0b;
+  padding-left: 7px;
+  box-shadow: inset 0 0 20px rgba(245,158,11,0.06);
 }
 .nav-icon { flex-shrink: 0; width: 20px; display: flex; align-items: center; justify-content: center; }
 .nav-label { flex: 1; }
@@ -237,17 +245,21 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
 }
 
 .sidebar-footer {
-  padding: 10px 10px 14px;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  padding: 10px 10px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
 }
 .user-pill {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 9px;
+  padding: 9px 10px;
+  border-radius: 10px;
   background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.18s;
 }
+.user-pill:hover { background: rgba(255,255,255,0.08); }
 .user-avatar-sm {
   width: 30px;
   height: 30px;

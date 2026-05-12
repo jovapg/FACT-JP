@@ -189,7 +189,9 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 <style scoped>
 .navbar {
   height: 60px;
-  background: var(--surface);
+  background: rgba(var(--navbar-bg, 255,255,255), 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -197,9 +199,10 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   padding: 0 20px;
   flex-shrink: 0;
   position: sticky;
-  top: 0;
+  top: 3px; /* deja espacio para la línea de acento */
   z-index: 100;
   transition: background var(--transition), border-color var(--transition);
+  box-shadow: 0 1px 0 var(--border), 0 4px 12px rgba(15,23,42,0.04);
 }
 
 .navbar-left { display: flex; align-items: center; gap: 14px; }
@@ -219,10 +222,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
 .menu-toggle:hover { background: var(--surface-2); color: var(--text); }
 
 .navbar-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.02em;
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 .navbar-right { display: flex; align-items: center; gap: 8px; }
@@ -274,13 +281,14 @@ onUnmounted(() => document.removeEventListener('click', handleOutsideClick))
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: #1a0a00;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
   font-size: 13px;
+  box-shadow: 0 2px 6px rgba(245,158,11,0.4);
 }
 .user-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .arrow { color: var(--text-light); }
