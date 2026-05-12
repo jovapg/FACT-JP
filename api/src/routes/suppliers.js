@@ -52,14 +52,21 @@ router.post('/suppliers', authenticate, async (req, res) => {
     const newSupplier = {
       id: uuidv4(),
       name: req.body.name,
-      tipo: req.body.tipo || 'proveedor',  // Categoría: proveedor | empleado | arriendo | credito
+      tipo: req.body.tipo || 'proveedor',
       contact: req.body.contact || '',
       phone: req.body.phone || '',
       nit: req.body.nit || '',
       email: req.body.email || '',
       address: req.body.address || '',
-      payments: [],      // Historial de pagos realizados
-      totalDebt: 0,      // Deuda pendiente acumulada
+      // Campos específicos de empleado
+      cedula: req.body.cedula || '',
+      cargo: req.body.cargo || '',
+      salarioBase: Number(req.body.salarioBase) || 0,
+      periodoPago: req.body.periodoPago || 'mensual',
+      fechaIngreso: req.body.fechaIngreso || '',
+      payments: [],
+      nominaHistory: [],
+      totalDebt: 0,
       createdAt: new Date().toISOString()
     };
     suppliers.push(newSupplier);
@@ -117,6 +124,37 @@ router.post('/suppliers/:id/payment', authenticate, async (req, res) => {
     res.json(suppliers[idx]);
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /suppliers/:id/nomina — Genera una deuda de nómina para un empleado.
+ * Añade el salario base (o un monto custom) a totalDebt y lo registra en nominaHistory.
+ */
+router.post('/suppliers/:id/nomina', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
+    const idx = suppliers.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Supplier not found' });
+
+    const amount = Number(req.body.amount) || suppliers[idx].salarioBase || 0;
+    if (!amount) return res.status(400).json({ error: 'Sin salario base configurado' });
+
+    suppliers[idx].nominaHistory = suppliers[idx].nominaHistory || [];
+    suppliers[idx].nominaHistory.push({
+      id: uuidv4(),
+      amount,
+      period: req.body.period || new Date().toISOString().slice(0, 7),
+      date: new Date().toISOString(),
+      notes: req.body.notes || ''
+    });
+    suppliers[idx].totalDebt = (suppliers[idx].totalDebt || 0) + amount;
+
+    await writeJSON(suppliersPath(req.params.businessId), suppliers);
+    res.json(suppliers[idx]);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
