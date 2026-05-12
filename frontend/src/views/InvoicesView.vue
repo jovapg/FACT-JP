@@ -104,7 +104,7 @@
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="selectedInvoice = null">Cerrar</button>
-              <a :href="`/api/${bizId}/invoices/${selectedInvoice.id}/pdf`" target="_blank" class="btn btn-primary">
+              <a :href="`/api/${bizId}/invoices/${selectedInvoice.id}/pdf?token=${token}`" target="_blank" class="btn btn-primary">
                 Descargar PDF
               </a>
             </div>

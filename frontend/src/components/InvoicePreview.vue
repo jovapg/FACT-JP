@@ -274,6 +274,7 @@ const clientName = ref('')
 const discount = ref(0)
 const confirming = ref(false)
 const confirmedSale = ref(null)
+const shortlinkUrl = ref('')   // URL corta pre-generada para compartir
 const showWaInput = ref(false)
 const waPhone = ref('')
 const waInputRef = ref(null)
@@ -332,7 +333,13 @@ async function confirmSale() {
     }
 
     confirmedSale.value = result.sale
-    // Don't emit 'confirmed' yet — wait for user to close the invoice modal
+    // Pre-generar shortlink para que sendWhatsApp sea sincrónico (evita bloqueo en móvil)
+    try {
+      const sl = await api.post(`/api/${bizId.value}/invoices/${result.sale.id}/shortlink`)
+      shortlinkUrl.value = sl.data.url
+    } catch {
+      shortlinkUrl.value = ''
+    }
   } catch (err) {
     toast(err.response?.data?.error || 'Error al confirmar venta', 'error')
   } finally {
@@ -371,29 +378,23 @@ function buildWaText(sale, pdfUrl) {
   return lines.join('\n')
 }
 
-async function sendWhatsApp() {
-  try {
-    const res = await api.post(`/api/${bizId.value}/invoices/${confirmedSale.value.id}/shortlink`)
-    const pdfUrl = res.data.url
-    const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
-    const digits = waPhone.value.replace(/\D/g, '')
-    const number = digits ? `57${digits}` : ''
-    const waUrl = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
-    window.open(waUrl, '_blank')
-  } catch {
-    // Si falla el shortlink, usar el link largo como fallback
-    const pdfUrl = `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
-    const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
-    const digits = waPhone.value.replace(/\D/g, '')
-    const number = digits ? `57${digits}` : ''
-    window.open(number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
-  }
+// Sincrónico — la URL ya fue pre-generada en confirmSale, así window.open
+// se llama directamente desde el gesto del usuario (funciona en móvil).
+function sendWhatsApp() {
+  const pdfUrl = shortlinkUrl.value ||
+    `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+  const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
+  const digits = waPhone.value.replace(/\D/g, '')
+  const number = digits ? `57${digits}` : ''
+  const waUrl = number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
+  window.open(waUrl, '_blank')
   showWaInput.value = false
   waPhone.value = ''
 }
 
 async function sharePdf() {
-  const url = `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+  const url = shortlinkUrl.value ||
+    `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
   try {
     await navigator.share({ title: `Factura ${confirmedSale.value.invoiceNumber}`, url })
   } catch {

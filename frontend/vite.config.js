@@ -26,7 +26,7 @@ export default defineConfig({
         // Cuando el navegador abre /api/... directamente (link de PDF, etc.),
         // el service worker NO debe interceptar esa navegación — debe pasar al servidor.
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/f\//],
         runtimeCaching: [
           {
             // Cachea rutas /api/* sin importar el host — funciona en local, VPS con IP o con dominio
