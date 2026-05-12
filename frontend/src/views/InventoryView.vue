@@ -46,6 +46,7 @@
                     <th>Stock</th>
                     <th>Mínimo</th>
                     <th>Unidad</th>
+                    <th>Tipo</th>
                     <th>Costo</th>
                     <th>Precio venta</th>
                     <th>Acciones</th>
@@ -62,8 +63,12 @@
                     </td>
                     <td>{{ item.minStock }}</td>
                     <td>{{ item.unit }}</td>
+                    <td>
+                      <span v-if="item.esIngrediente" class="badge badge-ingredient">🧪 Ingrediente</span>
+                      <span v-else class="badge badge-sale">🛒 Venta</span>
+                    </td>
                     <td>{{ formatCOP(item.cost) }}</td>
-                    <td>{{ item.salePrice ? formatCOP(item.salePrice) : '—' }}</td>
+                    <td>{{ !item.esIngrediente && item.salePrice ? formatCOP(item.salePrice) : '—' }}</td>
                     <td>
                       <div class="action-btns">
                         <button class="btn btn-sm btn-outline" @click="openAdjust(item)" title="Ajustar stock">±</button>
@@ -89,6 +94,24 @@
               <button class="btn-close" @click="closeModal">×</button>
             </div>
             <div class="modal-body">
+              <!-- Tipo de producto -->
+              <div class="tipo-toggle mb-3">
+                <label class="tipo-opt" :class="{ active: !form.esIngrediente }" @click="form.esIngrediente = false">
+                  <span class="tipo-icon">🛒</span>
+                  <span>
+                    <strong>Producto de venta</strong>
+                    <small>Tiene precio venta, aparece en POS</small>
+                  </span>
+                </label>
+                <label class="tipo-opt" :class="{ active: form.esIngrediente }" @click="form.esIngrediente = true">
+                  <span class="tipo-icon">🧪</span>
+                  <span>
+                    <strong>Ingrediente</strong>
+                    <small>Solo se usa en recetas, no se vende</small>
+                  </span>
+                </label>
+              </div>
+
               <div class="grid grid-2">
                 <div class="form-group">
                   <label class="form-label">Nombre *</label>
@@ -109,7 +132,7 @@
                   </datalist>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Unidad *</label>
+                  <label class="form-label">Unidad * <span class="form-hint">¿en qué se mide? (kg, litro, unidad…)</span></label>
                   <input v-model="form.unit" :class="['form-control', { 'input-error': submitted && !form.unit.trim() }]" list="units" />
                   <datalist id="units">
                     <option value="unidad" /><option value="litro" />
@@ -128,10 +151,8 @@
                   <label class="form-label">Precio de costo (COP) *</label>
                   <input v-model.number="form.cost" type="number" :class="['form-control', { 'input-error': submitted && !(form.cost > 0) }]" min="0" />
                 </div>
-                <div class="form-group">
-                  <label class="form-label" :style="isAutoMenuCategory ? 'color:var(--accent)' : ''">
-                    {{ isAutoMenuCategory ? '🍺 ' : '' }}Precio de venta (COP)
-                  </label>
+                <div class="form-group" v-if="!form.esIngrediente">
+                  <label class="form-label">Precio de venta (COP)</label>
                   <input v-model.number="form.salePrice" type="number" class="form-control" min="0" placeholder="Ej: 8000" />
                 </div>
               </div>
@@ -295,14 +316,14 @@ const syncing = ref(false)
 const updateRecipeModal = ref(null)  // { recipe, newSalePrice } — modal para actualizar precio de receta vinculada
 
 /**
- * Productos de categorías autoRecipe que aún NO tienen una receta en el menú.
- * La comparación es insensible a mayúsculas para evitar duplicados por capitalización.
+ * Productos vendibles (no ingredientes) con precio de venta que aún NO tienen receta en el menú.
  * Estos aparecen en el botón "Sincronizar al menú".
  */
 const pendingSync = computed(() => {
   const recipeNames = new Set(inventoryStore.recipes.map(r => r.name.toLowerCase()))
   return inventoryStore.items.filter(i =>
-    autoRecipeCats.value.includes(i.category?.toLowerCase()) &&
+    !i.esIngrediente &&
+    (i.salePrice > 0) &&
     !recipeNames.has(i.name.toLowerCase())
   )
 })
@@ -327,16 +348,10 @@ const adjustReason = ref('')    // Motivo del ajuste (para trazabilidad)
 
 const form = reactive({
   name: '', category: '', unit: 'unidad',
-  stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: ''
+  stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '',
+  esIngrediente: false
 })
 
-/**
- * True cuando la categoría del formulario tiene autoRecipe activado.
- * Controla la visibilidad del campo "Precio de venta" en el modal.
- */
-const isAutoMenuCategory = computed(() =>
-  autoRecipeCats.value.includes(form.category?.toLowerCase())
-)
 
 /**
  * Lista de ítems del inventario filtrada según los controles de búsqueda.
@@ -367,7 +382,7 @@ function formatCOP(v) {
 function openCreate() {
   editItem.value = null
   submitted.value = false
-  Object.assign(form, { name: '', category: '', unit: 'unidad', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '' })
+  Object.assign(form, { name: '', category: '', unit: 'unidad', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false })
   showModal.value = true
 }
 
@@ -379,7 +394,7 @@ function openCreate() {
 function openEdit(item) {
   editItem.value = item
   submitted.value = false
-  Object.assign(form, { supplierId: '', ...item })
+  Object.assign(form, { supplierId: '', esIngrediente: false, ...item })
   showModal.value = true
 }
 
@@ -413,30 +428,33 @@ async function saveItem() {
   saving.value = true
   try {
     const itemData = { ...form }
+    // Si es ingrediente, limpiar precio venta para que no aparezca en POS
+    if (form.esIngrediente) itemData.salePrice = 0
+
     if (editItem.value) {
       await inventoryStore.updateItem(editItem.value.id, itemData)
-      // Si la categoría tiene autoRecipe, preguntar si también actualizar la receta del menú
-      if (isAutoMenuCategory.value) {
+      // Si es vendible y ya existe receta vinculada, ofrecer actualizar precio
+      if (!form.esIngrediente && form.salePrice > 0) {
         const linked = inventoryStore.recipes.find(r => r.name.toLowerCase() === form.name.toLowerCase())
         if (linked) {
-          updateRecipeModal.value = { recipe: linked, newSalePrice: linked.price }
+          updateRecipeModal.value = { recipe: linked, newSalePrice: form.salePrice }
         }
       }
       toast('Producto actualizado', 'success')
     } else {
       const newItem = await inventoryStore.createItem(itemData)
-      // Si es categoría con autoRecipe: crear receta de menú automáticamente
-      if (isAutoMenuCategory.value) {
+      // Si es producto de venta con precio: crear receta automáticamente para que aparezca en POS
+      if (!form.esIngrediente && form.salePrice > 0) {
         await inventoryStore.createRecipe({
           name: form.name,
-          price: salePrice || form.cost,  // Usa salePrice si se ingresó, o el costo como base
+          price: form.salePrice,
           category: form.category,
           available: true,
           ingredients: [{ inventoryId: newItem.id, quantity: 1 }]
         })
-        toast(`"${form.name}" creado en inventario y agregado al menú`, 'success')
+        toast(`"${form.name}" creado y agregado al menú de venta`, 'success')
       } else {
-        toast('Producto creado', 'success')
+        toast('Ingrediente creado', 'success')
       }
     }
     closeModal()
@@ -579,4 +597,38 @@ onMounted(async () => {
 .sync-price { width: 140px; flex-shrink: 0; }
 .sync-price .form-label { font-size: 11px; margin-bottom: 3px; }
 .input-error { border-color: var(--danger) !important; background: #fff5f5; }
+
+/* Toggle tipo producto */
+.tipo-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.tipo-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: var(--surface-2);
+  transition: all var(--transition);
+  user-select: none;
+}
+.tipo-opt.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.tipo-opt strong { display: block; font-size: 13px; color: var(--text); }
+.tipo-opt small { display: block; font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.tipo-icon { font-size: 20px; flex-shrink: 0; }
+.mb-3 { margin-bottom: 16px; }
+
+/* Badges tabla */
+.badge-ingredient { background: #ede9fe; color: #6d28d9; }
+.badge-sale { background: #d1fae5; color: #065f46; }
+
+/* Hint campo unidad */
+.form-hint { font-size: 10.5px; color: var(--text-light); font-weight: 400; margin-left: 4px; }
 </style>
