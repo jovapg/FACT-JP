@@ -118,6 +118,34 @@ router.put('/:id', authenticate, requireSuperAdmin, async (req, res) => {
 });
 
 /**
+ * POST /api/businesses/:id/reset-sales — Borra todo el historial de ventas.
+ * Resetea sales.json, shifts.json y el contador de facturas a cero.
+ * No toca inventario, recetas, proveedores ni configuración.
+ */
+router.post('/:id/reset-sales', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const businesses = await readJSON(BUSINESSES_FILE()) || [];
+    const biz = businesses.find(b => b.id === req.params.id);
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
+    const bizDir = getBusinessPath(req.params.id);
+    await writeJSON(path.join(bizDir, 'sales.json'), []);
+    await writeJSON(path.join(bizDir, 'shifts.json'), []);
+
+    const profilePath = path.join(bizDir, 'profile.json');
+    const profile = await readJSON(profilePath);
+    if (profile) {
+      profile.invoiceCounter = 0;
+      await writeJSON(profilePath, profile);
+    }
+
+    res.json({ success: true, message: 'Historial de ventas borrado' });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
  * DELETE /api/businesses/:id — Elimina un negocio de la lista global.
  * NOTA: No elimina los archivos de datos del negocio (solo lo desregistra).
  */

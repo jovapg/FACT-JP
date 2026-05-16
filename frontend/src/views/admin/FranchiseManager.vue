@@ -25,6 +25,7 @@
               <button class="btn btn-sm btn-outline" @click="toggleActive(biz)">
                 {{ biz.active ? '🔴 Desactivar' : '🟢 Activar' }}
               </button>
+              <button class="btn btn-sm btn-warning" @click="confirmResetSales(biz)" title="Borrar historial de ventas">🧹 Facturas</button>
               <button class="btn btn-sm btn-danger" @click="confirmDelete(biz)">🗑️</button>
             </div>
           </div>
@@ -144,6 +145,22 @@ async function toggleActive(biz) {
   toast(`Franquicia ${res.data.active ? 'activada' : 'desactivada'}`, 'success')
 }
 
+async function confirmResetSales(biz) {
+  const msg = `¿Borrar TODO el historial de ventas de "${biz.name}"?\n\n` +
+              `- Se borrarán todas las facturas y turnos\n` +
+              `- El contador volverá a #0001\n` +
+              `- Inventario y recetas NO se tocan\n\n` +
+              `Esta acción es irreversible. Escribe "BORRAR" para confirmar:`
+  const answer = prompt(msg)
+  if (answer !== 'BORRAR') return
+  try {
+    await api.post(`/api/businesses/${biz.id}/reset-sales`)
+    toast(`Facturas de "${biz.name}" borradas`, 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al borrar', 'error')
+  }
+}
+
 async function confirmDelete(biz) {
   if (!confirm(`¿Eliminar franquicia "${biz.name}"? Esta acción es irreversible.`)) return
   await api.delete(`/api/businesses/${biz.id}`)
@@ -175,4 +192,11 @@ onMounted(loadBusinesses)
 .franchise-name { font-weight: 700; font-size: 16px; }
 .franchise-slug { font-size: 12px; color: var(--text-light); }
 .franchise-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-warning {
+  background: var(--warning);
+  color: #1a0a00;
+  border: none;
+  font-weight: 700;
+}
+.btn-warning:hover { background: #d97706; }
 </style>
