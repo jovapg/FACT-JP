@@ -94,6 +94,18 @@
               {{ method.icon }} {{ method.label }}
             </button>
           </div>
+          <!-- Botón QR para transferencia: el cliente escanea para pagar -->
+          <button
+            v-if="selectedPayment === 'transferencia' && business?.paymentQr"
+            class="btn btn-qr"
+            @click="showQrModal = true"
+            type="button"
+          >
+            📲 Abrir QR para que el cliente pague
+          </button>
+          <p v-else-if="selectedPayment === 'transferencia' && !business?.paymentQr" class="text-muted" style="font-size:12px;margin-top:8px">
+            ⓘ Sube tu QR en Configuración para usar este flujo
+          </p>
         </div>
       </div>
 
@@ -217,6 +229,16 @@
         </div>
       </div>
     </div>
+
+    <!-- QR modal: imagen grande para que el cliente escanee -->
+    <div class="qr-modal-overlay" v-if="showQrModal" @click.self="showQrModal = false">
+      <div class="qr-modal">
+        <button class="qr-close" @click="showQrModal = false">✕ Cerrar</button>
+        <p class="qr-title">Escanea para pagar</p>
+        <img :src="business.paymentQr" alt="QR de pago" class="qr-modal-img" />
+        <p class="qr-amount">Total: {{ formatCOP(finalTotal) }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -271,6 +293,7 @@ const toast = inject('toast')
 
 const editableItems = ref([])
 const selectedPayment = ref('efectivo')
+const showQrModal = ref(false)
 const clientName = ref('')
 const discount = ref(0)
 const confirming = ref(false)
@@ -552,6 +575,77 @@ onMounted(async () => {
 }
 .payment-opt:hover { border-color: var(--accent); }
 .payment-opt.active { border-color: var(--success); background: #f0fff4; color: var(--success); }
+
+.btn-qr {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn-qr:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4); }
+
+/* QR fullscreen modal */
+.qr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+.qr-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 28px 24px;
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  position: relative;
+}
+.qr-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--danger);
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.qr-close:hover { background: #b91c1c; }
+.qr-title { font-size: 20px; font-weight: 700; color: var(--text); margin: 8px 0 0; }
+.qr-modal-img {
+  max-width: 380px;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.qr-amount {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--success);
+  margin: 0;
+}
 
 /* Confirmed invoice */
 .confirmed-header {

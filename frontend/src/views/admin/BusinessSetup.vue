@@ -77,6 +77,32 @@
           <button class="btn btn-primary" @click="saveProfile" :disabled="saving">
             {{ saving ? 'Guardando...' : 'Guardar cambios' }}
           </button>
+
+          <!-- QR de pago por transferencia -->
+          <div class="qr-section">
+            <h4 class="qr-section-title">QR para pagos por transferencia</h4>
+            <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+              Sube el QR de tu cuenta (Nequi, Bancolombia, etc.). Aparecerá un botón en el módulo de facturación cuando el cliente pague por transferencia.
+            </p>
+            <div class="qr-row">
+              <div class="qr-preview" @click="triggerQrInput">
+                <img v-if="qrPreview || profile.paymentQr" :src="qrPreview || profile.paymentQr" alt="QR" class="qr-img" />
+                <div v-else class="qr-placeholder">
+                  <span style="font-size:32px">📷</span>
+                  <span style="font-size:12px">Subir QR</span>
+                </div>
+              </div>
+              <div class="qr-actions">
+                <input ref="qrInput" type="file" accept="image/*" style="display:none" @change="onQrSelected" />
+                <button class="btn btn-outline btn-sm" @click="triggerQrInput">Elegir imagen</button>
+                <button v-if="qrFile" class="btn btn-primary btn-sm" @click="uploadQr" :disabled="uploadingQr">
+                  {{ uploadingQr ? 'Subiendo...' : 'Guardar QR' }}
+                </button>
+                <button v-if="profile.paymentQr && !qrFile" class="btn btn-danger-outline btn-sm" @click="removeQr">Quitar QR</button>
+                <span v-if="qrFile" class="qr-filename">{{ qrFile.name }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Categories config -->
@@ -245,7 +271,7 @@ const backingUp = ref(false)
 
 const profile = reactive({
   name: '', nit: '', address: '', city: '', phone: '',
-  invoicePrefix: '', tablesCount: 10, currency: 'COP', logo: ''
+  invoicePrefix: '', tablesCount: 10, currency: 'COP', logo: '', paymentQr: ''
 })
 
 const saving = ref(false)
@@ -342,6 +368,58 @@ async function uploadLogo() {
     toast('Error al subir el logo', 'error')
   } finally {
     uploading.value = false
+  }
+}
+
+// ── QR de pagos por transferencia ───────────────────
+const qrInput = ref(null)
+const qrFile = ref(null)
+const qrPreview = ref(null)
+const uploadingQr = ref(false)
+
+function triggerQrInput() { qrInput.value?.click() }
+
+function onQrSelected(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  qrFile.value = file
+  const reader = new FileReader()
+  reader.onload = ev => { qrPreview.value = ev.target.result }
+  reader.readAsDataURL(file)
+}
+
+async function uploadQr() {
+  if (!qrFile.value) return
+  uploadingQr.value = true
+  try {
+    const businessId = authStore.currentBusiness?.id
+    const formData = new FormData()
+    formData.append('paymentQr', qrFile.value)
+    const { data } = await api.post(`/api/${businessId}/profile/payment-qr`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    profile.paymentQr = data.paymentQr
+    qrPreview.value = data.paymentQr + '?t=' + Date.now()
+    qrFile.value = null
+    toast('QR guardado', 'success')
+  } catch {
+    toast('Error al subir el QR', 'error')
+  } finally {
+    uploadingQr.value = false
+  }
+}
+
+/** Quita el QR del perfil (no borra el archivo, solo desvincula) */
+async function removeQr() {
+  if (!confirm('¿Quitar el QR de pago?')) return
+  try {
+    const businessId = authStore.currentBusiness?.id
+    await api.put(`/api/${businessId}/profile`, { ...profile, paymentQr: '' })
+    profile.paymentQr = ''
+    qrPreview.value = null
+    toast('QR removido', 'success')
+  } catch {
+    toast('Error al quitar el QR', 'error')
   }
 }
 
@@ -568,6 +646,41 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.qr-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.qr-section-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+.qr-row { display: flex; align-items: center; gap: 20px; }
+.qr-preview {
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
+  border: 2px dashed var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+.qr-preview:hover { border-color: var(--accent); }
+.qr-img { width: 100%; height: 100%; object-fit: contain; }
+.qr-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-light); }
+.qr-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.qr-filename { font-size: 12px; color: var(--text-light); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-danger-outline {
+  border: 1.5px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-danger-outline:hover { background: #fef2f2; }
+
 .backup-info {
   display: flex;
   flex-direction: column;

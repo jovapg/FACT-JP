@@ -45,6 +45,27 @@ const uploadLogo = multer({
   }
 });
 
+// Multer: saves payment QR to data/<businessId>/payment-qr.<ext>
+const paymentQrStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(path.resolve(dataPath), req.params.businessId);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, `payment-qr${ext}`);
+  }
+});
+const uploadPaymentQr = multer({
+  storage: paymentQrStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo se permiten imágenes'));
+  }
+});
+
 // Multer: saves product images to data/<businessId>/inv_<id>.<ext>
 const productImgStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -186,6 +207,29 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
     res.json(updated);
   } catch {
     res.status(500).json({ error: 'Error al guardar el perfil' });
+  }
+});
+
+// Upload payment QR code — saves image to data/<businessId>/payment-qr.<ext>
+// Used for transfer payments: cashier shows QR, client scans to pay
+app.post('/api/:businessId/profile/payment-qr', ...bizAccess, uploadPaymentQr.single('paymentQr'), async (req, res) => {
+  try {
+    if (req.user.role !== 'superadmin' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No se recibió imagen' });
+
+    const ext = path.extname(req.file.filename);
+    const qrUrl = `/uploads/${req.params.businessId}/payment-qr${ext}`;
+
+    const profilePath = path.join(getBusinessPath(req.params.businessId), 'profile.json');
+    const existing = await readJSON(profilePath) || {};
+    const updated = { ...existing, paymentQr: qrUrl, id: req.params.businessId };
+    await writeJSON(profilePath, updated);
+
+    res.json({ paymentQr: qrUrl });
+  } catch {
+    res.status(500).json({ error: 'Error al subir el QR' });
   }
 });
 
