@@ -159,7 +159,7 @@
                     <tbody>
                       <tr v-for="(item, idx) in form.items" :key="idx">
                         <td>
-                          <select v-model="item.inventoryId" :class="['form-control', { 'input-error': submitted && !item.inventoryId }]">
+                          <select v-model="item.inventoryId" @change="onProductChange(item)" :class="['form-control', { 'input-error': submitted && !item.inventoryId }]">
                             <option value="">— Seleccionar —</option>
                             <option v-for="inv in filteredInventory" :key="inv.id" :value="inv.id">
                               {{ inv.name }} (stock: {{ inv.stock }} {{ inv.unit }})
@@ -446,6 +446,17 @@ async function saveQuickProduct() {
 
 /** Agrega una fila vacía en la tabla de ítems de la compra */
 function addItem() { form.items.push({ inventoryId: '', quantity: 0, unitCost: 0 }) }
+
+/**
+ * Al seleccionar un producto, autocompleta el costo unitario con el costo
+ * registrado en el inventario. El usuario puede sobrescribirlo si el precio
+ * cambió. Si el producto no tiene costo (es nuevo), deja unitCost en 0.
+ */
+function onProductChange(item) {
+  if (!item.inventoryId) { item.unitCost = 0; return }
+  const inv = inventoryStore.items.find(i => i.id === item.inventoryId)
+  if (inv && inv.cost > 0) item.unitCost = inv.cost
+}
 
 /** Elimina una fila de la tabla de ítems por índice */
 function removeItem(idx) { form.items.splice(idx, 1) }
