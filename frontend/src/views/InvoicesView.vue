@@ -39,7 +39,7 @@
                   <td>{{ inv.cashier }}</td>
                   <td>{{ inv.items?.length || 0 }} items</td>
                   <td>
-                    <span :class="['badge', payBadge(inv.paymentMethod)]">{{ inv.paymentMethod }}</span>
+                    <span :class="['badge', paymentBadge(inv.paymentMethod)]">{{ paymentLabel(inv.paymentMethod) }}</span>
                   </td>
                   <td class="currency">{{ formatCOP(inv.total) }}</td>
                   <td>
@@ -98,7 +98,7 @@
               <div class="inv-total">
                 <div class="inv-subtotal">Subtotal: {{ formatCOP(selectedInvoice.total) }}</div>
                 <p class="inv-iva">(Precios incluyen IVA)</p>
-                <div class="inv-payment">Método: {{ selectedInvoice.paymentMethod }}</div>
+                <div class="inv-payment">Método: {{ paymentLabel(selectedInvoice.paymentMethod) }}</div>
                 <div class="inv-grand-total">TOTAL: {{ formatCOP(selectedInvoice.total) }}</div>
               </div>
             </div>
@@ -132,6 +132,7 @@ import { useSalesStore } from '../stores/sales.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import PageLayout from '../components/PageLayout.vue'
+import { paymentLabel, paymentBadge } from '../utils/payment.js'
 
 const salesStore = useSalesStore()
 const auth = useAuthStore()
@@ -171,10 +172,6 @@ function formatDateTime(iso) {
   return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Clase CSS del badge según método de pago */
-function payBadge(m) {
-  return { efectivo: 'badge-success', transferencia: 'badge-info', tarjeta: 'badge-warning' }[m] || 'badge-default'
-}
 
 /** Abre el modal de detalle para una factura */
 function viewInvoice(inv) { selectedInvoice.value = inv }

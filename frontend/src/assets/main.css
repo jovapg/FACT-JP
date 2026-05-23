@@ -265,6 +265,7 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 .badge-warning { background: var(--warning-light); color: #92400e; }
 .badge-info    { background: var(--info-light);    color: #1e40af; }
 .badge-default { background: var(--surface-2);     color: var(--text-secondary); border: 1px solid var(--border); }
+.badge-purple  { background: #ede9fe;              color: #5b21b6; }
 
 /* ── Modales ─────────────────────────────────────────────────── */
 .modal-overlay {

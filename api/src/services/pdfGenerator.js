@@ -161,7 +161,14 @@ function generateInvoicePDF(sale, business, res) {
 
   // Método de pago (si está disponible)
   if (sale.paymentMethod) {
-    doc.fontSize(7).text(`Método de pago: ${sale.paymentMethod}`, MARGIN, doc.y, { width: CONTENT_WIDTH, align: 'center' });
+    const paymentLabels = {
+      efectivo: 'Efectivo',
+      transferencia: 'Transferencia',
+      tarjeta: 'Tarjeta',
+      pago_fiado: 'Pago de fiado'
+    };
+    const label = paymentLabels[sale.paymentMethod.toLowerCase()] || sale.paymentMethod;
+    doc.fontSize(7).text(`Método de pago: ${label}`, MARGIN, doc.y, { width: CONTENT_WIDTH, align: 'center' });
     doc.moveDown(0.3);
   }
 

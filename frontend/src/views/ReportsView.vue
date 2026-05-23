@@ -233,7 +233,7 @@
                     <td>{{ formatDateTime(sale.createdAt) }}</td>
                     <td>{{ sale.tableNumber || '-' }}</td>
                     <td>{{ sale.cashier }}</td>
-                    <td><span :class="['badge', payBadge(sale.paymentMethod)]">{{ sale.paymentMethod }}</span></td>
+                    <td><span :class="['badge', paymentBadge(sale.paymentMethod)]">{{ paymentLabel(sale.paymentMethod) }}</span></td>
                     <td class="currency" style="color:var(--danger)">{{ sale.discount > 0 ? '- ' + formatCOP(sale.discount) : '-' }}</td>
                     <td class="currency">{{ formatCOP(sale.total) }}</td>
                     <td>
@@ -288,6 +288,7 @@ import { useSalesStore } from '../stores/sales.js'
 import { useAuthStore } from '../stores/auth.js'
 import api from '../services/api.js'
 import PageLayout from '../components/PageLayout.vue'
+import { paymentLabel, paymentBadge } from '../utils/payment.js'
 
 // Registrar los tipos de gráfica usados en esta vista: dona (Doughnut) y barras (Bar)
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
@@ -312,6 +313,7 @@ const paymentColors = {
   efectivo:      '#10b981',  // verde — pago en mano
   transferencia: '#3b82f6',  // azul — pago digital
   tarjeta:       '#f59e0b',  // ámbar — tarjeta débito/crédito
+  pago_fiado:    '#8b5cf6',  // violeta — abono de cliente que tenía fiado
 }
 function colorForMethod(method) {
   return paymentColors[method?.toLowerCase()] || '#94a3b8'
@@ -323,12 +325,12 @@ function colorForMethod(method) {
  */
 const paymentChartData = computed(() => {
   const bp = report.value.summary?.byPayment || {}
-  const labels = Object.keys(bp)
+  const keys = Object.keys(bp)
   return {
-    labels,
+    labels: keys.map(k => paymentLabel(k)),
     datasets: [{
-      data: labels.map(l => bp[l]),
-      backgroundColor: labels.map(l => colorForMethod(l)),
+      data: keys.map(k => bp[k]),
+      backgroundColor: keys.map(k => colorForMethod(k)),
       borderWidth: 2,
       borderColor: '#ffffff',
       hoverOffset: 6
@@ -456,10 +458,6 @@ function formatDateTime(iso) {
   return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Clase CSS del badge según el método de pago */
-function payBadge(m) {
-  return { efectivo: 'badge-success', transferencia: 'badge-info', tarjeta: 'badge-warning' }[m] || 'badge-default'
-}
 
 /**
  * Carga el reporte según el tab activo y los filtros de fecha.

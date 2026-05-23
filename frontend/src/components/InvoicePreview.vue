@@ -139,7 +139,7 @@
               <div><strong>Cajero:</strong> {{ confirmedSale.cashier }}</div>
               <div v-if="confirmedSale.client"><strong>Cliente:</strong> {{ confirmedSale.client }}</div>
               <div v-if="confirmedSale.tableNumber"><strong>Mesa:</strong> {{ confirmedSale.tableNumber }}</div>
-              <div><strong>Pago:</strong> {{ confirmedSale.paymentMethod }}</div>
+              <div><strong>Pago:</strong> {{ paymentLabel(confirmedSale.paymentMethod) }}</div>
             </div>
 
             <div class="inv-divider">- - - - - - - - - - - - - - -</div>
@@ -253,6 +253,7 @@ import { useBusinessStore } from '../stores/business.js'
 import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
 import api from '../services/api.js'
+import { paymentLabel } from '../utils/payment.js'
 
 const props = defineProps({
   table: { type: Object, required: true },

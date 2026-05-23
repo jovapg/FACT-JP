@@ -1,4 +1,18 @@
 /**
+ * Etiquetas legibles de los métodos de pago para mostrar en los reportes
+ */
+const PAYMENT_LABELS = {
+  efectivo: 'Efectivo',
+  transferencia: 'Transferencia',
+  tarjeta: 'Tarjeta',
+  pago_fiado: 'Pago de fiado'
+};
+function fmtPayment(m) {
+  if (!m) return '';
+  return PAYMENT_LABELS[m.toLowerCase()] || m;
+}
+
+/**
  * services/excelGenerator.js — Generación de reportes Excel (ExcelJS)
  *
  * Genera archivos .xlsx para descargar desde el módulo de reportes.
@@ -90,7 +104,7 @@ async function generateSalesReport(sales, business, fromDate, toDate, res) {
       new Date(sale.createdAt).toLocaleString('es-CO'),
       sale.tableNumber || '',
       sale.cashier || '',
-      sale.paymentMethod || '',
+      fmtPayment(sale.paymentMethod),
       sale.total || 0
     ]);
 
@@ -141,7 +155,7 @@ async function generateSalesReport(sales, business, fromDate, toDate, res) {
 
   Object.entries(paymentSummary).forEach(([method, data]) => {
     const pct = totalAmount > 0 ? ((data.total / totalAmount) * 100).toFixed(1) : 0;
-    summarySheet.addRow([method, data.count, data.total, `${pct}%`]);
+    summarySheet.addRow([fmtPayment(method), data.count, data.total, `${pct}%`]);
   });
 
   summarySheet.addRow([]);
@@ -283,7 +297,7 @@ async function generateRentabilidadReport(data, business, fromDate, toDate, peri
   data.sales.forEach((s, i) => {
     const row = salesSheet.addRow([
       i + 1, s.invoiceNumber || '', new Date(s.createdAt).toLocaleString('es-CO'),
-      s.tableNumber || '', s.cashier || '', s.paymentMethod || '', s.discount || 0, s.total || 0
+      s.tableNumber || '', s.cashier || '', fmtPayment(s.paymentMethod), s.discount || 0, s.total || 0
     ]);
     row.getCell(7).numFmt = '"$"#,##0';
     row.getCell(8).numFmt = '"$"#,##0';

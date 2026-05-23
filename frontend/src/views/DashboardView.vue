@@ -155,7 +155,7 @@
               <div v-for="pm in paymentMethods" :key="pm.method" class="payment-row">
                 <div class="payment-info">
                   <component :is="paymentIcon(pm.method)" :size="14" />
-                  <span class="payment-method">{{ pm.method }}</span>
+                  <span class="payment-method">{{ paymentLabel(pm.method) }}</span>
                   <span class="payment-count">{{ pm.count }} ventas</span>
                 </div>
                 <span class="payment-amount">{{ formatCOP(pm.total) }}</span>
@@ -216,7 +216,7 @@
                   <td>{{ sale.tableNumber ? 'Mesa ' + sale.tableNumber : '-' }}</td>
                   <td>{{ sale.cashier }}</td>
                   <td>
-                    <span :class="['badge', paymentBadge(sale.paymentMethod)]">{{ sale.paymentMethod }}</span>
+                    <span :class="['badge', paymentBadge(sale.paymentMethod)]">{{ paymentLabel(sale.paymentMethod) }}</span>
                   </td>
                   <td class="currency">{{ formatCOP(sale.total) }}</td>
                   <td class="text-muted">{{ formatTime(sale.createdAt) }}</td>
@@ -248,9 +248,10 @@ import PageLayout from '../components/PageLayout.vue'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import {
   RefreshCw, DollarSign, ShoppingBag, AlertTriangle, TrendingUp,
-  BarChart3, UtensilsCrossed, Package, Receipt, Banknote, CreditCard, Smartphone,
+  BarChart3, UtensilsCrossed, Package, Receipt,
   Table as TableIcon, Users
 } from 'lucide-vue-next'
+import { paymentLabel, paymentBadge, paymentIcon } from '../utils/payment.js'
 
 // Registrar módulos de Chart.js
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
@@ -362,15 +363,6 @@ function formatDayLabel(dateStr) {
   return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' })
 }
 
-function paymentBadge(method) {
-  const map = { efectivo: 'badge-success', transferencia: 'badge-info', tarjeta: 'badge-warning' }
-  return map[method] || 'badge-default'
-}
-function paymentIcon(method) {
-  if (method === 'efectivo') return Banknote
-  if (method === 'tarjeta') return CreditCard
-  return Smartphone
-}
 
 // ── Carga de datos ───────────────────────────────────────────────
 async function loadData() {
