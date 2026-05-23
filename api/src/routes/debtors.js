@@ -37,7 +37,6 @@ router.get('/debtors', authenticate, async (req, res) => {
 /** POST — Crea un nuevo deudor */
 router.post('/debtors', authenticate, async (req, res) => {
   try {
-    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
     if (!req.body.name?.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
 
     const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];

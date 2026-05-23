@@ -90,7 +90,7 @@ const routes = [
     path: '/debtors',
     name: 'debtors',
     component: () => import('../views/DebtorsView.vue'),
-    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin'] }
+    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin', 'cajero'] }
   },
   {
     path: '/admin/setup',

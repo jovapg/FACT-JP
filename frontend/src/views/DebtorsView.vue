@@ -83,8 +83,8 @@
                   <button class="btn btn-sm btn-success-outline" @click="openPayment(d)" title="Registrar abono" :disabled="d.balance <= 0">
                     <Minus :size="12" /> Abono
                   </button>
-                  <button class="btn btn-sm btn-outline" @click="openEdit(d)" title="Editar">✏️</button>
-                  <button class="btn btn-sm btn-danger" @click="confirmDel(d)" title="Eliminar">🗑️</button>
+                  <button v-if="canManage" class="btn btn-sm btn-outline" @click="openEdit(d)" title="Editar">✏️</button>
+                  <button v-if="canManage" class="btn btn-sm btn-danger" @click="confirmDel(d)" title="Eliminar">🗑️</button>
                 </div>
               </td>
             </tr>
@@ -331,13 +331,17 @@
 import { ref, computed, onMounted, inject } from 'vue'
 import { useDebtorsStore } from '../stores/debtors.js'
 import { useInventoryStore } from '../stores/inventory.js'
+import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { UserPlus, Wallet, X, Plus, Minus } from 'lucide-vue-next'
 
 const debtorsStore = useDebtorsStore()
 const inventoryStore = useInventoryStore()
+const auth = useAuthStore()
 const toast = inject('toast')
+
+const canManage = computed(() => auth.user?.role !== 'cajero')
 
 // ── Filtros ──────────────────────────────────────────────────────
 const search = ref('')

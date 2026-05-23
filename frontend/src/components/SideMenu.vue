@@ -83,7 +83,7 @@ const menuItems = [
   { path: '/suppliers',        label: 'Proveedores',     icon: Truck,            roles: ['superadmin','admin'] },
   { path: '/reports',          label: 'Reportes',        icon: BarChart3,        roles: ['superadmin','admin'] },
   { path: '/shifts',           label: 'Turnos de Caja',  icon: Clock,            roles: ['superadmin','admin','cajero'] },
-  { path: '/debtors',          label: 'Deudas',          icon: Wallet,           roles: ['superadmin','admin'] },
+  { path: '/debtors',          label: 'Deudas',          icon: Wallet,           roles: ['superadmin','admin','cajero'] },
   { path: '/invoices',         label: 'Facturas',        icon: Receipt,          roles: ['superadmin','admin','cajero'] },
   { path: '/admin/setup',      label: 'Configuración',   icon: Settings,         roles: ['superadmin','admin'] },
   { path: '/admin/franchises', label: 'Franquicias',     icon: Building2,        roles: ['superadmin'] }
