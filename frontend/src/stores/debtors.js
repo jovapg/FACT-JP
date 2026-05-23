@@ -3,6 +3,9 @@
  *
  * Gestiona los clientes que compran fiado y su historial de transacciones.
  * balance = sum(cargos) - sum(abonos)
+ *
+ * Al saldar (balance = 0), el backend genera automáticamente una factura
+ * de paymentMethod='pago_fiado' con los items acumulados.
  */
 
 import { defineStore } from 'pinia'
@@ -46,26 +49,52 @@ export const useDebtorsStore = defineStore('debtors', () => {
     debtors.value = debtors.value.filter(d => d.id !== id)
   }
 
-  async function addCharge(id, amount, description) {
-    const res = await api.post(`/api/${bizId()}/debtors/${id}/charge`, { amount, description })
+  /** Registra fiado. items = [{ recipeId|inventoryId, name, price, qty }] */
+  async function addCharge(id, amount, description, items = []) {
+    const res = await api.post(`/api/${bizId()}/debtors/${id}/charge`, { amount, description, items })
+    const debtor = res.data.debtor
     const idx = debtors.value.findIndex(d => d.id === id)
-    if (idx !== -1) debtors.value[idx] = res.data
-    return res.data
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor, inventoryAlerts }
   }
 
+  /** Registra abono. Si salda, el backend genera factura y la retorna en generatedSale. */
   async function addPayment(id, amount, description) {
     const res = await api.post(`/api/${bizId()}/debtors/${id}/payment`, { amount, description })
+    const debtor = res.data.debtor
     const idx = debtors.value.findIndex(d => d.id === id)
-    if (idx !== -1) debtors.value[idx] = res.data
-    return res.data
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor, generatedSale|null }
+  }
+
+  /** Borra movimientos de todos los deudores, conserva los clientes. Solo admin. */
+  async function clearAllHistory() {
+    await api.delete(`/api/${bizId()}/debtors/transactions`)
+    for (const d of debtors.value) {
+      d.transactions = []
+      d.balance = 0
+    }
   }
 
   const totalDebt = computed(() => debtors.value.reduce((s, d) => s + (d.balance || 0), 0))
   const activeCount = computed(() => debtors.value.filter(d => d.balance > 0).length)
 
+  /** Todos los abonos (type='payment') aplanados con nombre del cliente. Más recientes primero. */
+  const allPayments = computed(() => {
+    const out = []
+    for (const d of debtors.value) {
+      for (const t of (d.transactions || [])) {
+        if (t.type === 'payment') {
+          out.push({ ...t, debtorId: d.id, debtorName: d.name })
+        }
+      }
+    }
+    return out.sort((a, b) => new Date(b.date) - new Date(a.date))
+  })
+
   return {
-    debtors, loading, totalDebt, activeCount,
+    debtors, loading, totalDebt, activeCount, allPayments,
     fetchDebtors, createDebtor, updateDebtor, deleteDebtor,
-    addCharge, addPayment
+    addCharge, addPayment, clearAllHistory
   }
 })

@@ -93,6 +93,45 @@
       </div>
     </div>
 
+    <!-- ── Historial de pagos (abonos) ── -->
+    <div class="card mt-4">
+      <div class="history-header">
+        <div>
+          <h3 class="history-title">Historial de pagos</h3>
+          <p class="text-muted" style="font-size:12.5px">Abonos registrados de todos los clientes</p>
+        </div>
+        <button v-if="canManage" class="btn btn-sm btn-danger-outline" @click="confirmClearHistory">
+          🗑️ Borrar historial
+        </button>
+      </div>
+
+      <div v-if="debtorsStore.allPayments.length === 0" class="empty-state" style="padding:24px 0">
+        <p class="text-muted" style="text-align:center">Aún no hay abonos registrados</p>
+      </div>
+      <div v-else class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Monto</th>
+              <th>Descripción</th>
+              <th>Registrado por</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in debtorsStore.allPayments" :key="p.id">
+              <td class="text-muted">{{ formatDateTime(p.date) }}</td>
+              <td><strong>{{ p.debtorName }}</strong></td>
+              <td class="payment-amount">+{{ formatCOP(p.amount) }}</td>
+              <td class="text-muted">{{ p.description || '—' }}</td>
+              <td class="text-muted">{{ p.registeredBy }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ── Modal: Crear / Editar cliente ── -->
     <div class="modal-overlay" v-if="showClientModal" @click.self="showClientModal = false">
       <div class="modal" style="max-width:420px">
@@ -523,13 +562,25 @@ async function handleCharge() {
   if (chargeCart.value.length === 0) return
   saving.value = true
   try {
-    // Construir descripción automática desde los ítems del carrito
+    // Descripción legible: "2x Cerveza, 1x Hamburguesa — Mesa 3"
     const desc = chargeCart.value
       .map(i => `${i.qty}x ${i.name}`)
       .join(', ') + (chargeNote.value ? ` — ${chargeNote.value}` : '')
-    await debtorsStore.addCharge(activeDebtor.value.id, chargeTotal.value, desc)
+    // Items para el backend: descontará inventario y guardará para la factura al saldar
+    const items = chargeCart.value.map(i => ({
+      recipeId: i.recipeId,
+      inventoryId: i.inventoryId,
+      name: i.name,
+      price: i.price,
+      qty: i.qty
+    }))
+    const res = await debtorsStore.addCharge(activeDebtor.value.id, chargeTotal.value, desc, items)
     showChargeModal.value = false
     toast(`Fiado de ${formatCOP(chargeTotal.value)} registrado`, 'success')
+    if (res.inventoryAlerts?.length > 0) {
+      toast(`⚠️ ${res.inventoryAlerts.length} producto(s) con stock bajo`, 'warning')
+    }
+    inventoryStore.fetchInventory()
   } catch (err) {
     toast(err.response?.data?.error || 'Error al registrar', 'error')
   } finally {
@@ -542,13 +593,35 @@ async function handlePayment() {
   if (!paymentForm.value.amount) return
   saving.value = true
   try {
-    await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description)
+    const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description)
     showPaymentModal.value = false
-    toast(`Abono de ${formatCOP(paymentForm.value.amount)} registrado`, 'success')
+    if (res.generatedSale) {
+      toast(`✅ Saldo cubierto. Factura ${res.generatedSale.invoiceNumber} generada`, 'success')
+    } else {
+      toast(`Abono de ${formatCOP(paymentForm.value.amount)} registrado`, 'success')
+    }
   } catch (err) {
     toast(err.response?.data?.error || 'Error al registrar', 'error')
   } finally {
     saving.value = false
+  }
+}
+
+/** Borra todo el historial de movimientos. Solo admin/superadmin. */
+async function confirmClearHistory() {
+  const msg = '¿Borrar TODO el historial de movimientos?\n\n' +
+              '- Se borrarán cargos y abonos de todos los clientes\n' +
+              '- Los saldos volverán a $0\n' +
+              '- Los clientes registrados se conservan\n' +
+              '- Las facturas ya generadas (pago_fiado) NO se borran\n\n' +
+              'Escribe "BORRAR" para confirmar:'
+  const answer = prompt(msg)
+  if (answer !== 'BORRAR') return
+  try {
+    await debtorsStore.clearAllHistory()
+    toast('Historial borrado', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al borrar', 'error')
   }
 }
 
@@ -827,6 +900,19 @@ onMounted(() => {
 .mt-2 { margin-top: 8px; }
 .mb-2 { margin-bottom: 8px; }
 .error-hint { font-size: 12.5px; color: var(--danger); margin-top: 4px; }
+
+.mt-4 { margin-top: 20px; }
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.history-title { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
+.payment-amount { color: var(--success); font-weight: 700; }
 
 @media (max-width: 768px) {
   .summary-cards { grid-template-columns: 1fr 1fr; }
