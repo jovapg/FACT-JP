@@ -50,8 +50,33 @@ router.get('/purchases', authenticate, async (req, res) => {
 router.post('/purchases', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
-    const { supplierId, items, notes } = req.body;
+    const { type, supplierId, items, notes, amount, description, area } = req.body;
+    const bolsillo = area === 'restaurante' ? 'restaurante' : 'bar';
+    const purchases = await readJSON(purchasesPath(req.params.businessId)) || [];
 
+    // ── Modo "gasto": salida de dinero simple (valor + detalle, sin inventario) ──
+    // Pensado para compras de mercado del Restaurante donde no se lleva inventario.
+    if (type === 'gasto') {
+      const value = Number(amount) || 0;
+      if (value <= 0) return res.status(400).json({ error: 'El valor del gasto debe ser positivo' });
+
+      const purchase = {
+        id: uuidv4(),
+        type: 'gasto',
+        area: bolsillo,
+        items: [],
+        total: value,
+        description: description || '',
+        date: new Date().toISOString(),
+        notes: notes || '',
+        createdBy: req.user.name || req.user.username
+      };
+      purchases.push(purchase);
+      await writeJSON(purchasesPath(req.params.businessId), purchases);
+      return res.status(201).json(purchase);
+    }
+
+    // ── Modo "reponer": compra itemizada que entra al inventario (Bar y/o insumos) ──
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'No items in purchase' });
     }
@@ -61,6 +86,8 @@ router.post('/purchases', authenticate, async (req, res) => {
 
     const purchase = {
       id: uuidv4(),
+      type: 'reponer',
+      area: bolsillo,
       supplierId: supplierId || null,
       items,
       total,
@@ -69,7 +96,6 @@ router.post('/purchases', authenticate, async (req, res) => {
       createdBy: req.user.name || req.user.username
     };
 
-    const purchases = await readJSON(purchasesPath(req.params.businessId)) || [];
     purchases.push(purchase);
     await writeJSON(purchasesPath(req.params.businessId), purchases);
 

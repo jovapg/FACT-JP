@@ -1,7 +1,7 @@
 <template>
   <div id="app-root">
     <router-view v-slot="{ Component }">
-      <transition name="page" mode="out-in">
+      <transition name="page">
         <component :is="Component" :key="$route.path" />
       </transition>
     </router-view>

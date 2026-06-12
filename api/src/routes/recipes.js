@@ -45,8 +45,9 @@ router.post('/recipes', authenticate, async (req, res) => {
       name: req.body.name,
       price: Number(req.body.price) || 0,       // Precio de venta al cliente
       category: req.body.category || 'general',
+      area: req.body.area === 'restaurante' ? 'restaurante' : 'bar', // Bolsillo: bar | restaurante
       available: req.body.available !== false,   // Disponible en el menú por defecto
-      ingredients: req.body.ingredients || [],   // Lista de insumos que consume al venderse
+      ingredients: req.body.ingredients || [],   // Lista de insumos que consume al venderse (opcional)
       createdAt: new Date().toISOString()
     };
     items.push(newItem);

@@ -63,6 +63,34 @@
           </template>
         </div>
 
+        <!-- Estado del día por bolsillo (Bar / Restaurante) -->
+        <div class="card bolsillos-card mb-4" v-if="!loadingData && cierre">
+          <div class="chart-header">
+            <div>
+              <h3 class="section-title">💰 Estado del día por bolsillo</h3>
+              <p class="section-sub">Cuánto le pertenece hoy a cada negocio · {{ cierre.salesCount }} ventas</p>
+            </div>
+          </div>
+          <div class="bolsillos-grid">
+            <div class="bolsillo bar">
+              <div class="bolsillo-head">🍺 Bar</div>
+              <div class="bolsillo-row"><span>Ventas</span><span>{{ formatCOP(cierre.bar.ventas) }}</span></div>
+              <div class="bolsillo-row"><span>Compras / gastos</span><span class="neg">− {{ formatCOP(cierre.bar.compras) }}</span></div>
+              <div class="bolsillo-net"><span>Le pertenece</span><span>{{ formatCOP(cierre.bar.neto) }}</span></div>
+            </div>
+            <div class="bolsillo restaurante">
+              <div class="bolsillo-head">🍽️ Restaurante</div>
+              <div class="bolsillo-row"><span>Ventas</span><span>{{ formatCOP(cierre.restaurante.ventas) }}</span></div>
+              <div class="bolsillo-row"><span>Compras / gastos</span><span class="neg">− {{ formatCOP(cierre.restaurante.compras) }}</span></div>
+              <div class="bolsillo-net"><span>Le pertenece</span><span>{{ formatCOP(cierre.restaurante.neto) }}</span></div>
+            </div>
+          </div>
+          <div class="bolsillo-total">
+            Total del día: <strong>{{ formatCOP(cierre.total.ventas) }}</strong> en ventas ·
+            <strong>{{ formatCOP(cierre.total.neto) }}</strong> neto
+          </div>
+        </div>
+
         <!-- Nómina del mes -->
         <div class="card nomina-card mb-4" v-if="!loadingData && suppliers.some(s => s.tipo === 'empleado')">
           <div class="nomina-header">
@@ -263,6 +291,7 @@ const salesStore = useSalesStore()
 
 const loadingData = ref(false)
 const todaySales = ref({ total: 0, count: 0 })
+const cierre = ref(null)       // Estado del día por bolsillo (Bar / Restaurante)
 const recentSales = ref([])
 const weekSales = ref([])     // Array de { date, total } para la gráfica
 const paymentMethods = ref([]) // Array de { method, count, total } para hoy
@@ -387,6 +416,12 @@ async function loadData() {
       .map(([method, data]) => ({ method, count: data.count || 0, total: data.total || 0 }))
       .filter(p => p.count > 0)
       .sort((a, b) => b.total - a.total)
+
+    // Estado del día por bolsillo (Bar / Restaurante)
+    try {
+      const c = await api.get(`/api/${bizId}/reports/cierre`)
+      cierre.value = c.data
+    } catch { cierre.value = null }
 
     // Reporte de la semana para la gráfica
     const weekReport = await salesStore.fetchReports({ period: 'week' })
@@ -580,6 +615,48 @@ onMounted(loadData)
 @media (max-width: 600px) {
   .nomina-row { grid-template-columns: 1fr; gap: 6px; }
   .nomina-emp-count { text-align: left; }
+}
+
+/* Estado del día por bolsillo */
+.bolsillos-card { padding: 20px; }
+.bolsillos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 12px 0;
+}
+.bolsillo {
+  border-radius: var(--radius);
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+.bolsillo.bar { background: #fffbeb; border-left: 4px solid #f59e0b; }
+.bolsillo.restaurante { background: #ecfdf5; border-left: 4px solid #10b981; }
+.bolsillo-head { font-size: 15px; font-weight: 800; margin-bottom: 10px; color: #1a1a2e; }
+.bolsillo-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 3px 0;
+  color: #334155;
+}
+.bolsillo-row .neg { color: var(--danger); }
+.bolsillo-net {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 800;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 2px dashed rgba(0,0,0,0.12);
+  color: #0f172a;
+}
+.bolsillo-total {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 /* Spinner en botón refresh */

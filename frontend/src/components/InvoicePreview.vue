@@ -36,16 +36,42 @@
               <span>Total</span>
               <span></span>
             </div>
-            <div class="inv-item" v-for="item in editableItems" :key="item.recipeId">
-              <span class="item-name">{{ item.name }}</span>
-              <div class="item-qty-ctrl">
-                <button @click="decreaseQty(item)" class="qty-mini-btn">−</button>
-                <span>{{ item.qty }}</span>
-                <button @click="item.qty++" class="qty-mini-btn">+</button>
+            <div class="inv-item-wrap" v-for="item in editableItems" :key="item.recipeId">
+              <div class="inv-item">
+                <span class="item-name">
+                  {{ item.name }}
+                  <span :class="['area-tag', (item.area || 'bar')]">{{ (item.area || 'bar') === 'restaurante' ? '🍽️' : '🍺' }}</span>
+                </span>
+                <div class="item-qty-ctrl">
+                  <button @click="decreaseQty(item)" class="qty-mini-btn">−</button>
+                  <span>{{ item.qty }}</span>
+                  <button @click="item.qty++" class="qty-mini-btn">+</button>
+                </div>
+                <span>{{ formatCOP(item.price) }}</span>
+                <span class="item-line-total">{{ formatCOP(item.qty * item.price) }}</span>
+                <button class="remove-mini-btn" @click="removeItem(item)">×</button>
               </div>
-              <span>{{ formatCOP(item.price) }}</span>
-              <span class="item-line-total">{{ formatCOP(item.qty * item.price) }}</span>
-              <button class="remove-mini-btn" @click="removeItem(item)">×</button>
+              <!-- Descuento por producto: botón que abre un campo de valor -->
+              <div class="inv-item-disc">
+                <button
+                  v-if="!item._showDisc && !(item.discount > 0)"
+                  class="disc-add-btn"
+                  @click="item._showDisc = true"
+                >🏷️ Agregar descuento</button>
+                <div v-else class="disc-input-row">
+                  <span class="disc-label">Descuento:</span>
+                  <input
+                    v-model.number="item.discount"
+                    type="number"
+                    min="0"
+                    :max="item.qty * item.price"
+                    class="disc-input"
+                    placeholder="0"
+                  />
+                  <span class="disc-applied">− {{ formatCOP(item.discount || 0) }}</span>
+                  <button class="disc-remove" @click="item.discount = 0; item._showDisc = false" title="Quitar descuento">×</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -55,9 +81,9 @@
             <span>Subtotal:</span>
             <span>{{ formatCOP(invoiceTotal) }}</span>
           </div>
-          <div class="inv-discount-row" v-if="discount > 0">
-            <span>Descuento:</span>
-            <span class="discount-amount">- {{ formatCOP(discount) }}</span>
+          <div class="inv-discount-row" v-if="totalDiscount > 0">
+            <span>Descuentos:</span>
+            <span class="discount-amount">- {{ formatCOP(totalDiscount) }}</span>
           </div>
           <div class="inv-iva-note">(Precios incluyen IVA)</div>
 
@@ -69,15 +95,11 @@
           </div>
         </div>
 
-        <!-- Client name + Discount -->
+        <!-- Client name -->
         <div class="extra-fields">
           <div class="form-group">
             <label class="form-label">👤 Nombre del cliente (opcional)</label>
             <input v-model="clientName" class="form-control" placeholder="Ej: Juan García" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">🏷️ Descuento (COP)</label>
-            <input v-model.number="discount" type="number" min="0" :max="invoiceTotal" class="form-control" placeholder="0" />
           </div>
         </div>
 
@@ -295,7 +317,6 @@ const editableItems = ref([])
 const selectedPayment = ref('efectivo')
 const showQrModal = ref(false)
 const clientName = ref('')
-const discount = ref(0)
 const confirming = ref(false)
 const confirmedSale = ref(null)
 const shortlinkUrl = ref('')   // URL corta pre-generada para compartir
@@ -317,7 +338,11 @@ const paymentMethods = [
 const invoiceTotal = computed(() =>
   editableItems.value.reduce((sum, item) => sum + item.qty * item.price, 0)
 )
-const finalTotal = computed(() => Math.max(0, invoiceTotal.value - (discount.value || 0)))
+// Suma de los descuentos puestos producto por producto
+const totalDiscount = computed(() =>
+  editableItems.value.reduce((sum, item) => sum + (Number(item.discount) || 0), 0)
+)
+const finalTotal = computed(() => Math.max(0, invoiceTotal.value - totalDiscount.value))
 
 function formatCOP(v) {
   return '$' + Number(v || 0).toLocaleString('es-CO')
@@ -344,11 +369,16 @@ async function confirmSale() {
     const result = await salesStore.createSale({
       tableId: props.table.id,
       tableNumber: props.table.number,
-      items: editableItems.value,
+      // Cada ítem viaja con su bolsillo (area) y su descuento individual
+      items: editableItems.value.map(i => ({
+        ...i,
+        discount: Number(i.discount) || 0,
+        area: i.area || 'bar'
+      })),
       paymentMethod: selectedPayment.value,
       cashier: auth.user?.name || auth.user?.username,
       client: clientName.value || '',
-      discount: discount.value || 0,
+      discount: totalDiscount.value,
       total: finalTotal.value
     })
 
@@ -427,7 +457,13 @@ async function sharePdf() {
 }
 
 onMounted(async () => {
-  editableItems.value = props.items.map(i => ({ ...i }))
+  // Cada ítem editable arranca con descuento 0 y su bolsillo (area) preservado
+  editableItems.value = props.items.map(i => ({
+    ...i,
+    discount: Number(i.discount) || 0,
+    area: i.area || 'bar',
+    _showDisc: false
+  }))
   clientName.value = props.initialClient || ''
   if (!businessStore.profile) await businessStore.fetchProfile()
 })
@@ -508,6 +544,42 @@ onMounted(async () => {
 .qty-mini-btn:hover { background: var(--accent); color: white; }
 
 .item-line-total { font-weight: 700; }
+
+/* ── Descuento por producto ───────────────────────────────────── */
+.inv-item-wrap { border-bottom: 1px dotted var(--border); padding: 4px 0; }
+.inv-item-wrap:last-child { border-bottom: none; }
+.area-tag { font-size: 10px; }
+.inv-item-disc { padding: 2px 0 4px; }
+.disc-add-btn {
+  background: none;
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.disc-add-btn:hover { background: var(--accent-light); }
+.disc-input-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.disc-label { color: var(--text-light); }
+.disc-input {
+  width: 90px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.disc-applied { color: var(--danger); font-weight: 700; }
+.disc-remove {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
 .remove-mini-btn {
   background: none;
   border: none;

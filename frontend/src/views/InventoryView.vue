@@ -187,6 +187,13 @@
                   </div>
                 </div>
                 <div class="form-group">
+                  <label class="form-label">Bolsillo *</label>
+                  <div class="inv-area-picker">
+                    <button type="button" :class="['inv-area-opt', 'bar', { active: form.area === 'bar' }]" @click="form.area = 'bar'">🍺 Bar</button>
+                    <button type="button" :class="['inv-area-opt', 'rest', { active: form.area === 'restaurante' }]" @click="form.area = 'restaurante'">🍽️ Restaurante</button>
+                  </div>
+                </div>
+                <div class="form-group">
                   <label class="form-label">Stock actual</label>
                   <input v-model.number="form.stock" type="number" class="form-control" min="0" />
                 </div>
@@ -394,7 +401,7 @@ const adjustAmount = ref(0)     // Cantidad de ajuste (+/-)
 const adjustReason = ref('')    // Motivo del ajuste (para trazabilidad)
 
 const form = reactive({
-  name: '', category: '', unit: 'unidad',
+  name: '', category: '', unit: 'unidad', area: 'bar',
   stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '',
   esIngrediente: false, imageUrl: ''
 })
@@ -458,7 +465,7 @@ function formatCOP(v) {
 function openCreate() {
   editItem.value = null
   submitted.value = false
-  Object.assign(form, { name: '', category: '', unit: 'unidad', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false, imageUrl: '' })
+  Object.assign(form, { name: '', category: '', unit: 'unidad', area: 'bar', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false, imageUrl: '' })
   showModal.value = true
 }
 
@@ -553,6 +560,7 @@ async function saveItem() {
           name: form.name,
           price: form.salePrice,
           category: form.category,
+          area: form.area,
           available: true,
           ingredients: [{ inventoryId: newItem.id, quantity: 1 }]
         })
@@ -766,4 +774,21 @@ onMounted(async () => {
   transition: background 0.12s;
 }
 .combo-option:hover { background: var(--surface-2); }
+
+/* Selector de bolsillo en inventario */
+.inv-area-picker { display: flex; gap: 8px; }
+.inv-area-opt {
+  flex: 1;
+  padding: 9px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.inv-area-opt.bar.active { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.inv-area-opt.rest.active { border-color: #10b981; background: #ecfdf5; color: #047857; }
 </style>

@@ -59,6 +59,7 @@ router.post('/inventory', authenticate, async (req, res) => {
       stock: Number(req.body.stock) || 0,
       cost: Number(req.body.cost) || 0,
       category: req.body.category || 'general',
+      area: req.body.area === 'restaurante' ? 'restaurante' : 'bar', // Bolsillo del insumo: bar | restaurante
       minStock: Number(req.body.minStock) || 0,
       supplierId: req.body.supplierId || null,  // Vinculación proveedor-producto para filtros en compras
       salePrice: Number(req.body.salePrice) || 0,

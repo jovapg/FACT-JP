@@ -350,4 +350,97 @@ router.get('/reports/rentabilidad/excel', tokenFromQuery, authenticate, async (r
   }
 });
 
+/**
+ * GET /api/:businessId/reports/cierre — Estado del día por bolsillo (Bar / Restaurante)
+ *
+ * Separa el dinero de un período entre los dos bolsillos:
+ *   - Ventas de cada bolsillo (desde sale.totalsByArea)
+ *   - Compras/gastos de cada bolsillo (purchase.area)
+ *   - Neto = ventas − compras, por bolsillo
+ *
+ * Query params: ?date=YYYY-MM-DD  |  ?from=&to=  |  ?period=day|week|month
+ * Por defecto (sin params) usa el día de hoy.
+ */
+router.get('/reports/cierre', authenticate, async (req, res) => {
+  try {
+    const { date, from, to, period } = req.query;
+    const now = new Date();
+
+    // Rango por defecto: hoy
+    let start, end;
+    if (date) {
+      start = new Date(date);
+      end = new Date(date); end.setDate(end.getDate() + 1);
+    } else if (from || to) {
+      start = from ? new Date(from) : new Date(0);
+      end = to ? new Date(to) : new Date(8640000000000000);
+      if (to) end.setDate(end.getDate() + 1);
+    } else if (period === 'week') {
+      start = new Date(now); start.setDate(start.getDate() - 7); end = new Date(now);
+    } else if (period === 'month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1); end = new Date(now);
+    } else {
+      // hoy
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end = new Date(start); end.setDate(end.getDate() + 1);
+    }
+
+    const inRange = (d) => { const x = new Date(d); return x >= start && x < end; };
+
+    // Calcula el split por bolsillo de una venta (con respaldo para ventas viejas sin totalsByArea)
+    const saleAreaTotals = (sale) => {
+      if (sale.totalsByArea) return sale.totalsByArea;
+      const t = { bar: 0, restaurante: 0 };
+      (sale.items || []).forEach(i => {
+        const qty = i.qty || i.quantity || 1;
+        const price = i.price || 0;
+        const disc = i.discount || 0;
+        const area = i.area === 'restaurante' ? 'restaurante' : 'bar';
+        t[area] += Math.max(0, qty * price - disc);
+      });
+      return t;
+    };
+
+    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
+
+    const sales = allSales.filter(s => inRange(s.createdAt));
+    const purchases = allPurchases.filter(p => inRange(p.date));
+
+    const ventas = { bar: 0, restaurante: 0 };
+    sales.forEach(s => {
+      const t = saleAreaTotals(s);
+      ventas.bar += t.bar || 0;
+      ventas.restaurante += t.restaurante || 0;
+    });
+
+    const compras = { bar: 0, restaurante: 0 };
+    purchases.forEach(p => {
+      const area = p.area === 'restaurante' ? 'restaurante' : 'bar';
+      compras[area] += p.total || 0;
+    });
+
+    const bolsillo = (k) => ({
+      ventas: Math.round(ventas[k]),
+      compras: Math.round(compras[k]),
+      neto: Math.round(ventas[k] - compras[k])
+    });
+
+    res.json({
+      rango: { desde: start.toISOString(), hasta: end.toISOString() },
+      bar: bolsillo('bar'),
+      restaurante: bolsillo('restaurante'),
+      total: {
+        ventas: Math.round(ventas.bar + ventas.restaurante),
+        compras: Math.round(compras.bar + compras.restaurante),
+        neto: Math.round((ventas.bar + ventas.restaurante) - (compras.bar + compras.restaurante))
+      },
+      salesCount: sales.length,
+      purchasesCount: purchases.length
+    });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 module.exports = router;

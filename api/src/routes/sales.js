@@ -50,6 +50,14 @@ async function updateActiveShift(businessId, sale) {
     shifts[idx].totalCashSales = (shifts[idx].totalCashSales || 0) + (isEfectivo ? sale.total : 0);
     shifts[idx].totalOtherSales= (shifts[idx].totalOtherSales || 0) + (isEfectivo ? 0 : sale.total);
 
+    // Acumular ventas por bolsillo (Bar / Restaurante) en el turno activo
+    const tba = sale.totalsByArea || { bar: 0, restaurante: 0 };
+    const prev = shifts[idx].salesByArea || { bar: 0, restaurante: 0 };
+    shifts[idx].salesByArea = {
+      bar: (prev.bar || 0) + (tba.bar || 0),
+      restaurante: (prev.restaurante || 0) + (tba.restaurante || 0)
+    };
+
     await writeJSON(shiftsPath(businessId), shifts);
   } catch (err) {
     console.error('[shifts] Error actualizando turno activo:', err);
@@ -145,21 +153,51 @@ router.post('/sales', authenticate, async (req, res) => {
     const profile = await readJSON(profilePath(req.params.businessId)) || {};
     const invoiceNumber = generateInvoiceNumber(profile);
 
-    // Calcular subtotal sumando precio × cantidad de cada ítem
-    const subtotal = items.reduce((sum, item) => sum + ((item.qty || item.quantity || 1) * (item.price || 0)), 0);
-    const appliedDiscount = Number(discount) || 0;
-    // Si el frontend envía el total ya calculado, se usa ese; si no, se calcula aquí
+    // Normalizar cada ítem: cantidad, descuento por producto y bolsillo (área).
+    // El descuento ahora es POR PRODUCTO (botón "agregar descuento" bajo cada ítem).
+    const normItems = items.map(item => {
+      const qty = item.qty || item.quantity || 1;
+      const price = Number(item.price) || 0;
+      const itemDiscount = Math.max(0, Number(item.discount) || 0);
+      const area = item.area === 'restaurante' ? 'restaurante' : 'bar';
+      return { ...item, qty, price, discount: itemDiscount, area };
+    });
+
+    // Subtotal = suma de precio × cantidad (sin descuentos)
+    const subtotal = normItems.reduce((sum, i) => sum + (i.qty * i.price), 0);
+    // Descuento total = suma de los descuentos de cada producto
+    const itemDiscountSum = normItems.reduce((sum, i) => sum + i.discount, 0);
+    // Compatibilidad: si no hay descuentos por ítem pero llega un descuento global, se usa ese
+    const appliedDiscount = itemDiscountSum > 0 ? itemDiscountSum : (Number(discount) || 0);
     const finalTotal = total !== undefined ? Number(total) : Math.max(0, subtotal - appliedDiscount);
+
+    // Separar el dinero por bolsillo (Bar / Restaurante).
+    // El neto de cada producto = (precio × cantidad) − su descuento, sumado a su bolsillo.
+    const totalsByArea = { bar: 0, restaurante: 0 };
+    normItems.forEach(i => {
+      const net = Math.max(0, (i.qty * i.price) - i.discount);
+      totalsByArea[i.area] += net;
+    });
+    // Si el descuento vino global (legado), se reparte proporcional al peso de cada bolsillo
+    if (itemDiscountSum === 0 && appliedDiscount > 0 && subtotal > 0) {
+      const grossByArea = { bar: 0, restaurante: 0 };
+      normItems.forEach(i => { grossByArea[i.area] += i.qty * i.price; });
+      totalsByArea.bar = Math.max(0, grossByArea.bar - appliedDiscount * (grossByArea.bar / subtotal));
+      totalsByArea.restaurante = Math.max(0, grossByArea.restaurante - appliedDiscount * (grossByArea.restaurante / subtotal));
+    }
+    totalsByArea.bar = Math.round(totalsByArea.bar);
+    totalsByArea.restaurante = Math.round(totalsByArea.restaurante);
 
     const sale = {
       id: uuidv4(),
       invoiceNumber,
       tableId: tableId || null,
       tableNumber: tableNumber || null,
-      items,
+      items: normItems,
       subtotal,
       discount: appliedDiscount,
       total: finalTotal,
+      totalsByArea,        // { bar, restaurante } — cuánto de esta factura es de cada bolsillo
       paymentMethod: paymentMethod || 'efectivo',
       cashier: cashier || req.user.name || req.user.username,
       client: client || '',

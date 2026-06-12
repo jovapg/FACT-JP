@@ -30,8 +30,13 @@
               <tbody>
                 <tr v-for="p in purchases" :key="p.id">
                   <td>{{ formatDate(p.date) }}</td>
-                  <td>{{ getSupplierName(p.supplierId) }}</td>
-                  <td>{{ p.items?.length || 0 }} productos</td>
+                  <td>
+                    <span :class="['badge', 'area-badge', (p.area || 'bar')]">
+                      {{ (p.area || 'bar') === 'restaurante' ? '🍽️ Rest.' : '🍺 Bar' }}
+                    </span>
+                    {{ p.type === 'gasto' ? '🛒 Gasto' : getSupplierName(p.supplierId) }}
+                  </td>
+                  <td>{{ p.type === 'gasto' ? (p.description || 'Gasto de mercado') : (p.items?.length || 0) + ' productos' }}</td>
                   <td class="currency">{{ formatCOP(p.total) }}</td>
                   <td>{{ p.createdBy }}</td>
                   <td>{{ p.notes || '-' }}</td>
@@ -66,8 +71,16 @@
                   <span>{{ formatDate(selectedPurchase.date) }}</span>
                 </div>
                 <div class="detail-meta-item">
+                  <span class="meta-label">Bolsillo</span>
+                  <span>{{ (selectedPurchase.area || 'bar') === 'restaurante' ? '🍽️ Restaurante' : '🍺 Bar' }}</span>
+                </div>
+                <div class="detail-meta-item" v-if="selectedPurchase.type !== 'gasto'">
                   <span class="meta-label">Proveedor</span>
                   <span>{{ getSupplierName(selectedPurchase.supplierId) }}</span>
+                </div>
+                <div class="detail-meta-item" v-if="selectedPurchase.type === 'gasto'">
+                  <span class="meta-label">Detalle</span>
+                  <span>{{ selectedPurchase.description || '-' }}</span>
                 </div>
                 <div class="detail-meta-item">
                   <span class="meta-label">Registrado por</span>
@@ -79,7 +92,11 @@
                 </div>
               </div>
 
-              <table class="table" style="margin-top:16px">
+              <div v-if="selectedPurchase.type === 'gasto'" class="gasto-detail-total">
+                Total del gasto: <strong>{{ formatCOP(selectedPurchase.total) }}</strong>
+              </div>
+
+              <table v-else class="table" style="margin-top:16px">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -121,6 +138,49 @@
               <button class="btn-close" @click="closeModal">×</button>
             </div>
             <div class="modal-body">
+              <!-- Tipo de salida -->
+              <div class="form-group">
+                <label class="form-label">Tipo de salida</label>
+                <div class="type-picker">
+                  <button type="button" :class="['type-opt', { active: form.type === 'reponer' }]" @click="setType('reponer')">
+                    🔁 Reponer insumo<br><small>producto + cantidad (entra al stock)</small>
+                  </button>
+                  <button type="button" :class="['type-opt', { active: form.type === 'gasto' }]" @click="setType('gasto')">
+                    🛒 Gasto / mercado<br><small>solo valor + detalle</small>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Bolsillo -->
+              <div class="form-group">
+                <label class="form-label">Bolsillo (¿de quién es el gasto?)</label>
+                <div class="type-picker">
+                  <button type="button" :class="['type-opt area-bar', { active: form.area === 'bar' }]" @click="form.area = 'bar'">🍺 Bar</button>
+                  <button type="button" :class="['type-opt area-rest', { active: form.area === 'restaurante' }]" @click="form.area = 'restaurante'">🍽️ Restaurante</button>
+                </div>
+              </div>
+
+              <!-- ── GASTO simple: valor + detalle ── -->
+              <template v-if="form.type === 'gasto'">
+                <div class="form-group">
+                  <label class="form-label">Valor del gasto (COP) *</label>
+                  <input v-model.number="form.amount" type="number" min="0" :class="['form-control', { 'input-error': submitted && !(form.amount > 0) }]" placeholder="Ej: 300000" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Detalle (¿qué compraste?) *</label>
+                  <input v-model="form.description" class="form-control" placeholder="Ej: Carne, verduras y pan del mercado" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Notas</label>
+                  <input v-model="form.notes" class="form-control" placeholder="Opcional" />
+                </div>
+                <div class="purchase-total">
+                  <strong>Total: {{ formatCOP(purchaseTotal) }}</strong>
+                </div>
+              </template>
+
+              <!-- ── REPONER: compra itemizada que entra al inventario ── -->
+              <template v-else>
               <div class="grid grid-2">
                 <div class="form-group">
                   <label class="form-label">Proveedor</label>
@@ -190,12 +250,13 @@
                   <strong>Total: {{ formatCOP(purchaseTotal) }}</strong>
                 </div>
               </div>
+              </template>
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="closeModal">Cancelar</button>
               <button v-if="hasDraft && !isEditing" class="btn btn-danger-outline" @click="clearDraft(); closeModal()">🗑 Descartar borrador</button>
-              <button class="btn btn-primary" @click="savePurchase" :disabled="saving || form.items.length === 0">
-                {{ saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : 'Finalizar compra') }}
+              <button class="btn btn-primary" @click="savePurchase" :disabled="saving || (form.type === 'reponer' && form.items.length === 0)">
+                {{ saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : (form.type === 'gasto' ? 'Registrar gasto' : 'Finalizar compra')) }}
               </button>
             </div>
           </div>
@@ -296,26 +357,40 @@ const quickForm = reactive({ name: '', category: 'bebidas', unit: 'unidad', minS
 const editPurchaseId = ref(null)   // null = nueva compra, string = editando compra existente
 const hasDraft = ref(false)        // true si hay un borrador guardado en localStorage para este negocio
 
-const form = reactive({ supplierId: '', notes: '', items: [] })
+const form = reactive({
+  type: 'reponer',      // 'reponer' (itemizado, entra al stock) | 'gasto' (valor + detalle)
+  area: 'bar',          // bolsillo: 'bar' | 'restaurante'
+  supplierId: '', notes: '', items: [],
+  amount: 0, description: ''   // solo para type 'gasto'
+})
 const bizId = computed(() => auth.currentBusiness?.id)
+
+/** Cambia el tipo de salida y ajusta el bolsillo por defecto según el caso típico */
+function setType(t) {
+  form.type = t
+  // Por defecto: reponer suele ser del Bar; un gasto de mercado suele ser del Restaurante
+  form.area = t === 'gasto' ? 'restaurante' : 'bar'
+}
 
 // Clave única por negocio para evitar que borradores de distintos negocios se mezclen
 const draftKey = computed(() => `facjp_draft_purchase_${bizId.value}`)
 const isEditing = computed(() => !!editPurchaseId.value)
 
-/** Suma del total de la compra en curso (quantity × unitCost por cada ítem) */
-const purchaseTotal = computed(() =>
-  form.items.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0)
-)
+/** Suma del total de la salida en curso. Para 'gasto' es el valor; para 'reponer' suma de ítems. */
+const purchaseTotal = computed(() => {
+  if (form.type === 'gasto') return Number(form.amount) || 0
+  return form.items.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0)
+})
 
 /**
- * Si hay proveedor seleccionado, filtra el inventario para mostrar solo
- * los productos vinculados a ese proveedor (por supplierId).
- * Si no hay proveedor, muestra todos los ítems del inventario.
+ * Filtra el inventario para la tabla de "reponer":
+ *   - Por bolsillo (Bar / Restaurante) según el área elegida
+ *   - Y, si hay proveedor, por los productos vinculados a ese proveedor
  */
 const filteredInventory = computed(() => {
-  if (!form.supplierId) return inventoryStore.items
-  return inventoryStore.items.filter(i => i.supplierId === form.supplierId)
+  let list = inventoryStore.items.filter(i => (i.area || 'bar') === form.area)
+  if (form.supplierId) list = list.filter(i => i.supplierId === form.supplierId)
+  return list
 })
 
 /**
@@ -363,18 +438,27 @@ function verDetalle(purchase) {
 function openNew() {
   editPurchaseId.value = null
   submitted.value = false
+  // Valores por defecto: reponer insumo del Bar
+  Object.assign(form, { type: 'reponer', area: 'bar', supplierId: '', notes: '', items: [], amount: 0, description: '' })
   const saved = localStorage.getItem(draftKey.value)
   if (saved) {
     try {
       const draft = JSON.parse(saved)
-      Object.assign(form, { supplierId: draft.supplierId || '', notes: draft.notes || '', items: [] })
+      Object.assign(form, {
+        type: draft.type || 'reponer',
+        area: draft.area || 'bar',
+        supplierId: draft.supplierId || '',
+        notes: draft.notes || '',
+        amount: draft.amount || 0,
+        description: draft.description || '',
+        items: []
+      })
       // splice para reemplazar reactivamente los ítems del borrador
       form.items.splice(0, form.items.length, ...(draft.items || []))
       hasDraft.value = true
       toast('Borrador restaurado', 'info')
     } catch { clearDraft() }
   } else {
-    Object.assign(form, { supplierId: '', notes: '', items: [] })
     hasDraft.value = false
   }
   showModal.value = true
@@ -388,8 +472,12 @@ function openEdit(purchase) {
   editPurchaseId.value = purchase.id
   submitted.value = false
   Object.assign(form, {
+    type: purchase.type || 'reponer',
+    area: purchase.area || 'bar',
     supplierId: purchase.supplierId || '',
     notes: purchase.notes || '',
+    amount: purchase.total || 0,
+    description: purchase.description || '',
     items: (purchase.items || []).map(i => ({ ...i }))  // Copia profunda para no mutar el objeto original
   })
   showModal.value = true
@@ -468,6 +556,12 @@ function removeItem(idx) { form.items.splice(idx, 1) }
  */
 function validate() {
   submitted.value = true
+  // Gasto simple: solo se valida el valor
+  if (form.type === 'gasto') {
+    if (!(Number(form.amount) > 0)) { toast('El valor del gasto debe ser mayor a 0', 'warning'); return false }
+    return true
+  }
+  // Reponer: se validan los ítems
   if (form.items.length === 0) { toast('Agrega al menos un producto', 'warning'); return false }
   if (form.items.some(i => !i.inventoryId)) { toast('Selecciona el producto en todas las filas', 'warning'); return false }
   if (form.items.some(i => !(i.quantity > 0))) { toast('La cantidad debe ser mayor a 0', 'warning'); return false }
@@ -492,18 +586,23 @@ async function savePurchase() {
   if (!validate()) return
   saving.value = true
   try {
+    // Arma el payload según el tipo de salida
+    const payload = form.type === 'gasto'
+      ? { type: 'gasto', area: form.area, amount: Number(form.amount) || 0, description: form.description, notes: form.notes }
+      : { type: 'reponer', area: form.area, supplierId: form.supplierId, notes: form.notes, items: form.items.map(i => ({ ...i })) }
+
     let res
     if (isEditing.value) {
-      res = await api.put(`/api/${bizId.value}/purchases/${editPurchaseId.value}`, { ...form, items: form.items.map(i => ({ ...i })) })
+      res = await api.put(`/api/${bizId.value}/purchases/${editPurchaseId.value}`, payload)
       // Reemplaza la entrada en la lista local sin hacer re-fetch completo
       const idx = purchases.value.findIndex(p => p.id === editPurchaseId.value)
       if (idx !== -1) purchases.value[idx] = res.data
       toast('Compra actualizada. Inventario recalculado.', 'success')
     } else {
-      res = await api.post(`/api/${bizId.value}/purchases`, { ...form, items: form.items.map(i => ({ ...i })) })
+      res = await api.post(`/api/${bizId.value}/purchases`, payload)
       purchases.value.unshift(res.data)   // La más reciente aparece primero en la tabla
       clearDraft()
-      toast('Compra registrada. Inventario actualizado.', 'success')
+      toast(form.type === 'gasto' ? 'Gasto registrado.' : 'Compra registrada. Inventario actualizado.', 'success')
     }
     await inventoryStore.fetchInventory()   // Refleja los cambios de stock en toda la app
     closeModal()
@@ -520,7 +619,7 @@ function closeModal() {
   showQuickCreate.value = false
   submitted.value = false
   editPurchaseId.value = null
-  Object.assign(form, { supplierId: '', notes: '', items: [] })
+  Object.assign(form, { type: 'reponer', area: 'bar', supplierId: '', notes: '', items: [], amount: 0, description: '' })
 }
 
 /**
@@ -594,4 +693,30 @@ onMounted(async () => {
 .subtotal-cell { font-weight: 700; color: var(--success); white-space: nowrap; }
 .purchase-total { text-align: right; font-size: 16px; font-weight: 700; padding-top: 12px; color: var(--success); }
 .currency { color: var(--success); font-weight: 700; }
+
+/* Selector de tipo de salida y bolsillo */
+.type-picker { display: flex; gap: 10px; }
+.type-opt {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.3;
+}
+.type-opt small { font-weight: 500; font-size: 11px; color: var(--text-light); }
+.type-opt.active { border-color: var(--accent); background: var(--accent-light); }
+.type-opt.area-bar.active { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.type-opt.area-rest.active { border-color: #10b981; background: #ecfdf5; color: #047857; }
+.type-opt.area-bar.active small, .type-opt.area-rest.active small { color: inherit; }
+
+.area-badge { font-size: 10px; font-weight: 700; margin-right: 4px; }
+.area-badge.bar { background: #f59e0b22; color: #b45309; }
+.area-badge.restaurante { background: #10b98122; color: #047857; }
+.gasto-detail-total { margin-top: 16px; text-align: right; font-size: 16px; color: var(--success); }
 </style>

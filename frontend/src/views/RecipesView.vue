@@ -23,6 +23,22 @@
             <button v-if="search" class="search-clear" @click="search = ''" title="Limpiar">×</button>
           </div>
 
+          <!-- Filtro por bolsillo (Bar / Restaurante) -->
+          <div class="avail-toggle">
+            <button
+              :class="['pill-sm', { active: areaFilter === 'todas' }]"
+              @click="areaFilter = 'todas'"
+            >Todos</button>
+            <button
+              :class="['pill-sm', { active: areaFilter === 'bar' }]"
+              @click="areaFilter = 'bar'"
+            >🍺 Bar</button>
+            <button
+              :class="['pill-sm', { active: areaFilter === 'restaurante' }]"
+              @click="areaFilter = 'restaurante'"
+            >🍽️ Restaurante</button>
+          </div>
+
           <!-- Filtro de disponibilidad -->
           <div class="avail-toggle">
             <button
@@ -83,6 +99,9 @@
             <div class="recipe-header">
               <div>
                 <h4 class="recipe-name">{{ recipe.name }}</h4>
+                <span :class="['badge', 'area-badge', (recipe.area || 'bar')]">
+                  {{ (recipe.area || 'bar') === 'restaurante' ? '🍽️ Restaurante' : '🍺 Bar' }}
+                </span>
                 <span class="badge badge-default">{{ recipe.category }}</span>
               </div>
               <div class="recipe-price">{{ formatCOP(recipe.price) }}</div>
@@ -138,6 +157,23 @@
               <button class="btn-close" @click="closeModal">×</button>
             </div>
             <div class="modal-body">
+              <!-- Bolsillo: a qué negocio pertenece la plata de este producto -->
+              <div class="form-group">
+                <label class="form-label">Bolsillo (¿de quién es la venta?) *</label>
+                <div class="area-picker">
+                  <button
+                    type="button"
+                    :class="['area-option', 'bar', { active: form.area === 'bar' }]"
+                    @click="form.area = 'bar'"
+                  >🍺 Bar</button>
+                  <button
+                    type="button"
+                    :class="['area-option', 'restaurante', { active: form.area === 'restaurante' }]"
+                    @click="form.area = 'restaurante'"
+                  >🍽️ Restaurante</button>
+                </div>
+              </div>
+
               <div class="grid grid-2">
                 <div class="form-group">
                   <label class="form-label">Nombre *</label>
@@ -163,10 +199,20 @@
                 </div>
               </div>
 
+              <!-- Opciones avanzadas: control de inventario (ingredientes). Oculto por defecto. -->
+              <div class="advanced-toggle">
+                <button type="button" class="link-btn" @click="showAdvanced = !showAdvanced">
+                  {{ showAdvanced ? '▼' : '▶' }} Control de inventario (opcional)
+                </button>
+                <p class="text-muted" v-if="!showAdvanced">
+                  Solo si quieres que este producto descuente insumos del stock (ej: carne, pan). Si no, déjalo así.
+                </p>
+              </div>
+
               <!-- Ingredients -->
-              <div class="ingredients-section">
+              <div class="ingredients-section" v-if="showAdvanced">
                 <div class="ingredients-header">
-                  <h4>Ingredientes / Insumos</h4>
+                  <h4>Insumos que consume (descuenta del stock)</h4>
                   <button class="btn btn-sm btn-outline" @click="addIngredient">+ Agregar</button>
                 </div>
                 <div v-for="(ing, idx) in form.ingredients" :key="idx" class="ingredient-row">
@@ -229,13 +275,15 @@ const activeCat    = ref('todas')
 const search       = ref('')        // Texto de búsqueda libre por nombre
 const activeLetter = ref('')        // Letra inicial seleccionada en el filtro alfabético
 const availFilter  = ref('todas')   // 'todas' | 'disponible' | 'no_disponible'
+const areaFilter   = ref('todas')   // 'todas' | 'bar' | 'restaurante'  — filtro por bolsillo
 const showModal    = ref(false)
 const editRecipe   = ref(null)
 const saving       = ref(false)
+const showAdvanced = ref(false)     // Muestra/oculta la sección de ingredientes (avanzado)
 const deleteTarget = ref(null)      // Receta pendiente de eliminar (null = modal cerrado)
 
 const form = reactive({
-  name: '', category: 'platos', price: 0,
+  name: '', category: 'platos', price: 0, area: 'bar',
   available: true, ingredients: []
 })
 
@@ -262,6 +310,11 @@ const availableLetters = computed(() => {
  */
 const filteredRecipes = computed(() => {
   let list = inventoryStore.recipes
+
+  // Filtro por bolsillo (Bar / Restaurante). Productos sin área se asumen 'bar'.
+  if (areaFilter.value !== 'todas') {
+    list = list.filter(r => (r.area || 'bar') === areaFilter.value)
+  }
 
   // Filtro por categoría
   if (activeCat.value !== 'todas') {
@@ -300,7 +353,10 @@ function getIngredientName(id) {
 
 function openCreate() {
   editRecipe.value = null
-  Object.assign(form, { name: '', category: 'platos', price: 0, available: true, ingredients: [] })
+  showAdvanced.value = false
+  // Por defecto el producto nuevo hereda el bolsillo del filtro activo (si hay uno)
+  const defaultArea = areaFilter.value === 'restaurante' ? 'restaurante' : 'bar'
+  Object.assign(form, { name: '', category: 'platos', price: 0, area: defaultArea, available: true, ingredients: [] })
   showModal.value = true
 }
 
@@ -310,9 +366,12 @@ function openEdit(recipe) {
     name: recipe.name,
     category: recipe.category,
     price: recipe.price,
+    area: recipe.area || 'bar',
     available: recipe.available,
     ingredients: recipe.ingredients ? recipe.ingredients.map(i => ({ ...i })) : []
   })
+  // Si la receta ya tiene ingredientes, mostramos la sección avanzada abierta
+  showAdvanced.value = (form.ingredients.length > 0)
   showModal.value = true
 }
 
@@ -571,4 +630,27 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .text-muted { font-size: 13px; color: var(--text-light); }
+
+/* ── Bolsillo (área) ──────────────────────────────────────────── */
+.area-badge { font-size: 11px; font-weight: 700; margin-right: 4px; }
+.area-badge.bar { background: #f59e0b22; color: #b45309; }
+.area-badge.restaurante { background: #10b98122; color: #047857; }
+
+.area-picker { display: flex; gap: 10px; }
+.area-option {
+  flex: 1;
+  padding: 14px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.area-option.bar.active { background: #f59e0b; color: white; border-color: #f59e0b; }
+.area-option.restaurante.active { background: #10b981; color: white; border-color: #10b981; }
+
+.advanced-toggle { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.advanced-toggle .link-btn { font-size: 14px; }
 </style>

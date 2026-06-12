@@ -17,6 +17,10 @@ logs/
 # Comenta esta línea si quieres hacer backup de los datos en git
 api/src/data/
 
+# Respaldos y scripts de migración (no subir al repo)
+api/src/data_BACKUP_*/
+api/migrate.js
+
 # Sistema operativo
 .DS_Store
 Thumbs.db

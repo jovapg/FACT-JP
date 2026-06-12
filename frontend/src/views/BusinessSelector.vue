@@ -9,7 +9,7 @@
 
       <div class="businesses-grid">
         <button
-          v-for="biz in auth.businesses"
+          v-for="biz in activeBusinesses"
           :key="biz.id"
           class="biz-card"
           @click="selectBiz(biz)"
@@ -41,11 +41,15 @@
  * Muestra una tarjeta por cada negocio disponible. Al elegir uno,
  * lo guarda en el store y redirige al dashboard de ese negocio.
  */
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 
 const router = useRouter()
 const auth = useAuthStore()
+
+// Solo se muestran los negocios activos (las franquicias desactivadas se ocultan)
+const activeBusinesses = computed(() => (auth.businesses || []).filter(b => b.active !== false))
 
 /** Selecciona el negocio y navega al dashboard */
 function selectBiz(biz) {

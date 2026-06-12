@@ -227,7 +227,7 @@ const sellableItems = computed(() => {
     .filter(r => r.available)
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
-      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price }
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: r.area || 'bar' }
     })
 
   // Items de inventario sin receta correspondiente
@@ -236,7 +236,8 @@ const sellableItems = computed(() => {
     if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
       result.push({
         id: i.id, _itemId: i.id, _invOnly: true,
-        name: i.name, price: i.salePrice, category: i.category, available: true
+        name: i.name, price: i.salePrice, category: i.category, available: true,
+        area: i.area || 'bar'
       })
     }
   }
@@ -290,6 +291,7 @@ function addToCart(item) {
       inventoryId: item._invOnly ? item.id : undefined,
       name: item.name,
       price: item.price,
+      area: item.area || 'bar',   // Bolsillo (Bar / Restaurante) — viaja hasta la venta
       qty: 1
     })
   }
