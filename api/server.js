@@ -379,6 +379,31 @@ app.get('/api/admin/storage', authenticate, (req, res) => {
   }
 });
 
+// ── Importación/corrección de datos (TEMPORAL — quitar tras usar) ────────────
+app.post('/api/admin/import', authenticate, async (req, res) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const dp = path.resolve(dataPath);
+    const { businesses, files } = req.body;
+    const written = [];
+    if (businesses) {
+      fs.writeFileSync(path.join(dp, 'businesses.json'), JSON.stringify(businesses, null, 2), 'utf-8');
+      written.push('businesses.json');
+    }
+    for (const f of (files || [])) {
+      if (f.businessId && !/^[a-zA-Z0-9_-]+$/.test(f.businessId)) continue;
+      if (!/^[a-zA-Z0-9_.-]+\.json$/.test(f.name || '')) continue;
+      const dir = f.businessId ? path.join(dp, f.businessId) : dp;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, f.name), JSON.stringify(f.content, null, 2), 'utf-8');
+      written.push(`${f.businessId || ''}/${f.name}`);
+    }
+    res.json({ ok: true, written });
+  } catch (err) {
+    console.error('[import]', err); res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Sirve el frontend en producción ─────────────────────────────────────────
 // Si existe la carpeta frontend/dist/ (generada con `npm run build`),
 // Express la sirve como archivos estáticos. Cualquier ruta que no sea /api
