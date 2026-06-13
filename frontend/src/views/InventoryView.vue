@@ -5,7 +5,7 @@
             <h1 class="page-title">Inventario</h1>
             <p class="page-subtitle">{{ inventoryStore.items.length }} productos registrados</p>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;gap:8px;flex-wrap:wrap" v-if="auth.isAdmin">
             <button class="btn btn-outline" @click="openSyncModal" v-if="pendingSync.length > 0">
               🍺 Sincronizar al menú ({{ pendingSync.length }})
             </button>
@@ -49,7 +49,7 @@
                     <th>Tipo</th>
                     <th>Costo</th>
                     <th>Precio venta</th>
-                    <th>Acciones</th>
+                    <th v-if="auth.isAdmin">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -74,7 +74,7 @@
                     </td>
                     <td>{{ formatCOP(item.cost) }}</td>
                     <td>{{ !item.esIngrediente && item.salePrice ? formatCOP(item.salePrice) : '—' }}</td>
-                    <td>
+                    <td v-if="auth.isAdmin">
                       <div class="action-btns">
                         <button class="btn btn-sm btn-outline" @click="openAdjust(item)" title="Ajustar stock">±</button>
                         <button class="btn btn-sm btn-outline" @click="openEdit(item)">✏️</button>
@@ -83,7 +83,7 @@
                     </td>
                   </tr>
                   <tr v-if="filteredItems.length === 0">
-                    <td colspan="8" class="empty-row">No hay productos</td>
+                    <td :colspan="auth.isAdmin ? 9 : 8" class="empty-row">No hay productos</td>
                   </tr>
                 </tbody>
               </table>

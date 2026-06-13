@@ -77,7 +77,7 @@ const isMobile = ref(false)
 const menuItems = [
   { path: '/dashboard',        label: 'Dashboard',       icon: LayoutDashboard,  roles: ['superadmin','admin','cajero'] },
   { path: '/tables',           label: 'Registrar Venta', icon: UtensilsCrossed,  roles: ['superadmin','admin','cajero'] },
-  { path: '/inventory',        label: 'Inventario',      icon: Package,          roles: ['superadmin','admin'] },
+  { path: '/inventory',        label: 'Inventario',      icon: Package,          roles: ['superadmin','admin','cajero'] },
   { path: '/recipes',          label: 'Recetas / Menú',  icon: BookOpen,         roles: ['superadmin','admin'] },
   { path: '/purchases',        label: 'Compras',         icon: ShoppingCart,     roles: ['superadmin','admin'] },
   { path: '/suppliers',        label: 'Proveedores',     icon: Truck,            roles: ['superadmin','admin'] },
