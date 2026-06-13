@@ -128,6 +128,20 @@
           <p v-else-if="selectedPayment === 'transferencia' && !business?.paymentQr" class="text-muted" style="font-size:12px;margin-top:8px">
             ⓘ Sube tu QR en Configuración para usar este flujo
           </p>
+
+          <!-- Ayuda de cambio (solo efectivo) — no se guarda, es para el cajero -->
+          <div v-if="selectedPayment === 'efectivo'" class="cash-helper">
+            <div class="cash-field">
+              <label class="form-label">💵 Dinero recibido</label>
+              <input v-model.number="cashReceived" type="number" min="0" class="form-control" placeholder="0" />
+            </div>
+            <div class="change-row" :class="{ negative: change < 0, ready: cashReceived > 0 && change >= 0 }">
+              <span>Devuelta para el cliente:</span>
+              <span class="change-amount">
+                {{ !cashReceived ? '—' : (change >= 0 ? formatCOP(change) : 'Faltan ' + formatCOP(-change)) }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -317,6 +331,7 @@ const editableItems = ref([])
 const selectedPayment = ref('efectivo')
 const showQrModal = ref(false)
 const clientName = ref('')
+const cashReceived = ref(null)   // Ayuda de cambio en efectivo (no se guarda)
 const confirming = ref(false)
 const confirmedSale = ref(null)
 const shortlinkUrl = ref('')   // URL corta pre-generada para compartir
@@ -343,6 +358,8 @@ const totalDiscount = computed(() =>
   editableItems.value.reduce((sum, item) => sum + (Number(item.discount) || 0), 0)
 )
 const finalTotal = computed(() => Math.max(0, invoiceTotal.value - totalDiscount.value))
+// Devuelta = dinero recibido − total (solo ayuda visual para el cajero)
+const change = computed(() => (Number(cashReceived.value) || 0) - finalTotal.value)
 
 function formatCOP(v) {
   return '$' + Number(v || 0).toLocaleString('es-CO')
@@ -647,6 +664,29 @@ onMounted(async () => {
 }
 .payment-opt:hover { border-color: var(--accent); }
 .payment-opt.active { border-color: var(--success); background: #f0fff4; color: var(--success); }
+
+/* Ayuda de cambio en efectivo */
+.cash-helper {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.cash-field .form-label { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: block; }
+.change-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 14px;
+  font-weight: 600;
+}
+.change-amount { font-size: 20px; font-weight: 800; color: var(--text-light); }
+.change-row.ready .change-amount { color: var(--success); }
+.change-row.negative .change-amount { color: var(--danger); font-size: 15px; }
 
 .btn-qr {
   margin-top: 12px;
