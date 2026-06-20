@@ -23,6 +23,8 @@
  *   PUT    /api/:businessId/debtors/:id/charge/:txId → editar fiado, ajusta stock (no cajero)
  *   DELETE /api/:businessId/debtors/:id/charge/:txId → eliminar fiado, devuelve stock (no cajero)
  *   POST   /api/:businessId/debtors/:id/payment  → registrar abono (genera factura si salda)
+ *   PUT    /api/:businessId/debtors/:id/payment/:txId → editar abono, reabre fiados si reabre deuda (no cajero)
+ *   DELETE /api/:businessId/debtors/:id/payment/:txId → eliminar abono, reabre fiados si reabre deuda (no cajero)
  *   DELETE /api/:businessId/debtors/transactions → borrar historial completo (no cajero)
  */
 
@@ -61,6 +63,49 @@ async function updateActiveShift(businessId, sale) {
     await writeJSON(shiftsPath(businessId), shifts);
   } catch (err) {
     console.error('[shifts] Error actualizando turno activo:', err);
+  }
+}
+
+/** Recalcula el saldo del deudor a partir de sus transacciones: Σcargos − Σabonos */
+function recomputeBalance(debtor) {
+  const txs = debtor.transactions || [];
+  const charges  = txs.filter(t => t.type === 'charge').reduce((s, t) => s + (t.amount || 0), 0);
+  const payments = txs.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount || 0), 0);
+  debtor.balance = Math.max(0, charges - payments);
+}
+
+/**
+ * Revierte la liquidación que provocó un abono: reabre los fiados marcados
+ * como facturados y borra la factura automática 'pago_fiado' generada.
+ *
+ * Para abonos nuevos usa el enlace guardado (settledChargeIds, generatedSaleId).
+ * Para abonos antiguos (sin enlace) reabre todos los fiados facturados del
+ * deudor y borra todas sus facturas 'pago_fiado'. Solo debe llamarse cuando
+ * la deuda realmente se reabre (Σabonos < Σcargos).
+ */
+async function reversePaymentSettlement(businessId, debtor, payment) {
+  const chargeIds = Array.isArray(payment.settledChargeIds) ? payment.settledChargeIds : null;
+
+  // Reabrir los fiados (volver a 'pendiente')
+  for (const t of (debtor.transactions || [])) {
+    if (t.type === 'charge' && t.settled) {
+      if (!chargeIds || chargeIds.includes(t.id)) t.settled = false;
+    }
+  }
+
+  // Borrar la(s) factura(s) automática(s) de pago_fiado asociadas
+  const sales = await readJSON(salesPath(businessId)) || [];
+  let saleIds;
+  if (payment.generatedSaleId) {
+    saleIds = new Set([payment.generatedSaleId]);
+  } else {
+    saleIds = new Set(
+      sales.filter(s => s.paymentMethod === 'pago_fiado' && s.debtorId === debtor.id).map(s => s.id)
+    );
+  }
+  if (saleIds.size > 0) {
+    const filtered = sales.filter(s => !saleIds.has(s.id));
+    if (filtered.length !== sales.length) await writeJSON(salesPath(businessId), filtered);
   }
 }
 
@@ -400,10 +445,14 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
 
         await updateActiveShift(req.params.businessId, sale);
 
-        // Marcar cargos como liquidados para no volver a facturarlos
+        // Marcar cargos como liquidados para no volver a facturarlos y
+        // guardar el enlace en el abono (permite revertir con precisión luego)
+        const settledIds = [];
         for (const t of debtors[idx].transactions) {
-          if (t.type === 'charge' && !t.settled) t.settled = true;
+          if (t.type === 'charge' && !t.settled) { t.settled = true; settledIds.push(t.id); }
         }
+        transaction.generatedSaleId = sale.id;
+        transaction.settledChargeIds = settledIds;
 
         generatedSale = sale;
       }
@@ -411,6 +460,95 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
 
     await writeJSON(debtorsPath(req.params.businessId), debtors);
     res.json({ debtor: debtors[idx], generatedSale });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /debtors/:id/payment/:txId — Edita un abono (corrección del admin).
+ *
+ * Solo admin/superadmin. Cambia el monto del abono y recalcula el saldo.
+ * Si tras el cambio la deuda vuelve a quedar pendiente (Σabonos < Σcargos),
+ * reabre los fiados que se habían facturado y borra la factura 'pago_fiado'
+ * automática. No vuelve a liquidar aunque el nuevo monto cubra la deuda
+ * (para eso se registra un nuevo abono).
+ *
+ * Body: { amount, description? }
+ */
+router.put('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+
+    const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
+    const idx = debtors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Deudor no encontrado' });
+
+    const debtor = debtors[idx];
+    const tx = (debtor.transactions || []).find(t => t.id === req.params.txId);
+    if (!tx || tx.type !== 'payment') return res.status(404).json({ error: 'Abono no encontrado' });
+
+    const newAmount = Number(req.body.amount);
+    if (!newAmount || newAmount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
+
+    // Aplicar el nuevo monto
+    tx.amount = newAmount;
+    if (req.body.description !== undefined) tx.description = req.body.description;
+    tx.editedAt = new Date().toISOString();
+    tx.editedBy = req.user.name || req.user.username;
+
+    // Si la deuda vuelve a quedar pendiente, revertir la liquidación previa
+    const totalCharges  = debtor.transactions.filter(t => t.type === 'charge').reduce((s, t) => s + (t.amount || 0), 0);
+    const totalPayments = debtor.transactions.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount || 0), 0);
+    const hasSettled = debtor.transactions.some(t => t.type === 'charge' && t.settled);
+    if (totalPayments < totalCharges && hasSettled) {
+      await reversePaymentSettlement(req.params.businessId, debtor, tx);
+      // El enlace de liquidación ya no aplica a este abono
+      delete tx.generatedSaleId;
+      delete tx.settledChargeIds;
+    }
+
+    recomputeBalance(debtor);
+    await writeJSON(debtorsPath(req.params.businessId), debtors);
+    res.json({ debtor });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /debtors/:id/payment/:txId — Elimina un abono (corrección del admin).
+ *
+ * Solo admin/superadmin. Quita el abono y recalcula el saldo. Si la deuda
+ * vuelve a quedar pendiente, reabre los fiados facturados y borra la factura
+ * 'pago_fiado' automática asociada.
+ */
+router.delete('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+
+    const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
+    const idx = debtors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Deudor no encontrado' });
+
+    const debtor = debtors[idx];
+    const tx = (debtor.transactions || []).find(t => t.id === req.params.txId);
+    if (!tx || tx.type !== 'payment') return res.status(404).json({ error: 'Abono no encontrado' });
+
+    // Quitar el abono
+    debtor.transactions = debtor.transactions.filter(t => t.id !== req.params.txId);
+
+    // Si la deuda vuelve a quedar pendiente, revertir la liquidación previa
+    const totalCharges  = debtor.transactions.filter(t => t.type === 'charge').reduce((s, t) => s + (t.amount || 0), 0);
+    const totalPayments = debtor.transactions.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount || 0), 0);
+    const hasSettled = debtor.transactions.some(t => t.type === 'charge' && t.settled);
+    if (totalPayments < totalCharges && hasSettled) {
+      await reversePaymentSettlement(req.params.businessId, debtor, tx);
+    }
+
+    recomputeBalance(debtor);
+    await writeJSON(debtorsPath(req.params.businessId), debtors);
+    res.json({ debtor });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }

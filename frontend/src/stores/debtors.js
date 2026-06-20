@@ -85,6 +85,24 @@ export const useDebtorsStore = defineStore('debtors', () => {
     return res.data  // { debtor, generatedSale|null }
   }
 
+  /** Edita un abono (solo admin). Reabre fiados si la deuda vuelve a quedar pendiente. */
+  async function editPayment(debtorId, txId, { amount, description } = {}) {
+    const res = await api.put(`/api/${bizId()}/debtors/${debtorId}/payment/${txId}`, { amount, description })
+    const debtor = res.data.debtor
+    const idx = debtors.value.findIndex(d => d.id === debtorId)
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor }
+  }
+
+  /** Elimina un abono (solo admin). Reabre fiados si la deuda vuelve a quedar pendiente. */
+  async function deletePayment(debtorId, txId) {
+    const res = await api.delete(`/api/${bizId()}/debtors/${debtorId}/payment/${txId}`)
+    const debtor = res.data.debtor
+    const idx = debtors.value.findIndex(d => d.id === debtorId)
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor }
+  }
+
   /** Borra movimientos de todos los deudores, conserva los clientes. Solo admin. */
   async function clearAllHistory() {
     await api.delete(`/api/${bizId()}/debtors/transactions`)
@@ -113,6 +131,6 @@ export const useDebtorsStore = defineStore('debtors', () => {
   return {
     debtors, loading, totalDebt, activeCount, allPayments,
     fetchDebtors, createDebtor, updateDebtor, deleteDebtor,
-    addCharge, editCharge, deleteCharge, addPayment, clearAllHistory
+    addCharge, editCharge, deleteCharge, addPayment, editPayment, deletePayment, clearAllHistory
   }
 })

@@ -299,6 +299,41 @@
       </div>
     </div>
 
+    <!-- ── Modal: Editar abono ── -->
+    <div class="modal-overlay" v-if="showEditPaymentModal" @click.self="showEditPaymentModal = false">
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <h3 class="modal-title">Editar abono</h3>
+          <button class="btn-close" @click="showEditPaymentModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:12.5px;margin-bottom:12px">
+            Al cambiar el monto se recalcula el saldo. Si la deuda vuelve a quedar pendiente,
+            los fiados que figuraban como <strong>facturados</strong> se reabren y se borra la
+            factura automática de pago de fiado.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Monto del abono *</label>
+            <input v-model.number="editPaymentForm.amount" type="number" class="form-control"
+              :class="{ 'input-error': editPaymentSubmitted && !editPaymentForm.amount }"
+              min="1" step="1000" placeholder="Ej: 11000" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notas (opcional)</label>
+            <input v-model="editPaymentForm.description" type="text" class="form-control"
+              placeholder="Ej: Pago parcial..." />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showEditPaymentModal = false">Cancelar</button>
+          <button class="btn btn-primary" @click="handleEditPayment" :disabled="saving">
+            <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
+            {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Modal: Historial del cliente ── -->
     <div class="modal-overlay" v-if="detailDebtor" @click.self="detailDebtor = null">
       <div class="modal" style="max-width:500px">
@@ -348,6 +383,11 @@
                     <button class="tx-action-btn danger" title="Eliminar fiado" @click="confirmDeleteCharge(detailDebtor, t)">🗑️</button>
                   </div>
                   <span v-else-if="t.type === 'charge' && t.settled" class="settled-tag" title="Ya facturado">facturado</span>
+                  <!-- Editar/eliminar abono: solo admin -->
+                  <div v-if="canManage && t.type === 'payment'" class="tx-actions">
+                    <button class="tx-action-btn" title="Editar abono" @click="openEditPayment(detailDebtor, t)">✏️</button>
+                    <button class="tx-action-btn danger" title="Eliminar abono" @click="confirmDeletePayment(detailDebtor, t)">🗑️</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -385,6 +425,17 @@
       type="danger"
       @confirm="doDeleteCharge"
       @cancel="deleteChargeTarget = null"
+    />
+
+    <!-- ── Modal: Confirmar eliminar abono ── -->
+    <ConfirmModal
+      :visible="!!deletePaymentTarget"
+      title="Eliminar abono"
+      :message="`¿Eliminar este abono de ${formatCOP(deletePaymentTarget?.tx?.amount)}? Se recalcula el saldo y, si la deuda vuelve a quedar pendiente, se reabren los fiados facturados.`"
+      confirmText="Sí, eliminar"
+      type="danger"
+      @confirm="doDeletePayment"
+      @cancel="deletePaymentTarget = null"
     />
 
   </PageLayout>
@@ -431,6 +482,11 @@ const activeDebtor  = ref(null)
 const deleteTarget  = ref(null)
 const editingCharge = ref(null)   // Transacción de fiado en edición (null = nuevo fiado)
 const deleteChargeTarget = ref(null)   // { debtor, tx } a eliminar
+const showEditPaymentModal = ref(false)
+const editPaymentTarget = ref(null)    // { debtor, tx } del abono en edición
+const editPaymentSubmitted = ref(false)
+const editPaymentForm = ref({ amount: '', description: '' })
+const deletePaymentTarget = ref(null)  // { debtor, tx } a eliminar
 
 const clientSubmitted  = ref(false)
 const chargeSubmitted  = ref(false)
@@ -728,6 +784,54 @@ async function doDeleteCharge() {
     toast(err.response?.data?.error || 'Error al eliminar el fiado', 'error')
   } finally {
     deleteChargeTarget.value = null
+  }
+}
+
+/** Abre el modal de edición de un abono */
+function openEditPayment(d, tx) {
+  editPaymentTarget.value = { debtor: d, tx }
+  editPaymentForm.value = { amount: tx.amount, description: tx.description || '' }
+  editPaymentSubmitted.value = false
+  showEditPaymentModal.value = true
+}
+
+/** Guarda el monto editado del abono */
+async function handleEditPayment() {
+  editPaymentSubmitted.value = true
+  if (!editPaymentForm.value.amount) return
+  saving.value = true
+  try {
+    const { debtor, tx } = editPaymentTarget.value
+    const res = await debtorsStore.editPayment(debtor.id, tx.id, {
+      amount: editPaymentForm.value.amount,
+      description: editPaymentForm.value.description
+    })
+    if (detailDebtor.value && detailDebtor.value.id === debtor.id) detailDebtor.value = res.debtor
+    showEditPaymentModal.value = false
+    toast('Abono actualizado', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al editar el abono', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+/** Abre la confirmación de eliminación de un abono */
+function confirmDeletePayment(d, tx) {
+  deletePaymentTarget.value = { debtor: d, tx }
+}
+
+/** Elimina un abono y recalcula el saldo */
+async function doDeletePayment() {
+  const { debtor, tx } = deletePaymentTarget.value
+  try {
+    const res = await debtorsStore.deletePayment(debtor.id, tx.id)
+    if (detailDebtor.value && detailDebtor.value.id === debtor.id) detailDebtor.value = res.debtor
+    toast('Abono eliminado', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al eliminar el abono', 'error')
+  } finally {
+    deletePaymentTarget.value = null
   }
 }
 
