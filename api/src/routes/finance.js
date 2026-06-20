@@ -51,7 +51,9 @@ async function loadConfig(id) {
   return {
     opening: cfg.opening || { bar: emptyArea(), restaurante: emptyArea() },
     openingDate: cfg.openingDate || null,
-    manual: Array.isArray(cfg.manual) ? cfg.manual : []
+    manual: Array.isArray(cfg.manual) ? cfg.manual : [],
+    // Resumen del mes solo de referencia (NO afecta los saldos)
+    reference: cfg.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } }
   };
 }
 async function saveConfig(id, cfg) { await writeJSON(financePath(id), cfg); }
@@ -212,7 +214,7 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
     }
     periodTotals.neto = periodTotals.ingresos - periodTotals.egresos;
 
-    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, balances, totals, movements, periodTotals });
+    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, reference: cfg.reference, balances, totals, movements, periodTotals });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -232,6 +234,22 @@ router.put('/finance/opening', authenticate, adminOnly, async (req, res) => {
       : (cfg.openingDate || new Date().toISOString());
     await saveConfig(req.params.businessId, cfg);
     res.json({ opening: cfg.opening, openingDate: cfg.openingDate });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** PUT /finance/reference — Guarda el resumen del mes de referencia (no afecta saldos) */
+router.put('/finance/reference', authenticate, adminOnly, async (req, res) => {
+  try {
+    const cfg = await loadConfig(req.params.businessId);
+    const r = req.body.reference || {};
+    cfg.reference = {
+      bar: { ventas: Number(r.bar?.ventas) || 0, salidas: Number(r.bar?.salidas) || 0 },
+      restaurante: { ventas: Number(r.restaurante?.ventas) || 0, salidas: Number(r.restaurante?.salidas) || 0 }
+    };
+    await saveConfig(req.params.businessId, cfg);
+    res.json({ reference: cfg.reference });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }

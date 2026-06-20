@@ -49,6 +49,19 @@
         </div>
       </div>
 
+      <!-- Resumen del mes (referencia, no afecta saldos) -->
+      <div class="card ref-card mb-3">
+        <div class="ref-head">
+          <span>📋 Resumen del mes <em>(referencia · no afecta los saldos)</em></span>
+          <button class="btn btn-sm btn-outline" @click="openRef">✏️ Editar</button>
+        </div>
+        <div class="ref-body">
+          <div class="ref-item"><span class="ref-l">Ventas del mes</span><span class="ref-v pos">{{ formatCOP(refSel.ventas) }}</span></div>
+          <div class="ref-item"><span class="ref-l">Salidas del mes</span><span class="ref-v neg">{{ formatCOP(refSel.salidas) }}</span></div>
+          <div class="ref-item"><span class="ref-l">Neto</span><span class="ref-v" :class="(refSel.ventas - refSel.salidas) < 0 ? 'neg' : 'pos'">{{ formatCOP(refSel.ventas - refSel.salidas) }}</span></div>
+        </div>
+      </div>
+
       <!-- Listas Entradas / Salidas -->
       <div class="ledger-grid">
         <div class="card ledger-col">
@@ -111,6 +124,35 @@
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showConfig = false">Cancelar</button>
           <button class="btn btn-primary" @click="saveConfig" :disabled="saving">{{ saving ? 'Guardando...' : 'Guardar' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Resumen del mes (referencia) ── -->
+    <div class="modal-overlay" v-if="showRef" @click.self="showRef = false">
+      <div class="modal" style="max-width:460px">
+        <div class="modal-header">
+          <h3 class="modal-title">📋 Resumen del mes (referencia)</h3>
+          <button class="btn-close" @click="showRef = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:12.5px;margin-bottom:12px">
+            Son cifras solo para verlas como referencia (lo que vendiste y gastaste este mes).
+            <strong>No cambian los saldos de efectivo ni banco.</strong>
+          </p>
+          <div class="config-grid">
+            <div></div><div class="ch">Ventas</div><div class="ch">Salidas</div>
+            <div class="rh">🍺 Bar</div>
+            <input v-model.number="refForm.bar.ventas" type="number" min="0" class="form-control" />
+            <input v-model.number="refForm.bar.salidas" type="number" min="0" class="form-control" />
+            <div class="rh">🍽️ Restaurante</div>
+            <input v-model.number="refForm.restaurante.ventas" type="number" min="0" class="form-control" />
+            <input v-model.number="refForm.restaurante.salidas" type="number" min="0" class="form-control" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showRef = false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveRef" :disabled="saving">{{ saving ? 'Guardando...' : 'Guardar' }}</button>
         </div>
       </div>
     </div>
@@ -201,6 +243,7 @@ const period = ref('mes')
 const saving = ref(false)
 const showConfig = ref(false)
 const showManual = ref(false)
+const showRef = ref(false)
 
 const areas = [
   { value: 'total', label: 'Total' },
@@ -228,6 +271,16 @@ const salidas = computed(() => movs.value.filter(m => m.type === 'egreso' || m.t
 const periodIngresos = computed(() => entradas.value.reduce((s, m) => s + m.amount, 0))
 const periodEgresos = computed(() => movs.value.filter(m => m.type === 'egreso').reduce((s, m) => s + m.amount, 0))
 const neto = computed(() => periodIngresos.value - periodEgresos.value)
+
+// Resumen del mes (referencia)
+const refData = computed(() => finance.data?.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } })
+const refSel = computed(() => {
+  const r = refData.value
+  if (area.value === 'restaurante') return r.restaurante
+  if (area.value === 'bar') return r.bar
+  if (area.value === 'general') return { ventas: 0, salidas: 0 }
+  return { ventas: (r.bar.ventas || 0) + (r.restaurante.ventas || 0), salidas: (r.bar.salidas || 0) + (r.restaurante.salidas || 0) }
+})
 
 function formatCOP(v) { return '$' + Number(v || 0).toLocaleString('es-CO') }
 function formatDate(iso) { return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }) }
@@ -270,6 +323,28 @@ async function saveConfig() {
     )
     showConfig.value = false
     toast('Saldo inicial guardado', 'success')
+    await load()
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al guardar', 'error')
+  } finally { saving.value = false }
+}
+
+// ── Resumen del mes (referencia) ──
+const refForm = ref({ bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } })
+function openRef() {
+  const r = refData.value
+  refForm.value = {
+    bar: { ventas: r.bar.ventas || 0, salidas: r.bar.salidas || 0 },
+    restaurante: { ventas: r.restaurante.ventas || 0, salidas: r.restaurante.salidas || 0 }
+  }
+  showRef.value = true
+}
+async function saveRef() {
+  saving.value = true
+  try {
+    await finance.setReference(refForm.value)
+    showRef.value = false
+    toast('Resumen guardado', 'success')
     await load()
   } catch (err) {
     toast(err.response?.data?.error || 'Error al guardar', 'error')
@@ -347,6 +422,16 @@ onMounted(load)
 .mov-amount.tras { color: #2563eb; }
 .mov-del { border: none; background: none; cursor: pointer; font-size: 14px; opacity: 0.6; }
 .mov-del:hover { opacity: 1; }
+
+.ref-card { padding: 0; }
+.ref-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 13.5px; gap: 10px; flex-wrap: wrap; }
+.ref-head em { font-weight: 500; font-style: normal; font-size: 12px; color: var(--text-light); }
+.ref-body { display: flex; gap: 24px; padding: 14px 16px; flex-wrap: wrap; }
+.ref-item { display: flex; flex-direction: column; gap: 2px; }
+.ref-l { font-size: 11.5px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; }
+.ref-v { font-size: 18px; font-weight: 800; }
+.ref-v.pos { color: #16a34a; }
+.ref-v.neg { color: var(--danger); }
 
 .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: center; }
 .config-grid .ch { font-size: 12px; font-weight: 700; text-align: center; color: var(--text-light); }

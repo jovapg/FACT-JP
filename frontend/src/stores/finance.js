@@ -35,6 +35,12 @@ export const useFinanceStore = defineStore('finance', () => {
     return res.data
   }
 
+  /** Guarda el resumen del mes de referencia (no afecta saldos) */
+  async function setReference(reference) {
+    const res = await api.put(`/api/${bizId()}/finance/reference`, { reference })
+    return res.data
+  }
+
   /** Agrega un movimiento manual (ingreso/egreso/traslado) */
   async function addManual(payload) {
     const res = await api.post(`/api/${bizId()}/finance/manual`, payload)
@@ -46,5 +52,5 @@ export const useFinanceStore = defineStore('finance', () => {
     await api.delete(`/api/${bizId()}/finance/manual/${id}`)
   }
 
-  return { data, loading, fetchFinance, setOpening, addManual, deleteManual }
+  return { data, loading, fetchFinance, setOpening, setReference, addManual, deleteManual }
 })
