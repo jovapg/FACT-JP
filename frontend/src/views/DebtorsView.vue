@@ -172,7 +172,7 @@
           <div class="detail-header-info">
             <div class="client-avatar">{{ activeDebtor?.name.charAt(0).toUpperCase() }}</div>
             <div>
-              <h3 class="modal-title">Registrar fiado — {{ activeDebtor?.name }}</h3>
+              <h3 class="modal-title">{{ editingCharge ? 'Editar fiado' : 'Registrar fiado' }} — {{ activeDebtor?.name }}</h3>
               <p class="text-muted" style="font-size:12px">Saldo actual: <strong class="danger">{{ formatCOP(activeDebtor?.balance) }}</strong></p>
             </div>
           </div>
@@ -198,12 +198,14 @@
             <button
               v-for="r in chargeFilteredRecipes"
               :key="r.id"
-              :class="['product-btn', { 'in-cart': isInChargeCart(r) }]"
+              :class="['product-btn', { 'in-cart': isInChargeCart(r), 'out-of-stock': r.outOfStock }]"
               @click="addToChargeCart(r)"
+              :disabled="r.outOfStock"
             >
               <span class="product-name">{{ r.name }}</span>
               <span class="product-price">{{ formatCOP(r.price) }}</span>
-              <span v-if="isInChargeCart(r)" class="in-cart-badge">{{ getChargeQty(r) }}</span>
+              <span v-if="r.outOfStock" class="stock-badge">Agotado</span>
+              <span v-else-if="isInChargeCart(r)" class="in-cart-badge">{{ getChargeQty(r) }}</span>
             </button>
             <div v-if="chargeFilteredRecipes.length === 0" class="pos-empty">
               Sin productos disponibles
@@ -248,7 +250,7 @@
           <button class="btn btn-outline" @click="showChargeModal = false">Cancelar</button>
           <button class="btn btn-danger" @click="handleCharge" :disabled="saving || chargeCart.length === 0">
             <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
-            {{ saving ? 'Guardando...' : `Registrar fiado · ${formatCOP(chargeTotal)}` }}
+            {{ saving ? 'Guardando...' : `${editingCharge ? 'Guardar cambios' : 'Registrar fiado'} · ${formatCOP(chargeTotal)}` }}
           </button>
         </div>
       </div>
@@ -329,13 +331,24 @@
                 <div class="transaction-info">
                   <span class="transaction-icon">{{ t.type === 'charge' ? '📌' : '✅' }}</span>
                   <div>
-                    <p class="transaction-desc">{{ t.description }}</p>
+                    <p class="transaction-desc">
+                      {{ t.description }}
+                      <span v-if="t.editedAt" class="edited-tag" title="Editado">✏️ editado</span>
+                    </p>
                     <p class="transaction-meta">{{ formatDateTime(t.date) }} · por {{ t.registeredBy }}</p>
                   </div>
                 </div>
-                <span :class="['transaction-amount', t.type]">
-                  {{ t.type === 'charge' ? '+' : '-' }}{{ formatCOP(t.amount) }}
-                </span>
+                <div class="transaction-right">
+                  <span :class="['transaction-amount', t.type]">
+                    {{ t.type === 'charge' ? '+' : '-' }}{{ formatCOP(t.amount) }}
+                  </span>
+                  <!-- Editar/eliminar fiado: solo admin y solo cargos no facturados -->
+                  <div v-if="canManage && t.type === 'charge' && !t.settled" class="tx-actions">
+                    <button class="tx-action-btn" title="Editar fiado" @click="openEditCharge(detailDebtor, t)">✏️</button>
+                    <button class="tx-action-btn danger" title="Eliminar fiado" @click="confirmDeleteCharge(detailDebtor, t)">🗑️</button>
+                  </div>
+                  <span v-else-if="t.type === 'charge' && t.settled" class="settled-tag" title="Ya facturado">facturado</span>
+                </div>
               </div>
             </div>
           </div>
@@ -361,6 +374,17 @@
       type="danger"
       @confirm="doDelete"
       @cancel="deleteTarget = null"
+    />
+
+    <!-- ── Modal: Confirmar eliminar fiado ── -->
+    <ConfirmModal
+      :visible="!!deleteChargeTarget"
+      title="Eliminar fiado"
+      :message="`¿Eliminar este fiado de ${formatCOP(deleteChargeTarget?.tx?.amount)}? Los productos se devolverán al inventario y se ajustará el saldo del cliente.`"
+      confirmText="Sí, eliminar"
+      type="danger"
+      @confirm="doDeleteCharge"
+      @cancel="deleteChargeTarget = null"
     />
 
   </PageLayout>
@@ -405,6 +429,8 @@ const detailDebtor  = ref(null)
 const editDebtor    = ref(null)
 const activeDebtor  = ref(null)
 const deleteTarget  = ref(null)
+const editingCharge = ref(null)   // Transacción de fiado en edición (null = nuevo fiado)
+const deleteChargeTarget = ref(null)   // { debtor, tx } a eliminar
 
 const clientSubmitted  = ref(false)
 const chargeSubmitted  = ref(false)
@@ -432,16 +458,25 @@ const chargeSellableItems = computed(() => {
   for (const i of inventoryStore.items) {
     if ((i.salePrice || 0) > 0) invByName.set(i.name.toLowerCase().trim(), i)
   }
+  const invById = new Map(inventoryStore.items.map(i => [i.id, i]))
   const result = inventoryStore.recipes
     .filter(r => r.available)
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
-      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price }
+      let outOfStock = false
+      if (inv) outOfStock = (inv.stock || 0) <= 0
+      else if (r.ingredients?.length) {
+        outOfStock = r.ingredients.some(ing => {
+          const ii = invById.get(ing.inventoryId)
+          return ii && (ii.stock || 0) <= 0
+        })
+      }
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, outOfStock }
     })
   const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
   for (const i of inventoryStore.items) {
     if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
-      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, available: true })
+      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, available: true, outOfStock: (i.stock || 0) <= 0 })
     }
   }
   return result
@@ -462,6 +497,10 @@ const chargeTotal = computed(() =>
 function isInChargeCart(r) { return chargeCart.value.some(i => i._itemId === r._itemId) }
 function getChargeQty(r)   { return chargeCart.value.find(i => i._itemId === r._itemId)?.qty || 0 }
 function addToChargeCart(r) {
+  if (r.outOfStock) {
+    toast('Producto agotado, stock en ceros', 'error')
+    return
+  }
   const existing = chargeCart.value.find(i => i._itemId === r._itemId)
   if (existing) existing.qty++
   else chargeCart.value.push({
@@ -515,10 +554,34 @@ function openEdit(d) {
 
 function openCharge(d) {
   activeDebtor.value = d
+  editingCharge.value = null
   chargeCart.value = []
   chargeSearch.value = ''
   chargeCat.value = 'todas'
   chargeNote.value = ''
+  chargeSubmitted.value = false
+  showChargeModal.value = true
+}
+
+/** Abre el mini-POS precargado con los productos de un fiado existente para editarlo */
+function openEditCharge(d, tx) {
+  activeDebtor.value = d
+  editingCharge.value = tx
+  detailDebtor.value = null
+  // Precargar el carrito desde los items del fiado
+  chargeCart.value = (tx.items || []).map(i => ({
+    _itemId: i.recipeId || i.inventoryId || i.name,
+    recipeId: i.recipeId,
+    inventoryId: i.inventoryId,
+    name: i.name,
+    price: i.price,
+    qty: i.qty || 1
+  }))
+  // Recuperar la nota libre (lo que va después de " — " en la descripción)
+  const dashIdx = (tx.description || '').indexOf(' — ')
+  chargeNote.value = dashIdx !== -1 ? tx.description.slice(dashIdx + 3) : ''
+  chargeSearch.value = ''
+  chargeCat.value = 'todas'
   chargeSubmitted.value = false
   showChargeModal.value = true
 }
@@ -574,9 +637,18 @@ async function handleCharge() {
       price: i.price,
       qty: i.qty
     }))
-    const res = await debtorsStore.addCharge(activeDebtor.value.id, chargeTotal.value, desc, items)
+    let res
+    if (editingCharge.value) {
+      res = await debtorsStore.editCharge(activeDebtor.value.id, editingCharge.value.id, {
+        amount: chargeTotal.value, description: desc, items
+      })
+      toast(`Fiado actualizado · ${formatCOP(chargeTotal.value)}`, 'success')
+    } else {
+      res = await debtorsStore.addCharge(activeDebtor.value.id, chargeTotal.value, desc, items)
+      toast(`Fiado de ${formatCOP(chargeTotal.value)} registrado`, 'success')
+    }
     showChargeModal.value = false
-    toast(`Fiado de ${formatCOP(chargeTotal.value)} registrado`, 'success')
+    editingCharge.value = null
     if (res.inventoryAlerts?.length > 0) {
       toast(`⚠️ ${res.inventoryAlerts.length} producto(s) con stock bajo`, 'warning')
     }
@@ -633,6 +705,29 @@ async function doDelete() {
     toast('Error al eliminar', 'error')
   } finally {
     deleteTarget.value = null
+  }
+}
+
+/** Abre la confirmación de eliminación de un fiado puntual */
+function confirmDeleteCharge(d, tx) {
+  deleteChargeTarget.value = { debtor: d, tx }
+}
+
+/** Elimina un fiado (devuelve productos al inventario y ajusta saldo) */
+async function doDeleteCharge() {
+  const { debtor, tx } = deleteChargeTarget.value
+  try {
+    const res = await debtorsStore.deleteCharge(debtor.id, tx.id)
+    // Refrescar el detalle abierto con el deudor actualizado
+    if (detailDebtor.value && detailDebtor.value.id === debtor.id) {
+      detailDebtor.value = res.debtor
+    }
+    inventoryStore.fetchInventory()
+    toast('Fiado eliminado · productos devueltos al inventario', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al eliminar el fiado', 'error')
+  } finally {
+    deleteChargeTarget.value = null
   }
 }
 
@@ -786,6 +881,31 @@ onMounted(() => {
 .transaction-amount.charge  { color: #dc2626; }
 .transaction-amount.payment { color: #16a34a; }
 
+.transaction-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.tx-actions { display: flex; gap: 3px; }
+.tx-action-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 6px;
+  line-height: 1;
+}
+.tx-action-btn:hover { background: var(--surface-2); }
+.tx-action-btn.danger:hover { background: #fef2f2; border-color: var(--danger); }
+.edited-tag { font-size: 10px; color: var(--text-light); font-style: italic; margin-left: 4px; }
+.settled-tag {
+  font-size: 10px;
+  color: var(--success);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .success { color: var(--success); }
 .danger  { color: var(--danger); }
 .fw-700  { font-weight: 700; }
@@ -841,6 +961,20 @@ onMounted(() => {
 }
 .product-btn:hover { border-color: var(--accent); background: rgba(245,158,11,0.05); }
 .product-btn.in-cart { border-color: var(--accent); background: rgba(245,158,11,0.1); }
+.product-btn:disabled { cursor: not-allowed; }
+.product-btn.out-of-stock { opacity: 0.6; border-color: var(--danger); }
+.product-btn.out-of-stock .product-name { text-decoration: line-through; color: var(--text-light); }
+.stock-badge {
+  position: absolute;
+  top: 5px; right: 5px;
+  background: var(--danger);
+  color: white;
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
 .product-name { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .product-price { font-size: 11.5px; color: var(--text-light); }
 .in-cart-badge {

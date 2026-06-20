@@ -23,7 +23,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
-const { deductFromSale } = require('../services/inventoryService');
+const { deductFromSale, findOutOfStockItems } = require('../services/inventoryService');
 
 const salesPath   = (id) => path.join(getBusinessPath(id), 'sales.json');
 const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
@@ -148,6 +148,14 @@ router.post('/sales', authenticate, async (req, res) => {
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'No items in sale' });
+    }
+
+    // Bloquear la venta si algún producto está agotado (stock en cero)
+    const outOfStock = await findOutOfStockItems(req.params.businessId, items);
+    if (outOfStock.length > 0) {
+      return res.status(400).json({
+        error: `Producto agotado, stock en ceros: ${outOfStock.join(', ')}. No se puede facturar.`
+      });
     }
 
     const profile = await readJSON(profilePath(req.params.businessId)) || {};

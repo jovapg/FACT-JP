@@ -29,13 +29,14 @@
         <button
           v-for="recipe in filteredRecipes"
           :key="recipe.id"
-          :class="['product-btn', { 'in-cart': isInCart(recipe) }]"
+          :class="['product-btn', { 'in-cart': isInCart(recipe), 'out-of-stock': recipe.outOfStock }]"
           @click="addToCart(recipe)"
-          :disabled="!recipe.available"
+          :disabled="!recipe.available || recipe.outOfStock"
         >
           <span class="product-name">{{ recipe.name }}</span>
           <span class="product-price">{{ formatCOP(recipe.price) }}</span>
-          <span v-if="isInCart(recipe)" class="in-cart-badge">{{ getQty(recipe) }}</span>
+          <span v-if="recipe.outOfStock" class="stock-badge">Agotado</span>
+          <span v-else-if="isInCart(recipe)" class="in-cart-badge">{{ getQty(recipe) }}</span>
         </button>
       </div>
     </div>
@@ -221,13 +222,23 @@ const sellableItems = computed(() => {
       invByName.set(i.name.toLowerCase().trim(), i)
     }
   }
+  // Mapa por id para verificar stock de ingredientes de recetas
+  const invById = new Map(inventoryStore.items.map(i => [i.id, i]))
 
   // Recetas disponibles, precio overrideado si hay match en inventario
   const result = inventoryStore.recipes
     .filter(r => r.available)
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
-      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: r.area || 'bar' }
+      let outOfStock = false
+      if (inv) outOfStock = (inv.stock || 0) <= 0
+      else if (r.ingredients?.length) {
+        outOfStock = r.ingredients.some(ing => {
+          const ii = invById.get(ing.inventoryId)
+          return ii && (ii.stock || 0) <= 0
+        })
+      }
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: r.area || 'bar', outOfStock }
     })
 
   // Items de inventario sin receta correspondiente
@@ -237,7 +248,7 @@ const sellableItems = computed(() => {
       result.push({
         id: i.id, _itemId: i.id, _invOnly: true,
         name: i.name, price: i.salePrice, category: i.category, available: true,
-        area: i.area || 'bar'
+        area: i.area || 'bar', outOfStock: (i.stock || 0) <= 0
       })
     }
   }
@@ -281,6 +292,10 @@ function getQty(item) {
  * Para items de inventario directo: guarda inventoryId (para descuento de stock).
  */
 function addToCart(item) {
+  if (item.outOfStock) {
+    toast('Producto agotado, stock en ceros', 'error')
+    return
+  }
   const existing = cartItems.value.find(i => i._itemId === item._itemId)
   if (existing) {
     existing.qty++
@@ -478,6 +493,21 @@ async function handleSaleConfirmed() {
 .product-btn:active { transform: scale(0.97); }
 .product-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .product-btn.in-cart { border-color: var(--success); background: var(--surface-2); color: var(--text); }
+.product-btn.out-of-stock { opacity: 0.6; background: var(--surface-2); border-color: var(--danger); }
+.product-btn.out-of-stock .product-name { text-decoration: line-through; color: var(--text-light); }
+.stock-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--danger);
+  color: white;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 .product-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
 .product-price { font-size: 13px; font-weight: 800; color: var(--success); margin-top: 4px; }

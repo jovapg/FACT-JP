@@ -1,4 +1,4 @@
-import{c as e}from"./utensils-crossed-BC_t0kUh.js";/**
+import{c as e}from"./utensils-crossed-1Rke0ZTU.js";/**
  * @license lucide-vue-next v1.0.0 - ISC
  *
  * This source code is licensed under the ISC license.

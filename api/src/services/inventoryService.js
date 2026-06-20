@@ -79,6 +79,98 @@ async function deductFromSale(businessId, saleItems) {
 }
 
 /**
+ * Devuelve stock al inventario (operación inversa de deductFromSale).
+ *
+ * Se usa cuando se corrige o elimina un fiado: los productos que habían
+ * "salido" del negocio vuelven a entrar. Para items de inventario directo
+ * suma 1 unidad × qty; para recetas suma los ingredientes × qty vendida.
+ *
+ * @param {string} businessId
+ * @param {Array}  saleItems - Items a devolver [{ recipeId|inventoryId, qty }]
+ */
+async function restoreFromSale(businessId, saleItems) {
+  const inventoryPath = path.join(getBusinessPath(businessId), 'inventory.json');
+  const recipesPath = path.join(getBusinessPath(businessId), 'recipes.json');
+
+  const inventory = await readJSON(inventoryPath) || [];
+  const recipes = await readJSON(recipesPath) || [];
+
+  for (const saleItem of saleItems) {
+    // Item de inventario vendido directamente: devolver qty unidades
+    if (saleItem.inventoryId && !saleItem.recipeId) {
+      const invIdx = inventory.findIndex(i => i.id === saleItem.inventoryId);
+      if (invIdx !== -1) {
+        inventory[invIdx].stock = (inventory[invIdx].stock || 0) + (saleItem.qty || 1);
+      }
+      continue;
+    }
+
+    // Item con receta: devolver los ingredientes × cantidad
+    const recipe = recipes.find(r => r.id === saleItem.recipeId);
+    if (!recipe || !recipe.ingredients) continue;
+
+    for (const ingredient of recipe.ingredients) {
+      const invIdx = inventory.findIndex(i => i.id === ingredient.inventoryId);
+      if (invIdx === -1) continue;
+      inventory[invIdx].stock = (inventory[invIdx].stock || 0) + (ingredient.quantity * saleItem.qty);
+    }
+  }
+
+  await writeJSON(inventoryPath, inventory);
+  return { success: true };
+}
+
+/**
+ * Detecta cuáles de los items dados están agotados (stock en cero) y por lo
+ * tanto no se pueden vender/facturar. Reutiliza la misma lógica de fusión
+ * que el POS del frontend:
+ *   - Item de inventario directo (inventoryId): agotado si stock <= 0.
+ *   - Receta que coincide por nombre con un item de inventario: usa el stock
+ *     de ese item (productos de tienda registrados como receta).
+ *   - Receta con ingredientes: agotada si algún ingrediente está en 0.
+ *
+ * @param {string} businessId
+ * @param {Array}  items - Items a vender [{ recipeId|inventoryId, name, qty }]
+ * @returns {Promise<string[]>} - Nombres de productos agotados (sin duplicados)
+ */
+async function findOutOfStockItems(businessId, items) {
+  const inventoryPath = path.join(getBusinessPath(businessId), 'inventory.json');
+  const recipesPath = path.join(getBusinessPath(businessId), 'recipes.json');
+
+  const inventory = await readJSON(inventoryPath) || [];
+  const recipes = await readJSON(recipesPath) || [];
+
+  const invById = new Map(inventory.map(i => [i.id, i]));
+  const invByName = new Map(inventory.map(i => [i.name.toLowerCase().trim(), i]));
+
+  const out = [];
+  for (const item of items || []) {
+    // Item de inventario directo
+    if (item.inventoryId && !item.recipeId) {
+      const inv = invById.get(item.inventoryId);
+      if (inv && (inv.stock || 0) <= 0) out.push(inv.name);
+      continue;
+    }
+
+    if (item.recipeId) {
+      const recipe = recipes.find(r => r.id === item.recipeId);
+      // Receta que en realidad es un producto de inventario (match por nombre)
+      const byName = invByName.get((item.name || recipe?.name || '').toLowerCase().trim());
+      if (byName && (byName.stock || 0) <= 0) { out.push(byName.name); continue; }
+      // Receta con ingredientes: agotada si falta alguno
+      if (recipe?.ingredients?.length) {
+        for (const ing of recipe.ingredients) {
+          const inv = invById.get(ing.inventoryId);
+          if (inv && (inv.stock || 0) <= 0) { out.push(recipe.name); break; }
+        }
+      }
+    }
+  }
+
+  return [...new Set(out)];
+}
+
+/**
  * Suma stock al inventario al registrar una compra.
  *
  * Para cada ítem de la compra, busca el producto en inventario
@@ -146,4 +238,4 @@ async function getLowStockAlerts(businessId) {
   return inventory.filter(i => i.stock <= (i.minStock || 0));
 }
 
-module.exports = { deductFromSale, addFromPurchase, adjustStock, getLowStockAlerts };
+module.exports = { deductFromSale, restoreFromSale, findOutOfStockItems, addFromPurchase, adjustStock, getLowStockAlerts };

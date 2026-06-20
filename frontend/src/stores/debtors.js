@@ -58,6 +58,24 @@ export const useDebtorsStore = defineStore('debtors', () => {
     return res.data  // { debtor, inventoryAlerts }
   }
 
+  /** Edita un fiado (solo admin). items = [{ recipeId|inventoryId, name, price, qty }] */
+  async function editCharge(debtorId, txId, { amount, description, items } = {}) {
+    const res = await api.put(`/api/${bizId()}/debtors/${debtorId}/charge/${txId}`, { amount, description, items })
+    const debtor = res.data.debtor
+    const idx = debtors.value.findIndex(d => d.id === debtorId)
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor, inventoryAlerts }
+  }
+
+  /** Elimina un fiado registrado por error (solo admin). Devuelve stock. */
+  async function deleteCharge(debtorId, txId) {
+    const res = await api.delete(`/api/${bizId()}/debtors/${debtorId}/charge/${txId}`)
+    const debtor = res.data.debtor
+    const idx = debtors.value.findIndex(d => d.id === debtorId)
+    if (idx !== -1) debtors.value[idx] = debtor
+    return res.data  // { debtor }
+  }
+
   /** Registra abono. Si salda, el backend genera factura y la retorna en generatedSale. */
   async function addPayment(id, amount, description) {
     const res = await api.post(`/api/${bizId()}/debtors/${id}/payment`, { amount, description })
@@ -95,6 +113,6 @@ export const useDebtorsStore = defineStore('debtors', () => {
   return {
     debtors, loading, totalDebt, activeCount, allPayments,
     fetchDebtors, createDebtor, updateDebtor, deleteDebtor,
-    addCharge, addPayment, clearAllHistory
+    addCharge, editCharge, deleteCharge, addPayment, clearAllHistory
   }
 })

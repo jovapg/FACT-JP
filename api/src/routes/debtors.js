@@ -20,6 +20,8 @@
  *   PUT    /api/:businessId/debtors/:id          → editar datos del deudor (no cajero)
  *   DELETE /api/:businessId/debtors/:id          → eliminar deudor (no cajero)
  *   POST   /api/:businessId/debtors/:id/charge   → registrar fiado (descuenta stock)
+ *   PUT    /api/:businessId/debtors/:id/charge/:txId → editar fiado, ajusta stock (no cajero)
+ *   DELETE /api/:businessId/debtors/:id/charge/:txId → eliminar fiado, devuelve stock (no cajero)
  *   POST   /api/:businessId/debtors/:id/payment  → registrar abono (genera factura si salda)
  *   DELETE /api/:businessId/debtors/transactions → borrar historial completo (no cajero)
  */
@@ -30,7 +32,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
-const { deductFromSale } = require('../services/inventoryService');
+const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 
 const debtorsPath = (id) => path.join(getBusinessPath(id), 'debtors.json');
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
@@ -165,6 +167,16 @@ router.post('/debtors/:id/charge', authenticate, async (req, res) => {
 
     const items = Array.isArray(req.body.items) ? req.body.items : [];
 
+    // Bloquear el fiado si algún producto está agotado (stock en cero)
+    if (items.length > 0) {
+      const outOfStock = await findOutOfStockItems(req.params.businessId, items);
+      if (outOfStock.length > 0) {
+        return res.status(400).json({
+          error: `Producto agotado, stock en ceros: ${outOfStock.join(', ')}. No se puede registrar el fiado.`
+        });
+      }
+    }
+
     const transaction = {
       id: uuidv4(),
       type: 'charge',
@@ -193,6 +205,109 @@ router.post('/debtors/:id/charge', authenticate, async (req, res) => {
     }
 
     res.json({ debtor: debtors[idx], inventoryAlerts });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /debtors/:id/charge/:txId — Edita un fiado (corrección del admin).
+ *
+ * Solo admin/superadmin y solo fiados NO liquidados (settled=false).
+ * Ajusta el inventario por la diferencia: devuelve los productos viejos y
+ * descuenta los nuevos. Recalcula el saldo del deudor.
+ *
+ * Body: { items?: [...], amount?, description? }
+ *   - Si vienen items, el monto se recalcula a partir de ellos.
+ */
+router.put('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+
+    const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
+    const idx = debtors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Deudor no encontrado' });
+
+    const tx = (debtors[idx].transactions || []).find(t => t.id === req.params.txId);
+    if (!tx || tx.type !== 'charge') return res.status(404).json({ error: 'Fiado no encontrado' });
+    if (tx.settled) {
+      return res.status(400).json({ error: 'Este fiado ya fue facturado (el cliente saldó). No se puede editar.' });
+    }
+
+    const oldItems  = Array.isArray(tx.items) ? tx.items : [];
+    const oldAmount = tx.amount || 0;
+
+    const newItems = Array.isArray(req.body.items) ? req.body.items : oldItems;
+    const newAmount = newItems.length > 0
+      ? newItems.reduce((s, i) => s + (Number(i.price) || 0) * (i.qty || 1), 0)
+      : Number(req.body.amount);
+
+    if (!newAmount || newAmount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
+
+    // Ajustar inventario: devolver lo viejo y descontar lo nuevo
+    let inventoryAlerts = [];
+    try {
+      if (oldItems.length > 0) await restoreFromSale(req.params.businessId, oldItems);
+      if (newItems.length > 0) {
+        const result = await deductFromSale(req.params.businessId, newItems);
+        inventoryAlerts = result.alerts || [];
+      }
+    } catch (invErr) {
+      console.error('Inventory adjust on fiado edit:', invErr);
+    }
+
+    // Actualizar la transacción
+    tx.items = newItems;
+    tx.amount = newAmount;
+    if (req.body.description !== undefined) tx.description = req.body.description;
+    tx.editedAt = new Date().toISOString();
+    tx.editedBy = req.user.name || req.user.username;
+
+    // Recalcular saldo: quitar el monto viejo, sumar el nuevo
+    debtors[idx].balance = Math.max(0, (debtors[idx].balance || 0) - oldAmount + newAmount);
+
+    await writeJSON(debtorsPath(req.params.businessId), debtors);
+    res.json({ debtor: debtors[idx], inventoryAlerts });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /debtors/:id/charge/:txId — Elimina un fiado registrado por error.
+ *
+ * Solo admin/superadmin y solo fiados NO liquidados. Devuelve los productos
+ * al inventario y reduce el saldo del deudor.
+ */
+router.delete('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+
+    const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
+    const idx = debtors.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Deudor no encontrado' });
+
+    const tx = (debtors[idx].transactions || []).find(t => t.id === req.params.txId);
+    if (!tx || tx.type !== 'charge') return res.status(404).json({ error: 'Fiado no encontrado' });
+    if (tx.settled) {
+      return res.status(400).json({ error: 'Este fiado ya fue facturado (el cliente saldó). No se puede eliminar.' });
+    }
+
+    // Devolver los productos al inventario
+    if (Array.isArray(tx.items) && tx.items.length > 0) {
+      try {
+        await restoreFromSale(req.params.businessId, tx.items);
+      } catch (invErr) {
+        console.error('Inventory restore on fiado delete:', invErr);
+      }
+    }
+
+    // Quitar la transacción y ajustar el saldo
+    debtors[idx].transactions = debtors[idx].transactions.filter(t => t.id !== req.params.txId);
+    debtors[idx].balance = Math.max(0, (debtors[idx].balance || 0) - (tx.amount || 0));
+
+    await writeJSON(debtorsPath(req.params.businessId), debtors);
+    res.json({ debtor: debtors[idx] });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
