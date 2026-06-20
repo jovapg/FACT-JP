@@ -14,6 +14,7 @@
  * Rutas:
  *   GET  /api/:businessId/sales        → listar ventas con filtros opcionales
  *   POST /api/:businessId/sales        → crear nueva venta (facturar)
+ *   PUT  /api/:businessId/sales/:id    → editar factura, ajusta stock (no cajero)
  *   GET  /api/:businessId/sales/:id    → obtener una venta por ID
  */
 
@@ -23,7 +24,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
-const { deductFromSale, findOutOfStockItems } = require('../services/inventoryService');
+const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 
 const salesPath   = (id) => path.join(getBusinessPath(id), 'sales.json');
 const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
@@ -250,6 +251,101 @@ router.post('/sales', authenticate, async (req, res) => {
     res.status(201).json({ sale, inventoryAlerts });
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PUT /sales/:id — Edita una factura ya realizada (corrección del admin).
+ *
+ * Solo admin/superadmin. Permite cambiar items (cantidades, quitar/agregar),
+ * método de pago y cliente, y recalcula subtotal/descuento/total/bolsillos.
+ * Ajusta el inventario por la diferencia: devuelve el stock de los items
+ * viejos y descuenta el de los nuevos.
+ *
+ * No se pueden editar facturas de tipo 'pago_fiado' (esas se corrigen desde
+ * el panel de Deudas, porque su stock se descontó al registrar el fiado).
+ *
+ * Body: { items, paymentMethod?, client?, discount?, total? }
+ * Respuesta: { sale, inventoryAlerts }
+ */
+router.put('/sales/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+
+    const sales = await readJSON(salesPath(req.params.businessId)) || [];
+    const idx = sales.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    const oldSale = sales[idx];
+    if (oldSale.paymentMethod === 'pago_fiado') {
+      return res.status(400).json({
+        error: 'Esta factura proviene de un pago de fiado. Edítala desde el panel de Deudas.'
+      });
+    }
+
+    const { items, paymentMethod, client, discount, total } = req.body;
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'La factura debe tener al menos un producto' });
+    }
+
+    // Normalizar items (misma lógica que al crear la venta)
+    const normItems = items.map(item => {
+      const qty = item.qty || item.quantity || 1;
+      const price = Number(item.price) || 0;
+      const itemDiscount = Math.max(0, Number(item.discount) || 0);
+      const area = item.area === 'restaurante' ? 'restaurante' : 'bar';
+      return { ...item, qty, price, discount: itemDiscount, area };
+    });
+
+    const subtotal = normItems.reduce((sum, i) => sum + (i.qty * i.price), 0);
+    const itemDiscountSum = normItems.reduce((sum, i) => sum + i.discount, 0);
+    const appliedDiscount = itemDiscountSum > 0 ? itemDiscountSum : (Number(discount) || 0);
+    const finalTotal = total !== undefined ? Number(total) : Math.max(0, subtotal - appliedDiscount);
+
+    const totalsByArea = { bar: 0, restaurante: 0 };
+    normItems.forEach(i => {
+      const net = Math.max(0, (i.qty * i.price) - i.discount);
+      totalsByArea[i.area] += net;
+    });
+    if (itemDiscountSum === 0 && appliedDiscount > 0 && subtotal > 0) {
+      const grossByArea = { bar: 0, restaurante: 0 };
+      normItems.forEach(i => { grossByArea[i.area] += i.qty * i.price; });
+      totalsByArea.bar = Math.max(0, grossByArea.bar - appliedDiscount * (grossByArea.bar / subtotal));
+      totalsByArea.restaurante = Math.max(0, grossByArea.restaurante - appliedDiscount * (grossByArea.restaurante / subtotal));
+    }
+    totalsByArea.bar = Math.round(totalsByArea.bar);
+    totalsByArea.restaurante = Math.round(totalsByArea.restaurante);
+
+    // Ajustar inventario: devolver lo viejo, descontar lo nuevo
+    let inventoryAlerts = [];
+    try {
+      if (Array.isArray(oldSale.items) && oldSale.items.length > 0) {
+        await restoreFromSale(req.params.businessId, oldSale.items);
+      }
+      const result = await deductFromSale(req.params.businessId, normItems);
+      inventoryAlerts = result.alerts || [];
+    } catch (invErr) {
+      console.error('Inventory adjust on invoice edit:', invErr);
+    }
+
+    // Actualizar la factura conservando id, número, fecha y cajero originales
+    sales[idx] = {
+      ...oldSale,
+      items: normItems,
+      subtotal,
+      discount: appliedDiscount,
+      total: finalTotal,
+      totalsByArea,
+      paymentMethod: paymentMethod || oldSale.paymentMethod,
+      client: client !== undefined ? client : oldSale.client,
+      editedAt: new Date().toISOString(),
+      editedBy: req.user.name || req.user.username
+    };
+
+    await writeJSON(salesPath(req.params.businessId), sales);
+    res.json({ sale: sales[idx], inventoryAlerts });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -54,6 +54,17 @@ export const useSalesStore = defineStore('sales', () => {
     return res.data
   }
 
+  /**
+   * Edita una factura ya realizada (solo admin). Ajusta el stock según el cambio.
+   * Retorna { sale, inventoryAlerts }.
+   */
+  async function updateInvoice(id, data) {
+    const res = await api.put(`/api/${bizId()}/sales/${id}`, data)
+    const idx = sales.value.findIndex(s => s.id === id)
+    if (idx !== -1) sales.value[idx] = res.data.sale
+    return res.data
+  }
+
   /** Obtiene una venta específica por ID */
   async function getSale(id) {
     const res = await api.get(`/api/${bizId()}/sales/${id}`)
@@ -110,7 +121,7 @@ export const useSalesStore = defineStore('sales', () => {
 
   return {
     sales, loading,
-    fetchSales, createSale, getSale,
+    fetchSales, createSale, updateInvoice, getSale,
     fetchInvoices, getPdfUrl, exportExcel, fetchReports
   }
 })
