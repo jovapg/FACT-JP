@@ -112,11 +112,22 @@ router.post('/suppliers/:id/payment', authenticate, async (req, res) => {
     const idx = suppliers.findIndex(s => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Supplier not found' });
 
+    // ¿Con qué se pagó? Efectivo o banco (para Finanzas). 'transferencia'/'tarjeta' = banco.
+    const paidWith = ['banco', 'transferencia', 'tarjeta'].includes(req.body.paidWith || req.body.method)
+      ? 'banco' : 'efectivo';
+    // Área a la que se carga este pago (Bar / Restaurante), elegida al pagar
+    const area = req.body.area === 'restaurante' ? 'restaurante' : 'bar';
+    // Permite agendar el pago con fecha; si no, hoy
+    const when = (req.body.date && !isNaN(new Date(req.body.date).getTime()))
+      ? new Date(req.body.date).toISOString() : new Date().toISOString();
+
     const payment = {
       id: uuidv4(),
       amount: Number(req.body.amount) || 0,
-      date: new Date().toISOString(),
-      method: req.body.method || 'efectivo',
+      date: when,
+      method: req.body.method || paidWith,
+      paidWith,
+      area,
       notes: req.body.notes || ''
     };
 

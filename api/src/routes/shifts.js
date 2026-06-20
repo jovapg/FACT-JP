@@ -33,6 +33,43 @@ const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorag
 const { authenticate } = require('../middleware/auth');
 
 const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
+const salesPath  = (id) => path.join(getBusinessPath(id), 'sales.json');
+
+/** Clasifica una forma de pago en su bucket de Finanzas: 💵 efectivo o 🏦 banco */
+function bucketOf(method) {
+  const m = (method || '').toLowerCase();
+  if (m === 'transferencia' || m === 'tarjeta' || m === 'banco') return 'banco';
+  return 'efectivo'; // efectivo, pago_fiado y otros se tratan como efectivo
+}
+
+/**
+ * Calcula el ingreso del turno desglosado por área (Bar/Restaurante) y
+ * por bucket (efectivo/banco), leyendo las ventas creadas dentro del turno.
+ * Devuelve { bar:{efectivo,banco}, restaurante:{efectivo,banco} }.
+ */
+function incomeByAreaBucket(sales, fromISO, toISO) {
+  const res = { bar: { efectivo: 0, banco: 0 }, restaurante: { efectivo: 0, banco: 0 } };
+  const from = new Date(fromISO).getTime();
+  const to = new Date(toISO).getTime();
+  for (const s of sales) {
+    const t = new Date(s.createdAt).getTime();
+    if (isNaN(t) || t < from || t > to) continue;
+    const bucket = bucketOf(s.paymentMethod);
+    const tba = s.totalsByArea;
+    if (tba && ((tba.bar || 0) + (tba.restaurante || 0)) > 0) {
+      res.bar[bucket] += tba.bar || 0;
+      res.restaurante[bucket] += tba.restaurante || 0;
+    } else {
+      // Ventas viejas sin desglose por área → todo al Bar
+      res.bar[bucket] += s.total || 0;
+    }
+  }
+  for (const a of ['bar', 'restaurante']) {
+    res[a].efectivo = Math.round(res[a].efectivo);
+    res[a].banco = Math.round(res[a].banco);
+  }
+  return res;
+}
 
 /** GET — Lista todos los turnos del negocio, más recientes primero */
 router.get('/shifts', authenticate, async (req, res) => {
@@ -130,17 +167,29 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
 
     const closingCash = Number(req.body.closingCash) || 0;
     const shift = shifts[idx];
+    const closedAt = new Date().toISOString();
 
     // Cálculo del cierre: gastos también reducen el efectivo esperado
     const expectedCash = shift.openingCash + shift.totalCashSales - shift.totalWithdrawals - (shift.totalExpenses || 0);
     const difference = closingCash - expectedCash;
 
+    // Desglose del ingreso del turno por área × efectivo/banco (para Finanzas).
+    // Es la "foto" del ingreso del día que queda registrada al cerrar.
+    let incomeBreakdown = { bar: { efectivo: 0, banco: 0 }, restaurante: { efectivo: 0, banco: 0 } };
+    try {
+      const sales = await readJSON(salesPath(req.params.businessId)) || [];
+      incomeBreakdown = incomeByAreaBucket(sales, shift.openedAt, closedAt);
+    } catch (e) {
+      console.error('[shifts] Error calculando desglose de ingresos:', e);
+    }
+
     shifts[idx] = {
       ...shift,
-      closedAt: new Date().toISOString(),
+      closedAt,
       closingCash,
       expectedCash,
       difference,
+      incomeByAreaBucket: incomeBreakdown,   // { bar:{efectivo,banco}, restaurante:{efectivo,banco} }
       status: 'closed'
     };
 

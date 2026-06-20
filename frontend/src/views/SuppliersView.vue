@@ -1,9 +1,9 @@
 <template>
-  <PageLayout title="Proveedores">
+  <PageLayout title="Directorio de pagos">
         <div class="page-header">
           <div>
-            <h1 class="page-title">Proveedores y Empleados</h1>
-            <p class="page-subtitle">Gestión de proveedores, empleados, arriendos y créditos</p>
+            <h1 class="page-title">Directorio de pagos</h1>
+            <p class="page-subtitle">Define proveedores, empleados y créditos. Los pagos ahora se registran en "Salidas".</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button v-if="filterTipo === 'empleado'" class="btn btn-outline" @click="showNominaReport = true">

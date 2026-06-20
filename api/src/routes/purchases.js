@@ -50,24 +50,29 @@ router.get('/purchases', authenticate, async (req, res) => {
 router.post('/purchases', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
-    const { type, supplierId, items, notes, amount, description, area } = req.body;
+    const { type, supplierId, items, notes, amount, description, area, date } = req.body;
     const bolsillo = area === 'restaurante' ? 'restaurante' : 'bar';
+    // ¿Con qué se pagó? Efectivo o banco (para el módulo de Finanzas)
+    const paidWith = req.body.paidWith === 'banco' ? 'banco' : 'efectivo';
+    // Fecha de la salida: permite agendar con fecha pasada; si no, hoy
+    const when = (date && !isNaN(new Date(date).getTime())) ? new Date(date).toISOString() : new Date().toISOString();
     const purchases = await readJSON(purchasesPath(req.params.businessId)) || [];
 
-    // ── Modo "gasto": salida de dinero simple (valor + detalle, sin inventario) ──
-    // Pensado para compras de mercado del Restaurante donde no se lleva inventario.
-    if (type === 'gasto') {
+    // ── Salidas de valor simple (sin inventario): 'gasto' o 'arriendo' ──
+    // 'gasto': mercado, servicios, etc. | 'arriendo': pago de arriendo del local.
+    if (type === 'gasto' || type === 'arriendo') {
       const value = Number(amount) || 0;
-      if (value <= 0) return res.status(400).json({ error: 'El valor del gasto debe ser positivo' });
+      if (value <= 0) return res.status(400).json({ error: 'El valor debe ser positivo' });
 
       const purchase = {
         id: uuidv4(),
-        type: 'gasto',
+        type,
         area: bolsillo,
+        paidWith,
         items: [],
         total: value,
         description: description || '',
-        date: new Date().toISOString(),
+        date: when,
         notes: notes || '',
         createdBy: req.user.name || req.user.username
       };
@@ -88,10 +93,11 @@ router.post('/purchases', authenticate, async (req, res) => {
       id: uuidv4(),
       type: 'reponer',
       area: bolsillo,
+      paidWith,
       supplierId: supplierId || null,
       items,
       total,
-      date: new Date().toISOString(),
+      date: when,
       notes: notes || '',
       createdBy: req.user.name || req.user.username
     };

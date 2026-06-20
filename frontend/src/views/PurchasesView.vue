@@ -1,14 +1,14 @@
 <template>
-  <PageLayout title="Compras">
+  <PageLayout title="Salidas">
         <div class="page-header">
           <div>
-            <h1 class="page-title">Compras</h1>
-            <p class="page-subtitle">Registro de compras a proveedores</p>
+            <h1 class="page-title">Salidas</h1>
+            <p class="page-subtitle">Compras, gastos, nómina, arriendo y créditos — todo el dinero que sale</p>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span v-if="hasDraft" class="draft-badge">📝 Borrador guardado</span>
             <button class="btn btn-primary" @click="openNew">
-              {{ hasDraft ? '↩ Continuar borrador' : '+ Registrar compra' }}
+              {{ hasDraft ? '↩ Continuar borrador' : '+ Registrar salida' }}
             </button>
           </div>
         </div>
@@ -19,37 +19,38 @@
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Proveedor</th>
-                  <th>Items</th>
+                  <th>Tipo</th>
+                  <th>Área</th>
+                  <th>Pago</th>
+                  <th>Detalle</th>
                   <th>Total</th>
                   <th>Registrado por</th>
-                  <th>Notas</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in purchases" :key="p.id">
-                  <td>{{ formatDate(p.date) }}</td>
+                <tr v-for="s in salidas" :key="s.id">
+                  <td>{{ formatDate(s.date) }}</td>
+                  <td><span class="kind-tag">{{ kindLabel(s.kind) }}</span></td>
                   <td>
-                    <span :class="['badge', 'area-badge', (p.area || 'bar')]">
-                      {{ (p.area || 'bar') === 'restaurante' ? '🍽️ Rest.' : '🍺 Bar' }}
+                    <span :class="['badge', 'area-badge', (s.area || 'bar')]">
+                      {{ (s.area || 'bar') === 'restaurante' ? '🍽️ Rest.' : '🍺 Bar' }}
                     </span>
-                    {{ p.type === 'gasto' ? '🛒 Gasto' : getSupplierName(p.supplierId) }}
                   </td>
-                  <td>{{ p.type === 'gasto' ? (p.description || 'Gasto de mercado') : (p.items?.length || 0) + ' productos' }}</td>
-                  <td class="currency">{{ formatCOP(p.total) }}</td>
-                  <td>{{ p.createdBy }}</td>
-                  <td>{{ p.notes || '-' }}</td>
+                  <td>{{ s.paidWith === 'banco' ? '🏦 Banco' : '💵 Efectivo' }}</td>
+                  <td>{{ s.detail || '-' }}</td>
+                  <td class="currency">{{ formatCOP(s.total) }}</td>
+                  <td>{{ s.by || '-' }}</td>
                   <td>
-                    <div class="action-btns">
-                      <button class="btn btn-sm btn-outline" @click="verDetalle(p)">👁 Ver</button>
-                      <button class="btn btn-sm btn-outline" @click="openEdit(p)">✏️ Editar</button>
+                    <div class="action-btns" v-if="s._source === 'purchase'">
+                      <button class="btn btn-sm btn-outline" @click="verDetalle(s._raw)">👁 Ver</button>
+                      <button v-if="s.kind === 'reponer'" class="btn btn-sm btn-outline" @click="openEdit(s._raw)">✏️ Editar</button>
                     </div>
                   </td>
                 </tr>
-                <tr v-if="purchases.length === 0">
-                  <td colspan="6" style="text-align:center;color:var(--text-light);padding:32px">
-                    No hay compras registradas
+                <tr v-if="salidas.length === 0">
+                  <td colspan="8" style="text-align:center;color:var(--text-light);padding:32px">
+                    No hay salidas registradas
                   </td>
                 </tr>
               </tbody>
@@ -141,52 +142,106 @@
               <!-- Tipo de salida -->
               <div class="form-group">
                 <label class="form-label">Tipo de salida</label>
-                <div class="type-picker">
-                  <button type="button" :class="['type-opt', { active: form.type === 'reponer' }]" @click="setType('reponer')">
-                    🔁 Reponer insumo<br><small>producto + cantidad (entra al stock)</small>
-                  </button>
-                  <button type="button" :class="['type-opt', { active: form.type === 'gasto' }]" @click="setType('gasto')">
-                    🛒 Gasto / mercado<br><small>solo valor + detalle</small>
-                  </button>
+                <div class="type-picker type-picker-wrap">
+                  <button type="button" :class="['type-opt', { active: form.type === 'reponer' }]" @click="setType('reponer')">🛒 Compra<br><small>entra al inventario</small></button>
+                  <button type="button" :class="['type-opt', { active: form.type === 'gasto' }]" @click="setType('gasto')">💸 Gasto<br><small>mercado, servicios</small></button>
+                  <button type="button" :class="['type-opt', { active: form.type === 'nomina' }]" @click="setType('nomina')">👤 Nómina<br><small>pago a empleado</small></button>
+                  <button type="button" :class="['type-opt', { active: form.type === 'arriendo' }]" @click="setType('arriendo')">🏠 Arriendo<br><small>pago del local</small></button>
+                  <button type="button" :class="['type-opt', { active: form.type === 'credito' }]" @click="setType('credito')">💳 Crédito<br><small>cuota / abono</small></button>
                 </div>
               </div>
 
-              <!-- Bolsillo -->
+              <!-- Área (Bar / Restaurante) -->
               <div class="form-group">
-                <label class="form-label">Bolsillo (¿de quién es el gasto?)</label>
+                <label class="form-label">Área (¿de quién es la salida?)</label>
                 <div class="type-picker">
                   <button type="button" :class="['type-opt area-bar', { active: form.area === 'bar' }]" @click="form.area = 'bar'">🍺 Bar</button>
                   <button type="button" :class="['type-opt area-rest', { active: form.area === 'restaurante' }]" @click="form.area = 'restaurante'">🍽️ Restaurante</button>
                 </div>
               </div>
 
-              <!-- ── GASTO simple: valor + detalle ── -->
-              <template v-if="form.type === 'gasto'">
+              <!-- Común a todas: con qué se pagó + fecha -->
+              <div class="grid grid-2">
                 <div class="form-group">
-                  <label class="form-label">Valor del gasto (COP) *</label>
+                  <label class="form-label">¿Con qué pagaste?</label>
+                  <div class="type-picker">
+                    <button type="button" :class="['type-opt pay-ef', { active: form.paidWith === 'efectivo' }]" @click="form.paidWith = 'efectivo'">💵 Efectivo</button>
+                    <button type="button" :class="['type-opt pay-bk', { active: form.paidWith === 'banco' }]" @click="form.paidWith = 'banco'">🏦 Banco</button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Fecha</label>
+                  <input v-model="form.date" type="date" class="form-control" />
+                </div>
+              </div>
+
+              <!-- ── GASTO o ARRIENDO: valor + detalle ── -->
+              <template v-if="form.type === 'gasto' || form.type === 'arriendo'">
+                <div class="form-group">
+                  <label class="form-label">Valor (COP) *</label>
                   <input v-model.number="form.amount" type="number" min="0" :class="['form-control', { 'input-error': submitted && !(form.amount > 0) }]" placeholder="Ej: 300000" />
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Detalle (¿qué compraste?) *</label>
-                  <input v-model="form.description" class="form-control" placeholder="Ej: Carne, verduras y pan del mercado" />
+                  <label class="form-label">Detalle *</label>
+                  <input v-model="form.description" class="form-control" :placeholder="form.type === 'arriendo' ? 'Ej: Arriendo de junio' : 'Ej: Carne, verduras y pan del mercado'" />
                 </div>
                 <div class="form-group">
                   <label class="form-label">Notas</label>
                   <input v-model="form.notes" class="form-control" placeholder="Opcional" />
                 </div>
-                <div class="purchase-total">
-                  <strong>Total: {{ formatCOP(purchaseTotal) }}</strong>
-                </div>
+                <div class="purchase-total"><strong>Total: {{ formatCOP(purchaseTotal) }}</strong></div>
               </template>
 
-              <!-- ── REPONER: compra itemizada que entra al inventario ── -->
+              <!-- ── NÓMINA: empleado + monto ── -->
+              <template v-else-if="form.type === 'nomina'">
+                <div class="form-group">
+                  <label class="form-label">Empleado *</label>
+                  <select v-model="form.employeeId" :class="['form-control', { 'input-error': submitted && !form.employeeId }]">
+                    <option value="">— Seleccionar empleado —</option>
+                    <option v-for="e in employees" :key="e.id" :value="e.id">{{ e.name }}{{ e.cargo ? ' · ' + e.cargo : '' }} — debe {{ formatCOP(e.totalDebt) }}</option>
+                  </select>
+                  <p v-if="employees.length === 0" class="text-muted" style="font-size:12px;margin-top:4px">No hay empleados. Créalos en "Directorio de pagos".</p>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Monto a pagar (COP) *</label>
+                  <input v-model.number="form.amount" type="number" min="0" :class="['form-control', { 'input-error': submitted && !(form.amount > 0) }]" placeholder="Ej: 200000" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Notas</label>
+                  <input v-model="form.notes" class="form-control" placeholder="Ej: Quincena, semana..." />
+                </div>
+                <div class="purchase-total"><strong>Total: {{ formatCOP(purchaseTotal) }}</strong></div>
+              </template>
+
+              <!-- ── CRÉDITO: crédito + monto ── -->
+              <template v-else-if="form.type === 'credito'">
+                <div class="form-group">
+                  <label class="form-label">Crédito *</label>
+                  <select v-model="form.creditId" :class="['form-control', { 'input-error': submitted && !form.creditId }]">
+                    <option value="">— Seleccionar crédito —</option>
+                    <option v-for="c in credits" :key="c.id" :value="c.id">{{ c.name }} — saldo {{ formatCOP(c.totalDebt) }}</option>
+                  </select>
+                  <p v-if="credits.length === 0" class="text-muted" style="font-size:12px;margin-top:4px">No hay créditos. Créalos en "Directorio de pagos".</p>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Monto de la cuota (COP) *</label>
+                  <input v-model.number="form.amount" type="number" min="0" :class="['form-control', { 'input-error': submitted && !(form.amount > 0) }]" placeholder="Ej: 150000" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Notas</label>
+                  <input v-model="form.notes" class="form-control" placeholder="Opcional" />
+                </div>
+                <div class="purchase-total"><strong>Total: {{ formatCOP(purchaseTotal) }}</strong></div>
+              </template>
+
+              <!-- ── COMPRA (reponer): itemizada que entra al inventario ── -->
               <template v-else>
               <div class="grid grid-2">
                 <div class="form-group">
                   <label class="form-label">Proveedor</label>
                   <select v-model="form.supplierId" class="form-control">
                     <option value="">Sin proveedor</option>
-                    <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    <option v-for="s in providers" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -256,7 +311,7 @@
               <button class="btn btn-outline" @click="closeModal">Cancelar</button>
               <button v-if="hasDraft && !isEditing" class="btn btn-danger-outline" @click="clearDraft(); closeModal()">🗑 Descartar borrador</button>
               <button class="btn btn-primary" @click="savePurchase" :disabled="saving || (form.type === 'reponer' && form.items.length === 0)">
-                {{ saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : (form.type === 'gasto' ? 'Registrar gasto' : 'Finalizar compra')) }}
+                {{ saving ? 'Guardando...' : (isEditing ? 'Guardar cambios' : saveLabel) }}
               </button>
             </div>
           </div>
@@ -357,19 +412,37 @@ const quickForm = reactive({ name: '', category: 'bebidas', unit: 'unidad', minS
 const editPurchaseId = ref(null)   // null = nueva compra, string = editando compra existente
 const hasDraft = ref(false)        // true si hay un borrador guardado en localStorage para este negocio
 
+/** Fecha de hoy en formato yyyy-mm-dd para el input date */
+function todayStr() { return new Date().toISOString().slice(0, 10) }
+
 const form = reactive({
-  type: 'reponer',      // 'reponer' (itemizado, entra al stock) | 'gasto' (valor + detalle)
-  area: 'bar',          // bolsillo: 'bar' | 'restaurante'
+  type: 'reponer',      // 'reponer' (compra) | 'gasto' | 'arriendo' | 'nomina' | 'credito'
+  area: 'bar',          // área: 'bar' | 'restaurante'
+  paidWith: 'efectivo', // 'efectivo' | 'banco'
+  date: todayStr(),     // fecha de la salida
   supplierId: '', notes: '', items: [],
-  amount: 0, description: ''   // solo para type 'gasto'
+  amount: 0, description: '',  // gasto / arriendo / nomina / credito
+  employeeId: '', creditId: ''  // nomina / credito
 })
 const bizId = computed(() => auth.currentBusiness?.id)
 
-/** Cambia el tipo de salida y ajusta el bolsillo por defecto según el caso típico */
+// Listas del directorio segmentadas por tipo
+const providers = computed(() => suppliers.value.filter(s => !s.tipo || s.tipo === 'proveedor'))
+const employees = computed(() => suppliers.value.filter(s => s.tipo === 'empleado'))
+const credits   = computed(() => suppliers.value.filter(s => s.tipo === 'credito'))
+
+/** Texto del botón guardar según el tipo de salida */
+const saveLabel = computed(() => ({
+  reponer: 'Finalizar compra', gasto: 'Registrar gasto', arriendo: 'Registrar arriendo',
+  nomina: 'Registrar pago', credito: 'Registrar pago'
+}[form.type] || 'Registrar'))
+
+/** Cambia el tipo de salida y ajusta el área por defecto según el caso típico */
 function setType(t) {
   form.type = t
-  // Por defecto: reponer suele ser del Bar; un gasto de mercado suele ser del Restaurante
-  form.area = t === 'gasto' ? 'restaurante' : 'bar'
+  // Por defecto: gasto/nómina suelen ser del Restaurante; compra del Bar
+  if (t === 'gasto' || t === 'nomina') form.area = 'restaurante'
+  else form.area = 'bar'
 }
 
 // Clave única por negocio para evitar que borradores de distintos negocios se mezclen
@@ -378,9 +451,47 @@ const isEditing = computed(() => !!editPurchaseId.value)
 
 /** Suma del total de la salida en curso. Para 'gasto' es el valor; para 'reponer' suma de ítems. */
 const purchaseTotal = computed(() => {
-  if (form.type === 'gasto') return Number(form.amount) || 0
-  return form.items.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0)
+  if (form.type === 'reponer') return form.items.reduce((s, i) => s + (i.quantity || 0) * (i.unitCost || 0), 0)
+  return Number(form.amount) || 0
 })
+
+/**
+ * Lista unificada de salidas: compras/gastos/arriendos (purchases) +
+ * pagos de nómina/crédito/proveedor (suppliers.payments), ordenada por fecha.
+ */
+const salidas = computed(() => {
+  const rows = []
+  // Compras, gastos y arriendos
+  for (const p of purchases.value) {
+    rows.push({
+      id: p.id, date: p.date, kind: p.type || 'reponer',
+      area: p.area || 'bar', paidWith: p.paidWith || 'efectivo', total: p.total || 0,
+      detail: p.type === 'reponer'
+        ? (getSupplierName(p.supplierId) !== '-' ? getSupplierName(p.supplierId) + ' · ' : '') + (p.items?.length || 0) + ' productos'
+        : (p.description || '—'),
+      by: p.createdBy, _source: 'purchase', _raw: p
+    })
+  }
+  // Pagos a proveedores/empleados/créditos
+  for (const s of suppliers.value) {
+    for (const pay of (s.payments || [])) {
+      const kind = s.tipo === 'empleado' ? 'nomina' : s.tipo === 'credito' ? 'credito' : 'proveedor'
+      rows.push({
+        id: pay.id, date: pay.date, kind,
+        area: pay.area || 'bar', paidWith: pay.paidWith || (pay.method === 'banco' ? 'banco' : 'efectivo'),
+        total: pay.amount || 0, detail: s.name + (pay.notes ? ' · ' + pay.notes : ''),
+        by: '—', _source: 'payment', _raw: pay
+      })
+    }
+  }
+  return rows.sort((a, b) => new Date(b.date) - new Date(a.date))
+})
+
+/** Etiqueta legible para el tipo de salida */
+function kindLabel(kind) {
+  return ({ reponer: '🛒 Compra', gasto: '💸 Gasto', arriendo: '🏠 Arriendo',
+    nomina: '👤 Nómina', credito: '💳 Crédito', proveedor: '🚚 Proveedor' }[kind] || kind)
+}
 
 /**
  * Filtra el inventario para la tabla de "reponer":
@@ -438,8 +549,8 @@ function verDetalle(purchase) {
 function openNew() {
   editPurchaseId.value = null
   submitted.value = false
-  // Valores por defecto: reponer insumo del Bar
-  Object.assign(form, { type: 'reponer', area: 'bar', supplierId: '', notes: '', items: [], amount: 0, description: '' })
+  // Valores por defecto: compra del Bar, pagada en efectivo, hoy
+  Object.assign(form, { type: 'reponer', area: 'bar', paidWith: 'efectivo', date: todayStr(), supplierId: '', notes: '', items: [], amount: 0, description: '', employeeId: '', creditId: '' })
   const saved = localStorage.getItem(draftKey.value)
   if (saved) {
     try {
@@ -474,11 +585,14 @@ function openEdit(purchase) {
   Object.assign(form, {
     type: purchase.type || 'reponer',
     area: purchase.area || 'bar',
+    paidWith: purchase.paidWith || 'efectivo',
+    date: purchase.date ? purchase.date.slice(0, 10) : todayStr(),
     supplierId: purchase.supplierId || '',
     notes: purchase.notes || '',
     amount: purchase.total || 0,
     description: purchase.description || '',
-    items: (purchase.items || []).map(i => ({ ...i }))  // Copia profunda para no mutar el objeto original
+    items: (purchase.items || []).map(i => ({ ...i })),  // Copia profunda para no mutar el objeto original
+    employeeId: '', creditId: ''
   })
   showModal.value = true
 }
@@ -556,12 +670,24 @@ function removeItem(idx) { form.items.splice(idx, 1) }
  */
 function validate() {
   submitted.value = true
-  // Gasto simple: solo se valida el valor
-  if (form.type === 'gasto') {
-    if (!(Number(form.amount) > 0)) { toast('El valor del gasto debe ser mayor a 0', 'warning'); return false }
+  // Gasto / arriendo: solo se valida el valor
+  if (form.type === 'gasto' || form.type === 'arriendo') {
+    if (!(Number(form.amount) > 0)) { toast('El valor debe ser mayor a 0', 'warning'); return false }
     return true
   }
-  // Reponer: se validan los ítems
+  // Nómina: empleado + monto
+  if (form.type === 'nomina') {
+    if (!form.employeeId) { toast('Selecciona el empleado', 'warning'); return false }
+    if (!(Number(form.amount) > 0)) { toast('El monto debe ser mayor a 0', 'warning'); return false }
+    return true
+  }
+  // Crédito: crédito + monto
+  if (form.type === 'credito') {
+    if (!form.creditId) { toast('Selecciona el crédito', 'warning'); return false }
+    if (!(Number(form.amount) > 0)) { toast('El monto debe ser mayor a 0', 'warning'); return false }
+    return true
+  }
+  // Reponer (compra): se validan los ítems
   if (form.items.length === 0) { toast('Agrega al menos un producto', 'warning'); return false }
   if (form.items.some(i => !i.inventoryId)) { toast('Selecciona el producto en todas las filas', 'warning'); return false }
   if (form.items.some(i => !(i.quantity > 0))) { toast('La cantidad debe ser mayor a 0', 'warning'); return false }
@@ -586,25 +712,40 @@ async function savePurchase() {
   if (!validate()) return
   saving.value = true
   try {
-    // Arma el payload según el tipo de salida
-    const payload = form.type === 'gasto'
-      ? { type: 'gasto', area: form.area, amount: Number(form.amount) || 0, description: form.description, notes: form.notes }
-      : { type: 'reponer', area: form.area, supplierId: form.supplierId, notes: form.notes, items: form.items.map(i => ({ ...i })) }
+    // ── Nómina / crédito: es un PAGO a una entidad del directorio ──
+    if (form.type === 'nomina' || form.type === 'credito') {
+      const targetId = form.type === 'nomina' ? form.employeeId : form.creditId
+      await api.post(`/api/${bizId.value}/suppliers/${targetId}/payment`, {
+        amount: Number(form.amount) || 0,
+        paidWith: form.paidWith,
+        area: form.area,
+        date: form.date,
+        notes: form.notes
+      })
+      await loadData()   // Refresca proveedores (saldos) y la lista de salidas
+      toast(form.type === 'nomina' ? 'Pago de nómina registrado.' : 'Pago de crédito registrado.', 'success')
+      closeModal()
+      return
+    }
+
+    // ── Compra / gasto / arriendo: van al módulo de compras ──
+    const payload = form.type === 'reponer'
+      ? { type: 'reponer', area: form.area, paidWith: form.paidWith, date: form.date, supplierId: form.supplierId, notes: form.notes, items: form.items.map(i => ({ ...i })) }
+      : { type: form.type, area: form.area, paidWith: form.paidWith, date: form.date, amount: Number(form.amount) || 0, description: form.description, notes: form.notes }
 
     let res
     if (isEditing.value) {
       res = await api.put(`/api/${bizId.value}/purchases/${editPurchaseId.value}`, payload)
-      // Reemplaza la entrada en la lista local sin hacer re-fetch completo
       const idx = purchases.value.findIndex(p => p.id === editPurchaseId.value)
       if (idx !== -1) purchases.value[idx] = res.data
-      toast('Compra actualizada. Inventario recalculado.', 'success')
+      toast('Salida actualizada. Inventario recalculado.', 'success')
     } else {
       res = await api.post(`/api/${bizId.value}/purchases`, payload)
-      purchases.value.unshift(res.data)   // La más reciente aparece primero en la tabla
+      purchases.value.unshift(res.data)
       clearDraft()
-      toast(form.type === 'gasto' ? 'Gasto registrado.' : 'Compra registrada. Inventario actualizado.', 'success')
+      toast(form.type === 'reponer' ? 'Compra registrada. Inventario actualizado.' : 'Salida registrada.', 'success')
     }
-    await inventoryStore.fetchInventory()   // Refleja los cambios de stock en toda la app
+    await inventoryStore.fetchInventory()
     closeModal()
   } catch (err) {
     toast(err.response?.data?.error || 'Error al guardar', 'error')
@@ -619,7 +760,7 @@ function closeModal() {
   showQuickCreate.value = false
   submitted.value = false
   editPurchaseId.value = null
-  Object.assign(form, { type: 'reponer', area: 'bar', supplierId: '', notes: '', items: [], amount: 0, description: '' })
+  Object.assign(form, { type: 'reponer', area: 'bar', paidWith: 'efectivo', date: todayStr(), supplierId: '', notes: '', items: [], amount: 0, description: '', employeeId: '', creditId: '' })
 }
 
 /**
@@ -714,6 +855,17 @@ onMounted(async () => {
 .type-opt.area-bar.active { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
 .type-opt.area-rest.active { border-color: #10b981; background: #ecfdf5; color: #047857; }
 .type-opt.area-bar.active small, .type-opt.area-rest.active small { color: inherit; }
+
+/* Selector de tipo con varias opciones: se envuelven en varias filas */
+.type-picker-wrap { flex-wrap: wrap; }
+.type-picker-wrap .type-opt { flex: 1 1 30%; min-width: 120px; font-size: 13px; }
+
+/* Botones de forma de pago */
+.type-opt.pay-ef.active { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+.type-opt.pay-bk.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+
+/* Etiqueta de tipo en la lista de salidas */
+.kind-tag { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 
 .area-badge { font-size: 10px; font-weight: 700; margin-right: 4px; }
 .area-badge.bar { background: #f59e0b22; color: #b45309; }
