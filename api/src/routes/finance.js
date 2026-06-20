@@ -170,7 +170,12 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
     const cfg = await loadConfig(id);
     const all = await buildMovements(id);
 
-    const openingTime = cfg.openingDate ? new Date(cfg.openingDate).getTime() : -Infinity;
+    // Colombia es UTC-5 (sin horario de verano). El inicio de un día calendario
+    // colombiano (00:00 COT) equivale a las 05:00 UTC de esa fecha. Así, fijar la
+    // fecha de inicio en "mañana" excluye TODO lo de hoy aunque se cierre de noche.
+    const cotStart = (s) => new Date(String(s).slice(0, 10) + 'T05:00:00.000Z').getTime();
+
+    const openingTime = cfg.openingDate ? cotStart(cfg.openingDate) : -Infinity;
 
     // Saldos acumulados: saldo inicial + todos los movimientos desde openingDate
     const balances = emptyBalances();
@@ -187,14 +192,16 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
       banco: balances.bar.banco + balances.restaurante.banco + balances.general.banco
     };
 
-    // Movimientos del periodo [from, to]
+    // Movimientos a mostrar: dentro del periodo [from, to] y nunca antes de la
+    // fecha de inicio (lo anterior ya está dentro del saldo inicial).
     const { from, to } = req.query;
-    const fromTime = from ? new Date(from).getTime() : -Infinity;
-    const toTime = to ? new Date(to).getTime() + 86399999 : Infinity; // incluye todo el día 'to'
+    const fromTime = from ? cotStart(from) : -Infinity;
+    const toTime = to ? cotStart(to) + 86400000 - 1 : Infinity; // incluye todo el día 'to' (COT)
+    const lowerBound = Math.max(openingTime, fromTime);
     const movements = all
       .filter(m => {
         const t = new Date(m.date).getTime();
-        return !isNaN(t) && t >= fromTime && t <= toTime;
+        return !isNaN(t) && t >= lowerBound && t <= toTime;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
