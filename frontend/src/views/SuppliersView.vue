@@ -85,22 +85,7 @@
             </div>
 
             <div class="supplier-actions">
-              <!-- Empleado: pagar nómina siempre visible -->
-              <button v-if="s.tipo === 'empleado'" class="btn btn-sm btn-success" @click="openNominaPago(s)">
-                💵 Pagar nómina
-              </button>
-              <!-- Arriendo: pagar arriendo siempre visible -->
-              <button v-else-if="s.tipo === 'arriendo'" class="btn btn-sm btn-success" @click="openPayment(s, 'arriendo')">
-                🏠 Pagar arriendo
-              </button>
-              <!-- Crédito: registrar cuota siempre visible -->
-              <button v-else-if="s.tipo === 'credito'" class="btn btn-sm btn-success" @click="openPayment(s, 'credito')">
-                💳 Registrar cuota
-              </button>
-              <!-- Proveedor: pagar deuda solo si existe -->
-              <button v-else-if="s.totalDebt > 0" class="btn btn-sm btn-success" @click="openPayment(s)">
-                💳 Registrar pago
-              </button>
+              <!-- Los pagos ahora se registran en "Salidas". Aquí solo se consulta el historial. -->
               <button class="btn btn-sm btn-outline" @click="openPayments(s)">
                 Pagos ({{ s.payments?.length || 0 }})
               </button>
@@ -137,9 +122,9 @@
                   <select v-model="form.tipo" class="form-control">
                     <option value="proveedor">🏭 Proveedor</option>
                     <option value="empleado">👷 Empleado</option>
-                    <option value="arriendo">🏠 Arriendo</option>
                     <option value="credito">💳 Crédito</option>
                   </select>
+                  <p class="text-muted" style="font-size:11.5px;margin-top:4px">El arriendo se registra directamente en "Salidas".</p>
                 </div>
 
                 <!-- Campos EMPLEADO -->
