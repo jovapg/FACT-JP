@@ -43,16 +43,9 @@
           </div>
         </div>
         <div class="fcard total">
-          <p class="fcard-label">💰 Total disponible</p>
+          <p class="fcard-label">💰 Dinero que debería tener</p>
           <p class="fcard-value">{{ formatCOP(sel.efectivo + sel.banco) }}</p>
-        </div>
-        <div class="fcard neto" :class="{ negative: neto < 0 }">
-          <p class="fcard-label">📊 Neto del periodo</p>
-          <p class="fcard-value">{{ neto >= 0 ? '+' : '' }}{{ formatCOP(neto) }}</p>
-          <div class="fcard-sub">
-            <span class="pos">↑ {{ formatCOP(periodIngresos) }}</span>
-            <span class="neg">↓ {{ formatCOP(periodEgresos) }}</span>
-          </div>
+          <div class="fcard-sub"><span>Efectivo + banco (salidas ya restadas)</span></div>
         </div>
       </div>
 
@@ -322,7 +315,7 @@ onMounted(load)
 .seg-btn { border: none; background: none; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
 .seg-btn.active { background: var(--accent); color: #1a0a00; }
 
-.cards-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .fcard { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; background: var(--surface); }
 .fcard-label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
 .fcard-value { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
