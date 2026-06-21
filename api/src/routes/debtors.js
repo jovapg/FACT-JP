@@ -35,6 +35,7 @@ const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
+const { logAudit, cop } = require('../services/audit');
 
 const debtorsPath = (id) => path.join(getBusinessPath(id), 'debtors.json');
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
@@ -312,6 +313,12 @@ router.put('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
     debtors[idx].balance = Math.max(0, (debtors[idx].balance || 0) - oldAmount + newAmount);
 
     await writeJSON(debtorsPath(req.params.businessId), debtors);
+
+    await logAudit(req.params.businessId, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'edit_charge',
+      summary: `Editó un fiado de ${debtors[idx].name} (${cop(oldAmount)} → ${cop(newAmount)})`
+    });
+
     res.json({ debtor: debtors[idx], inventoryAlerts });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
@@ -352,6 +359,12 @@ router.delete('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
     debtors[idx].balance = Math.max(0, (debtors[idx].balance || 0) - (tx.amount || 0));
 
     await writeJSON(debtorsPath(req.params.businessId), debtors);
+
+    await logAudit(req.params.businessId, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'delete_charge',
+      summary: `Eliminó un fiado de ${debtors[idx].name} por ${cop(tx.amount)}`
+    });
+
     res.json({ debtor: debtors[idx] });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
@@ -491,6 +504,7 @@ router.put('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
     const newAmount = Number(req.body.amount);
     if (!newAmount || newAmount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
 
+    const oldPayAmount = tx.amount;
     // Aplicar el nuevo monto
     tx.amount = newAmount;
     if (req.body.description !== undefined) tx.description = req.body.description;
@@ -510,6 +524,12 @@ router.put('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
 
     recomputeBalance(debtor);
     await writeJSON(debtorsPath(req.params.businessId), debtors);
+
+    await logAudit(req.params.businessId, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'edit_payment',
+      summary: `Editó un abono de ${debtor.name} (${cop(oldPayAmount)} → ${cop(newAmount)})`
+    });
+
     res.json({ debtor });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
@@ -548,6 +568,12 @@ router.delete('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
 
     recomputeBalance(debtor);
     await writeJSON(debtorsPath(req.params.businessId), debtors);
+
+    await logAudit(req.params.businessId, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'delete_payment',
+      summary: `Eliminó un abono de ${debtor.name} por ${cop(tx.amount)}`
+    });
+
     res.json({ debtor });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });

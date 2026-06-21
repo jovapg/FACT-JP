@@ -25,6 +25,7 @@ const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
+const { logAudit, cop } = require('../services/audit');
 
 const salesPath   = (id) => path.join(getBusinessPath(id), 'sales.json');
 const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
@@ -343,6 +344,12 @@ router.put('/sales/:id', authenticate, async (req, res) => {
     };
 
     await writeJSON(salesPath(req.params.businessId), sales);
+
+    await logAudit(req.params.businessId, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'edit_invoice',
+      summary: `Editó la factura ${oldSale.invoiceNumber} (total ${cop(oldSale.total)} → ${cop(finalTotal)})`
+    });
+
     res.json({ sale: sales[idx], inventoryAlerts });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });

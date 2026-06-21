@@ -24,6 +24,7 @@ const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { addFromPurchase } = require('../services/inventoryService');
+const { logAudit, cop } = require('../services/audit');
 
 const purchasesPath = (id) => path.join(getBusinessPath(id), 'purchases.json');
 const suppliersPath = (id) => path.join(getBusinessPath(id), 'suppliers.json');
@@ -210,6 +211,12 @@ router.put('/purchases/:id', authenticate, async (req, res) => {
       updatedAt: new Date().toISOString()   // Marca de auditoría: cuándo fue editada
     };
     await writeJSON(purchasesPath(bid), purchases);
+
+    await logAudit(bid, {
+      user: req.user.name || req.user.username, role: req.user.role, action: 'edit_purchase',
+      summary: `Editó una compra (${cop(original.total)} → ${cop(newTotal)})`
+    });
+
     res.json(purchases[idx]);
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
