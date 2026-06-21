@@ -152,8 +152,13 @@
                 <div class="detail-row"><span class="detail-label">Duración</span><span>{{ calcDuration(selectedShift.openedAt, selectedShift.closedAt) }}</span></div>
                 <div class="detail-divider"></div>
                 <div class="detail-row"><span class="detail-label">Efectivo inicial</span><span class="fw-700">{{ formatCOP(selectedShift.openingCash) }}</span></div>
-                <div class="detail-row"><span class="detail-label">Ventas efectivo</span><span class="success">{{ formatCOP(selectedShift.totalCashSales) }}</span></div>
-                <div class="detail-row"><span class="detail-label">Otras ventas</span><span>{{ formatCOP(selectedShift.totalOtherSales) }}</span></div>
+                <div class="detail-divider"></div>
+                <!-- Ventas por área (lo que se sube a Finanzas) -->
+                <div class="detail-row"><span class="detail-label fw-700">🍺 Bar</span><span class="fw-700">{{ formatCOP(areaTotal(selectedShift,'bar')) }}</span></div>
+                <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(ibVal(selectedShift,'bar','efectivo')) }} / {{ formatCOP(ibVal(selectedShift,'bar','banco')) }}</span></div>
+                <div class="detail-row"><span class="detail-label fw-700">🍽️ Restaurante</span><span class="fw-700">{{ formatCOP(areaTotal(selectedShift,'restaurante')) }}</span></div>
+                <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(ibVal(selectedShift,'restaurante','efectivo')) }} / {{ formatCOP(ibVal(selectedShift,'restaurante','banco')) }}</span></div>
+                <div class="detail-row"><span class="detail-label">Total ventas</span><span class="success fw-700">{{ formatCOP(selectedShift.totalSales) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Retiros</span><span class="danger">-{{ formatCOP(selectedShift.totalWithdrawals) }}</span></div>
                 <div class="detail-row" v-if="selectedShift.totalExpenses"><span class="detail-label">Gastos caja menor</span><span class="danger">-{{ formatCOP(selectedShift.totalExpenses) }}</span></div>
                 <div class="detail-divider"></div>
@@ -198,6 +203,13 @@
                 <p class="detail-label">Notas</p>
                 <p>{{ selectedShift.notes }}</p>
               </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="selectedShift = null">Cerrar</button>
+              <button class="btn btn-whatsapp" @click="shareShiftWhatsApp(selectedShift)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                Enviar al admin
+              </button>
             </div>
           </div>
         </div>
@@ -342,24 +354,27 @@
                 </div>
               </div>
 
-              <!-- Ventas -->
+              <!-- Ventas por área (lo que se sube a Finanzas) -->
               <div class="resumen-section">
-                <p class="resumen-section-title">💰 Ventas del turno</p>
-                <div class="resumen-row">
-                  <span>Total ventas</span>
-                  <span class="resumen-val success">{{ formatCOP(resumenShift?.totalSales) }}</span>
+                <p class="resumen-section-title">💰 Ventas del turno ({{ resumenShift?.salesCount || 0 }} ventas)</p>
+
+                <div class="resumen-area">
+                  <div class="resumen-area-head">🍺 Bar</div>
+                  <div class="resumen-row indent"><span>💵 Efectivo</span><span>{{ formatCOP(ibVal(resumenShift,'bar','efectivo')) }}</span></div>
+                  <div class="resumen-row indent"><span>🏦 Banco</span><span>{{ formatCOP(ibVal(resumenShift,'bar','banco')) }}</span></div>
+                  <div class="resumen-row indent area-total"><span>Total Bar</span><span class="fw-700">{{ formatCOP(areaTotal(resumenShift,'bar')) }}</span></div>
                 </div>
-                <div class="resumen-row">
-                  <span>Ventas ({{ resumenShift?.salesCount || 0 }} transacciones)</span>
-                  <span></span>
+
+                <div class="resumen-area">
+                  <div class="resumen-area-head">🍽️ Restaurante</div>
+                  <div class="resumen-row indent"><span>💵 Efectivo</span><span>{{ formatCOP(ibVal(resumenShift,'restaurante','efectivo')) }}</span></div>
+                  <div class="resumen-row indent"><span>🏦 Banco</span><span>{{ formatCOP(ibVal(resumenShift,'restaurante','banco')) }}</span></div>
+                  <div class="resumen-row indent area-total"><span>Total Restaurante</span><span class="fw-700">{{ formatCOP(areaTotal(resumenShift,'restaurante')) }}</span></div>
                 </div>
-                <div class="resumen-row indent">
-                  <span>💵 Efectivo</span>
-                  <span>{{ formatCOP(resumenShift?.totalCashSales) }}</span>
-                </div>
-                <div class="resumen-row indent">
-                  <span>💳 Otras (tarjeta / transferencia)</span>
-                  <span>{{ formatCOP(resumenShift?.totalOtherSales) }}</span>
+
+                <div class="resumen-row resumen-grandtotal">
+                  <span>TOTAL VENTAS</span>
+                  <span class="resumen-val success">{{ formatCOP(ventasTotal(resumenShift)) }}</span>
                 </div>
               </div>
 
@@ -411,7 +426,11 @@
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="showResumenModal = false">Cerrar</button>
-              <button class="btn btn-primary" @click="printResumen">🖨️ Imprimir resumen</button>
+              <button class="btn btn-outline" @click="printResumen">🖨️ Imprimir</button>
+              <button class="btn btn-whatsapp" @click="shareShiftWhatsApp()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                Enviar al admin
+              </button>
             </div>
           </div>
         </div>
@@ -596,8 +615,59 @@ async function handleSacar() {
   }
 }
 
+// ── Desglose de ventas por área × bucket (recibe el turno) ───────
+function ibVal(s, area, bucket) {
+  return s?.incomeByAreaBucket?.[area]?.[bucket] || 0
+}
+function areaTotal(s, area) {
+  return ibVal(s, area, 'efectivo') + ibVal(s, area, 'banco')
+}
+function ventasTotal(s) {
+  return areaTotal(s, 'bar') + areaTotal(s, 'restaurante')
+}
+
 function printResumen() {
   window.print()
+}
+
+/** Arma el mensaje de cierre para WhatsApp (bonito y legible) */
+function buildShiftText(s) {
+  if (!s) return ''
+  const f = (v) => '$' + Number(v || 0).toLocaleString('es-CO')
+  const diff = s.difference || 0
+  const diffTxt = diff === 0 ? '✅ cuadra' : diff > 0 ? '⬆️ sobrante' : '⬇️ faltante'
+  const L = []
+  L.push(`📊 *CIERRE DE CAJA* — ${auth.currentBusiness?.name || 'Negocio'}`)
+  L.push(`👤 Cajero: ${s.cashierName}`)
+  L.push(`🕒 ${formatDateTime(s.openedAt)} → ${formatDateTime(s.closedAt)}`)
+  L.push('')
+  L.push('🍺 *BAR*')
+  L.push(`   💵 Efectivo: ${f(ibVal(s, 'bar', 'efectivo'))}`)
+  L.push(`   🏦 Banco: ${f(ibVal(s, 'bar', 'banco'))}`)
+  L.push(`   Total Bar: ${f(areaTotal(s, 'bar'))}`)
+  L.push('')
+  L.push('🍽️ *RESTAURANTE*')
+  L.push(`   💵 Efectivo: ${f(ibVal(s, 'restaurante', 'efectivo'))}`)
+  L.push(`   🏦 Banco: ${f(ibVal(s, 'restaurante', 'banco'))}`)
+  L.push(`   Total Restaurante: ${f(areaTotal(s, 'restaurante'))}`)
+  L.push('')
+  L.push(`💰 *TOTAL VENTAS: ${f(ventasTotal(s))}*`)
+  if ((s.totalWithdrawals || 0) + (s.totalExpenses || 0) > 0) {
+    L.push('')
+    L.push(`📤 Dinero sacado de caja: ${f((s.totalWithdrawals || 0) + (s.totalExpenses || 0))}`)
+  }
+  L.push('')
+  L.push('🏦 *Cuadre de caja*')
+  L.push(`   Efectivo esperado: ${f(s.expectedCash)}`)
+  L.push(`   Efectivo contado: ${f(s.closingCash)}`)
+  L.push(`   Diferencia: ${diff >= 0 ? '+' : ''}${f(diff)} ${diffTxt}`)
+  return L.join('\n')
+}
+
+/** Abre WhatsApp con el resumen del cierre para enviárselo al administrador */
+function shareShiftWhatsApp(shift) {
+  const text = encodeURIComponent(buildShiftText(shift || resumenShift.value))
+  window.open(`https://wa.me/?text=${text}`, '_blank')
 }
 
 onMounted(async () => {
@@ -812,6 +882,22 @@ onMounted(async () => {
 }
 .resumen-row.indent { padding-left: 16px; font-size: 13px; color: var(--text-light); }
 .resumen-val { font-weight: 700; font-size: 15px; }
+
+/* Desglose por área en el resumen */
+.resumen-area { margin-bottom: 8px; }
+.resumen-area-head { font-size: 13.5px; font-weight: 700; color: var(--text); margin: 4px 0 2px; }
+.resumen-row.area-total { border-top: 1px dashed var(--border); margin-top: 2px; padding-top: 5px; color: var(--text); }
+.resumen-grandtotal {
+  border-top: 2px solid var(--border); margin-top: 8px; padding-top: 10px;
+  font-size: 15px; font-weight: 800; color: var(--text);
+}
+
+/* Botón WhatsApp */
+.btn-whatsapp {
+  background: #25D366; color: white; border: none;
+  display: flex; align-items: center; gap: 6px; font-weight: 600;
+}
+.btn-whatsapp:hover { background: #1ebe5d; }
 .resumen-cuadre { background: var(--surface-2); }
 .resumen-diff-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .resumen-diff { font-weight: 700; font-size: 14px; }
