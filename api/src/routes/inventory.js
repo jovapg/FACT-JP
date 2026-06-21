@@ -22,6 +22,7 @@ const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { adjustStock } = require('../services/inventoryService');
+const { logAudit } = require('../services/audit');
 
 const inventoryPath = (id) => path.join(getBusinessPath(id), 'inventory.json');
 
@@ -116,6 +117,47 @@ router.patch('/inventory/:id/adjust', authenticate, async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /inventory/count — Conteo físico de inventario.
+ * Body: { items: [{ id, counted }] }
+ * Para cada ítem con conteo, fija el stock al valor contado y registra la
+ * diferencia (merma/sobrante) en lastAdjustment. Devuelve el detalle de cambios.
+ * Solo admin/superadmin.
+ */
+router.post('/inventory/count', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const counts = Array.isArray(req.body.items) ? req.body.items : [];
+    const inventory = await readJSON(inventoryPath(req.params.businessId)) || [];
+
+    const changes = [];
+    for (const c of counts) {
+      if (c.counted === undefined || c.counted === null || c.counted === '') continue;
+      const counted = Number(c.counted);
+      if (isNaN(counted) || counted < 0) continue;
+      const idx = inventory.findIndex(i => i.id === c.id);
+      if (idx === -1) continue;
+      const before = inventory[idx].stock || 0;
+      const diff = counted - before;
+      if (diff === 0) continue;
+      inventory[idx].stock = counted;
+      inventory[idx].lastAdjustment = { amount: diff, reason: 'Conteo físico', date: new Date().toISOString() };
+      changes.push({ id: inventory[idx].id, name: inventory[idx].name, before, after: counted, diff });
+    }
+
+    if (changes.length > 0) {
+      await writeJSON(inventoryPath(req.params.businessId), inventory);
+      await logAudit(req.params.businessId, {
+        user: req.user.name || req.user.username, role: req.user.role, action: 'inventory_count',
+        summary: `Hizo conteo físico: ${changes.length} ítem(s) ajustados`
+      });
+    }
+    res.json({ ajustados: changes.length, changes, inventory });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 

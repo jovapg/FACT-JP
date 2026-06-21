@@ -9,6 +9,7 @@
             <button class="btn btn-outline" @click="openSyncModal" v-if="pendingSync.length > 0">
               🍺 Sincronizar al menú ({{ pendingSync.length }})
             </button>
+            <button class="btn btn-outline" @click="openCount">📋 Conteo físico</button>
             <button class="btn btn-primary" @click="openCreate">+ Nuevo producto</button>
           </div>
         </div>
@@ -311,6 +312,45 @@
         @cancel="confirmDelete_item = null"
       />
 
+    <!-- ── Modal: Conteo físico ── -->
+    <div class="modal-overlay" v-if="showCount" @click.self="closeCount">
+      <div class="modal" style="max-width:560px">
+        <div class="modal-header">
+          <h3 class="modal-title">📋 Conteo físico de inventario</h3>
+          <button class="btn-close" @click="closeCount">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:12.5px;margin-bottom:10px">
+            Escribe cuánto hay físicamente de cada producto (deja en blanco lo que no cuentes).
+            Al guardar, el stock se ajusta a lo contado y la diferencia (merma/sobrante) queda registrada.
+          </p>
+          <input v-model="countSearch" class="form-control mb-2" placeholder="Buscar producto..." />
+          <div class="count-wrap">
+            <table class="table count-table">
+              <thead>
+                <tr><th>Producto</th><th>Sistema</th><th>Contado</th><th>Dif.</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="it in countFiltered" :key="it.id">
+                  <td>{{ it.name }} <span class="text-muted">({{ it.unit }})</span></td>
+                  <td class="text-muted">{{ it.stock }}</td>
+                  <td><input v-model="countMap[it.id]" type="number" min="0" class="form-control count-input" placeholder="—" /></td>
+                  <td :class="countDiffClass(it)">{{ countDiffLabel(it) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="text-muted" style="margin-right:auto;font-size:12.5px">{{ countToApply }} cambio(s)</span>
+          <button class="btn btn-outline" @click="closeCount">Cancelar</button>
+          <button class="btn btn-primary" @click="saveCount" :disabled="countSaving || countToApply === 0">
+            {{ countSaving ? 'Guardando...' : 'Aplicar conteo' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
   </PageLayout>
 </template>
 
@@ -399,6 +439,57 @@ const confirmDelete_item = ref(null)   // Ítem pendiente de eliminar (null = mo
 const adjustItem = ref(null)    // Ítem al que se le está ajustando el stock
 const adjustAmount = ref(0)     // Cantidad de ajuste (+/-)
 const adjustReason = ref('')    // Motivo del ajuste (para trazabilidad)
+
+// ── Conteo físico ──
+const showCount = ref(false)
+const countMap = reactive({})   // { [itemId]: cantidad contada }
+const countSearch = ref('')
+const countSaving = ref(false)
+
+const countFiltered = computed(() => {
+  const q = countSearch.value.trim().toLowerCase()
+  return q ? inventoryStore.items.filter(i => i.name.toLowerCase().includes(q)) : inventoryStore.items
+})
+function countDiff(it) {
+  const v = countMap[it.id]
+  if (v === '' || v === undefined || v === null) return null
+  const n = Number(v)
+  return isNaN(n) ? null : n - (it.stock || 0)
+}
+function countDiffLabel(it) {
+  const d = countDiff(it)
+  if (d === null) return '—'
+  return d > 0 ? '+' + d : String(d)
+}
+function countDiffClass(it) {
+  const d = countDiff(it)
+  if (d === null || d === 0) return 'text-muted'
+  return d > 0 ? 'diff-pos' : 'diff-neg'
+}
+const countToApply = computed(() =>
+  inventoryStore.items.filter(it => { const d = countDiff(it); return d !== null && d !== 0 }).length
+)
+function openCount() {
+  for (const k in countMap) delete countMap[k]
+  countSearch.value = ''
+  showCount.value = true
+}
+function closeCount() { showCount.value = false }
+async function saveCount() {
+  const payload = inventoryStore.items
+    .map(it => ({ id: it.id, counted: countMap[it.id] }))
+    .filter(c => c.counted !== '' && c.counted !== undefined && c.counted !== null)
+  countSaving.value = true
+  try {
+    const res = await inventoryStore.countInventory(payload)
+    toast(`Conteo aplicado: ${res.ajustados} ítem(s) ajustados`, 'success')
+    showCount.value = false
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al guardar el conteo', 'error')
+  } finally {
+    countSaving.value = false
+  }
+}
 
 const form = reactive({
   name: '', category: '', unit: 'unidad', area: 'bar',
@@ -791,4 +882,14 @@ onMounted(async () => {
 }
 .inv-area-opt.bar.active { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
 .inv-area-opt.rest.active { border-color: #10b981; background: #ecfdf5; color: #047857; }
+
+/* Conteo físico */
+.count-wrap { max-height: 50vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.count-table { margin: 0; }
+.count-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.count-table td, .count-table th { padding: 6px 10px; font-size: 13px; }
+.count-input { width: 80px; padding: 4px 8px; font-size: 13px; text-align: center; }
+.diff-pos { color: #16a34a; font-weight: 700; }
+.diff-neg { color: var(--danger); font-weight: 700; }
+.mb-2 { margin-bottom: 8px; }
 </style>

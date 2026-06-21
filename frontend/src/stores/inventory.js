@@ -91,6 +91,16 @@ export const useInventoryStore = defineStore('inventory', () => {
     return res.data
   }
 
+  /**
+   * Conteo físico: envía [{ id, counted }] y el backend ajusta el stock a lo
+   * contado. Devuelve { ajustados, changes, inventory }. Refresca el estado.
+   */
+  async function countInventory(countItems) {
+    const res = await api.post(`/api/${bizId()}/inventory/count`, { items: countItems })
+    if (Array.isArray(res.data.inventory)) items.value = res.data.inventory
+    return res.data
+  }
+
   /** Crea una nueva receta/ítem de menú */
   async function createRecipe(data) {
     const res = await api.post(`/api/${bizId()}/recipes`, data)
@@ -116,7 +126,7 @@ export const useInventoryStore = defineStore('inventory', () => {
     items, recipes, loading,
     lowStockItems, categories, recipeCategories,
     fetchInventory, fetchRecipes,
-    createItem, updateItem, deleteItem, adjustStock,
+    createItem, updateItem, deleteItem, adjustStock, countInventory,
     createRecipe, updateRecipe, deleteRecipe
   }
 })
