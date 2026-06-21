@@ -70,7 +70,9 @@
       <div class="card cost-card mb-3">
         <div class="cost-head">
           <span>📊 Análisis de costo y ganancia — <strong>{{ areaLabel }}</strong></span>
-          <span class="cost-meta-target">Meta de costo: 30–40%</span>
+          <button class="cost-meta-target" @click="openTarget" title="Editar meta">
+            🎯 Meta de costo: {{ costTarget.min }}–{{ costTarget.max }}% ✏️
+          </button>
         </div>
         <div v-if="periodIngresos > 0" class="cost-body">
           <div class="cost-row"><span class="cost-l">Ventas</span><span class="cost-v">{{ formatCOP(periodIngresos) }}</span></div>
@@ -250,6 +252,36 @@
         </div>
       </div>
     </div>
+    <!-- ── Modal: Meta de costo ── -->
+    <div class="modal-overlay" v-if="showTarget" @click.self="showTarget = false">
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <h3 class="modal-title">🎯 Meta de costo</h3>
+          <button class="btn-close" @click="showTarget = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:12.5px;margin-bottom:12px">
+            Define el rango de costo ideal (food cost %). El semáforo se pone verde si el costo
+            queda hasta el máximo, amarillo si se pasa un poco, y rojo si está muy alto.
+          </p>
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label class="form-label">Mínimo (%)</label>
+              <input v-model.number="targetForm.min" type="number" min="0" max="100" class="form-control" placeholder="30" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Máximo (%)</label>
+              <input v-model.number="targetForm.max" type="number" min="0" max="100" class="form-control" placeholder="40" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showTarget = false">Cancelar</button>
+          <button class="btn btn-primary" @click="saveTarget" :disabled="saving">{{ saving ? 'Guardando...' : 'Guardar' }}</button>
+        </div>
+      </div>
+    </div>
+
   </PageLayout>
 </template>
 
@@ -277,6 +309,8 @@ const saving = ref(false)
 const showConfig = ref(false)
 const showManual = ref(false)
 const showRef = ref(false)
+const showTarget = ref(false)
+const targetForm = ref({ min: 30, max: 40 })
 
 const areas = [
   { value: 'total', label: 'Total' },
@@ -316,8 +350,13 @@ const otrosGastos = computed(() => Math.max(0, periodEgresos.value - costoInsumo
 const costoPct = computed(() => periodIngresos.value > 0 ? (costoInsumos.value / periodIngresos.value * 100) : 0)
 const ganancia = computed(() => periodIngresos.value - periodEgresos.value)
 const margenPct = computed(() => periodIngresos.value > 0 ? (ganancia.value / periodIngresos.value * 100) : 0)
-// Semáforo: meta 30–40% → ≤40 bien, 41–50 cuidado, >50 alto
-const costoClass = computed(() => costoPct.value <= 40 ? 'good' : costoPct.value <= 50 ? 'warn' : 'bad')
+// Meta de costo configurable (food cost %)
+const costTarget = computed(() => finance.data?.costTarget || { min: 30, max: 40 })
+// Semáforo: ≤ max bien, hasta max+10 cuidado, más rojo
+const costoClass = computed(() => {
+  const max = costTarget.value.max || 40
+  return costoPct.value <= max ? 'good' : costoPct.value <= max + 10 ? 'warn' : 'bad'
+})
 
 // Resumen del mes (referencia)
 const refData = computed(() => finance.data?.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } })
@@ -427,6 +466,23 @@ async function removeManual(m) {
   }
 }
 
+// ── Meta de costo ──
+function openTarget() {
+  targetForm.value = { min: costTarget.value.min, max: costTarget.value.max }
+  showTarget.value = true
+}
+async function saveTarget() {
+  saving.value = true
+  try {
+    await finance.setCostTarget({ min: targetForm.value.min, max: targetForm.value.max })
+    showTarget.value = false
+    toast('Meta de costo guardada', 'success')
+    await load()
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al guardar', 'error')
+  } finally { saving.value = false }
+}
+
 // ── Reporte del día por WhatsApp ──
 function buildDailyText(r) {
   const f = (v) => '$' + Number(v || 0).toLocaleString('es-CO')
@@ -527,7 +583,8 @@ onMounted(load)
 /* Análisis de costo */
 .cost-card { padding: 0; }
 .cost-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; }
-.cost-meta-target { font-size: 11.5px; font-weight: 600; color: var(--text-light); }
+.cost-meta-target { font-size: 11.5px; font-weight: 600; color: var(--text-light); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.cost-meta-target:hover { border-color: var(--accent); color: var(--text); }
 .cost-body { padding: 6px 16px 14px; }
 .cost-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
 .cost-row:last-of-type { border-bottom: none; }

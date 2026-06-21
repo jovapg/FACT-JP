@@ -61,7 +61,9 @@ async function loadConfig(id) {
     openingDate: cfg.openingDate || null,
     manual: Array.isArray(cfg.manual) ? cfg.manual : [],
     // Resumen del mes solo de referencia (NO afecta los saldos)
-    reference: cfg.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } }
+    reference: cfg.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } },
+    // Meta de costo (food cost %) configurable
+    costTarget: cfg.costTarget || { min: 30, max: 40 }
   };
 }
 async function saveConfig(id, cfg) { await writeJSON(financePath(id), cfg); }
@@ -222,7 +224,7 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
     }
     periodTotals.neto = periodTotals.ingresos - periodTotals.egresos;
 
-    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, reference: cfg.reference, balances, totals, movements, periodTotals });
+    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, reference: cfg.reference, costTarget: cfg.costTarget, balances, totals, movements, periodTotals });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -258,6 +260,25 @@ router.put('/finance/reference', authenticate, adminOnly, async (req, res) => {
     };
     await saveConfig(req.params.businessId, cfg);
     res.json({ reference: cfg.reference });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** PUT /finance/cost-target — Fija la meta de costo (food cost %) */
+router.put('/finance/cost-target', authenticate, adminOnly, async (req, res) => {
+  try {
+    const cfg = await loadConfig(req.params.businessId);
+    const t = req.body.target || {};
+    let min = Number(t.min), max = Number(t.max);
+    if (isNaN(min)) min = 30;
+    if (isNaN(max)) max = 40;
+    min = Math.max(0, Math.min(100, min));
+    max = Math.max(0, Math.min(100, max));
+    if (min > max) { const tmp = min; min = max; max = tmp; }
+    cfg.costTarget = { min, max };
+    await saveConfig(req.params.businessId, cfg);
+    res.json({ costTarget: cfg.costTarget });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }

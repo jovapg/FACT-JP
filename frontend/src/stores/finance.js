@@ -35,6 +35,12 @@ export const useFinanceStore = defineStore('finance', () => {
     return res.data
   }
 
+  /** Fija la meta de costo (food cost %) */
+  async function setCostTarget(target) {
+    const res = await api.put(`/api/${bizId()}/finance/cost-target`, { target })
+    return res.data
+  }
+
   /** Obtiene el reporte del día (ventas, fiados, salidas, saldos) */
   async function fetchDaily(date) {
     const res = await api.get(`/api/${bizId()}/finance/daily`, { params: date ? { date } : {} })
@@ -58,5 +64,5 @@ export const useFinanceStore = defineStore('finance', () => {
     await api.delete(`/api/${bizId()}/finance/manual/${id}`)
   }
 
-  return { data, loading, fetchFinance, fetchDaily, setOpening, setReference, addManual, deleteManual }
+  return { data, loading, fetchFinance, fetchDaily, setOpening, setReference, setCostTarget, addManual, deleteManual }
 })
