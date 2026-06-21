@@ -29,11 +29,8 @@
               </div>
             </div>
             <div class="shift-active-actions">
-              <button class="btn btn-outline btn-sm" @click="openGastoModal">
-                <Receipt :size="13" /> Registrar gasto
-              </button>
-              <button class="btn btn-outline btn-sm" @click="openRetiroModal">
-                <ArrowDownToLine :size="13" /> Registrar retiro
+              <button class="btn btn-outline btn-sm" @click="openSacarModal">
+                <ArrowDownToLine :size="13" /> Sacar dinero de la caja
               </button>
               <button class="btn btn-danger btn-sm" @click="openCierreModal">
                 <LogOut :size="13" /> Cerrar turno
@@ -41,73 +38,37 @@
             </div>
           </div>
 
-          <!-- Métricas del turno activo -->
-          <div class="shift-metrics">
-            <div class="shift-metric">
-              <p class="metric-label">Apertura</p>
-              <p class="metric-value">{{ formatCOP(shiftsStore.currentShift.openingCash) }}</p>
-            </div>
-            <div class="shift-metric highlight">
-              <p class="metric-label">Ventas efectivo</p>
-              <p class="metric-value success">{{ formatCOP(shiftsStore.currentShift.totalCashSales) }}</p>
-            </div>
-            <div class="shift-metric">
-              <p class="metric-label">Otras ventas</p>
-              <p class="metric-value">{{ formatCOP(shiftsStore.currentShift.totalOtherSales) }}</p>
-            </div>
-            <div class="shift-metric">
-              <p class="metric-label">Retiros</p>
-              <p class="metric-value danger">{{ formatCOP(shiftsStore.currentShift.totalWithdrawals) }}</p>
-            </div>
-            <div class="shift-metric">
-              <p class="metric-label">Gastos caja</p>
-              <p class="metric-value danger">{{ formatCOP(shiftsStore.currentShift.totalExpenses) }}</p>
-            </div>
-            <div class="shift-metric highlight-main">
-              <p class="metric-label">Efectivo esperado</p>
-              <p class="metric-value accent">
-                {{ formatCOP(
-                  shiftsStore.currentShift.openingCash +
-                  shiftsStore.currentShift.totalCashSales -
-                  shiftsStore.currentShift.totalWithdrawals -
-                  (shiftsStore.currentShift.totalExpenses || 0)
-                ) }}
-              </p>
-            </div>
-            <div class="shift-metric">
-              <p class="metric-label">Ventas totales</p>
-              <p class="metric-value">{{ formatCOP(shiftsStore.currentShift.totalSales) }}</p>
-            </div>
+          <!-- Número gigante: efectivo que debe haber en la caja -->
+          <div class="cash-hero">
+            <p class="cash-hero-label">💵 Efectivo que debe haber en la caja ahora</p>
+            <p class="cash-hero-value">{{ formatCOP(efectivoEnCaja) }}</p>
+            <p class="cash-hero-formula">
+              base {{ formatCOP(shiftsStore.currentShift.openingCash) }}
+              + ventas en efectivo {{ formatCOP(shiftsStore.currentShift.totalCashSales) }}
+              <template v-if="totalSalidasCaja > 0"> − salidas {{ formatCOP(totalSalidasCaja) }}</template>
+            </p>
           </div>
 
-          <!-- Gastos del turno -->
-          <div v-if="shiftsStore.currentShift.expenses?.length" class="withdrawals-section">
-            <p class="withdrawals-title">Gastos de caja menor</p>
-            <div class="withdrawals-list">
-              <div v-for="e in shiftsStore.currentShift.expenses" :key="e.id" class="withdrawal-row">
-                <div class="withdrawal-info">
-                  <Receipt :size="13" />
-                  <span class="expense-badge">{{ e.category }}</span>
-                  <span>{{ e.description }}</span>
-                  <span class="withdrawal-time">{{ formatTime(e.date) }}</span>
-                </div>
-                <span class="withdrawal-amount">-{{ formatCOP(e.amount) }}</span>
-              </div>
-            </div>
-          </div>
+          <!-- Ventas del turno (línea chiquita, no afecta la caja física) -->
+          <p class="ventas-line">
+            🧾 Ventas del turno: <strong>{{ shiftsStore.currentShift.salesCount || 0 }}</strong>
+            · 💵 efectivo {{ formatCOP(shiftsStore.currentShift.totalCashSales) }}
+            · 💳 tarjeta/transf. {{ formatCOP(shiftsStore.currentShift.totalOtherSales) }}
+            · total {{ formatCOP(shiftsStore.currentShift.totalSales) }}
+          </p>
 
-          <!-- Retiros del turno -->
-          <div v-if="shiftsStore.currentShift.withdrawals?.length" class="withdrawals-section">
-            <p class="withdrawals-title">Retiros registrados</p>
+          <!-- Salidas de caja del turno (gastos + retiros unificados) -->
+          <div v-if="salidasCaja.length" class="withdrawals-section">
+            <p class="withdrawals-title">Dinero sacado de la caja</p>
             <div class="withdrawals-list">
-              <div v-for="w in shiftsStore.currentShift.withdrawals" :key="w.id" class="withdrawal-row">
+              <div v-for="s in salidasCaja" :key="s.id" class="withdrawal-row">
                 <div class="withdrawal-info">
                   <ArrowDownToLine :size="13" />
-                  <span>{{ w.reason }}</span>
-                  <span class="withdrawal-by">por {{ w.registeredBy }}</span>
-                  <span class="withdrawal-time">{{ formatTime(w.date) }}</span>
+                  <span v-if="s.category" class="expense-badge">{{ s.category }}</span>
+                  <span>{{ s.description || s.reason }}</span>
+                  <span class="withdrawal-time">{{ formatTime(s.date) }}</span>
                 </div>
-                <span class="withdrawal-amount">-{{ formatCOP(w.amount) }}</span>
+                <span class="withdrawal-amount">-{{ formatCOP(s.amount) }}</span>
               </div>
             </div>
           </div>
@@ -288,53 +249,28 @@
               <button class="btn-close" @click="showCierreModal = false"><X :size="18" /></button>
             </div>
             <div class="modal-body">
-              <div class="cierre-summary mb-3">
-                <div class="cierre-row">
-                  <span>Efectivo inicial</span>
-                  <span>{{ formatCOP(shiftsStore.currentShift?.openingCash) }}</span>
-                </div>
-                <div class="cierre-row">
-                  <span>+ Ventas en efectivo</span>
-                  <span class="success">{{ formatCOP(shiftsStore.currentShift?.totalCashSales) }}</span>
-                </div>
-                <div class="cierre-row">
-                  <span>- Retiros</span>
-                  <span class="danger">{{ formatCOP(shiftsStore.currentShift?.totalWithdrawals) }}</span>
-                </div>
-                <div class="cierre-row" v-if="shiftsStore.currentShift?.totalExpenses">
-                  <span>- Gastos caja menor</span>
-                  <span class="danger">{{ formatCOP(shiftsStore.currentShift?.totalExpenses) }}</span>
-                </div>
-                <div class="cierre-row total">
-                  <span>= Efectivo esperado</span>
-                  <span class="accent fw-700">
-                    {{ formatCOP(
-                      (shiftsStore.currentShift?.openingCash || 0) +
-                      (shiftsStore.currentShift?.totalCashSales || 0) -
-                      (shiftsStore.currentShift?.totalWithdrawals || 0) -
-                      (shiftsStore.currentShift?.totalExpenses || 0)
-                    ) }}
-                  </span>
-                </div>
-              </div>
-
               <div class="form-group">
-                <label class="form-label">Efectivo contado en caja ahora</label>
+                <label class="form-label" style="font-size:15px;font-weight:700">Cuenta TODO el efectivo de la caja y escríbelo aquí:</label>
                 <input
                   v-model.number="cierreForm.closingCash"
                   type="number"
-                  class="form-control"
+                  class="form-control cierre-input"
                   min="0"
                   step="1000"
-                  placeholder="Cuenta el dinero físico e ingresa el total"
+                  placeholder="Ej: 388500"
+                  ref="closingInput"
                 />
-                <span v-if="cierreForm.closingCash !== ''" class="field-hint">
-                  Diferencia:
-                  <strong :class="calcDiff >= 0 ? 'success' : 'danger'">
-                    {{ calcDiff >= 0 ? '+' : '' }}{{ formatCOP(calcDiff) }}
-                  </strong>
+              </div>
+
+              <!-- Resultado grande y claro -->
+              <div v-if="cierreForm.closingCash !== ''" :class="['cuadre-result', calcDiff === 0 ? 'ok' : calcDiff > 0 ? 'over' : 'under']">
+                <span class="cuadre-emoji">{{ calcDiff === 0 ? '✅' : calcDiff > 0 ? '⬆️' : '⬇️' }}</span>
+                <span class="cuadre-text">
+                  {{ calcDiff === 0 ? '¡Cuadra perfecto!' : calcDiff > 0 ? `Te sobran ${formatCOP(calcDiff)}` : `Te faltan ${formatCOP(-calcDiff)}` }}
                 </span>
               </div>
+
+              <p class="cierre-hint">En la caja deberían haber <strong>{{ formatCOP(efectivoEnCaja) }}</strong></p>
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="showCierreModal = false">Cancelar</button>
@@ -346,85 +282,43 @@
           </div>
         </div>
 
-        <!-- ── Modal: Registrar gasto ────────────────────────────── -->
-        <div class="modal-overlay" v-if="showGastoModal" @click.self="showGastoModal = false">
+        <!-- ── Modal: Sacar dinero de la caja ───────────────────── -->
+        <div class="modal-overlay" v-if="showSacarModal" @click.self="showSacarModal = false">
           <div class="modal" style="max-width:400px">
             <div class="modal-header">
-              <h3 class="modal-title">Registrar gasto de caja</h3>
-              <button class="btn-close" @click="showGastoModal = false"><X :size="18" /></button>
+              <h3 class="modal-title">Sacar dinero de la caja</h3>
+              <button class="btn-close" @click="showSacarModal = false"><X :size="18" /></button>
             </div>
             <div class="modal-body">
+              <p class="modal-desc">Registra el dinero que sacas de la caja (un gasto, pago a proveedor, etc.).</p>
               <div class="form-group">
-                <label class="form-label">Categoría</label>
-                <select v-model="gastoForm.category" class="form-control">
-                  <option value="insumos">🧹 Insumos (hielo, servilletas, limpieza…)</option>
+                <label class="form-label">¿Cuánto sacaste?</label>
+                <input v-model.number="sacarForm.amount" type="number" class="form-control"
+                  :class="{ 'input-error': sacarSubmitted && !sacarForm.amount }"
+                  min="1" step="1000" placeholder="Ej: 20000" ref="sacarInput" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">¿Para qué?</label>
+                <input v-model="sacarForm.description" type="text" class="form-control"
+                  :class="{ 'input-error': sacarSubmitted && !sacarForm.description }"
+                  placeholder="Ej: Bolsa de hielo, pago domicilio, proveedor..." />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tipo (opcional)</label>
+                <select v-model="sacarForm.category" class="form-control">
+                  <option value="insumos">🧹 Insumos (hielo, servilletas…)</option>
                   <option value="servicios">⚡ Servicios (domicilio, transporte…)</option>
-                  <option value="mercado">🛒 Mercado / Compra rápida</option>
+                  <option value="mercado">🛒 Mercado / compra rápida</option>
+                  <option value="proveedor">🚚 Pago a proveedor</option>
                   <option value="otros">📌 Otros</option>
                 </select>
               </div>
-              <div class="form-group">
-                <label class="form-label">Descripción</label>
-                <input v-model="gastoForm.description" type="text" class="form-control"
-                  :class="{ 'input-error': gastoSubmitted && !gastoForm.description }"
-                  placeholder="Ej: Bolsa de hielo, Domicilio proveedor" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Monto</label>
-                <input v-model.number="gastoForm.amount" type="number" class="form-control"
-                  :class="{ 'input-error': gastoSubmitted && !gastoForm.amount }"
-                  min="1" step="1000" placeholder="Ej: 5000" />
-              </div>
             </div>
             <div class="modal-footer">
-              <button class="btn btn-outline" @click="showGastoModal = false">Cancelar</button>
-              <button class="btn btn-primary" @click="handleGasto" :disabled="saving">
+              <button class="btn btn-outline" @click="showSacarModal = false">Cancelar</button>
+              <button class="btn btn-primary" @click="handleSacar" :disabled="saving">
                 <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
-                {{ saving ? 'Guardando...' : 'Registrar gasto' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Modal: Registrar retiro ──────────────────────────── -->
-        <div class="modal-overlay" v-if="showRetiroModal" @click.self="showRetiroModal = false">
-          <div class="modal" style="max-width:400px">
-            <div class="modal-header">
-              <h3 class="modal-title">Registrar retiro de caja</h3>
-              <button class="btn-close" @click="showRetiroModal = false"><X :size="18" /></button>
-            </div>
-            <div class="modal-body">
-              <p class="modal-desc">
-                Registra cuando sacas dinero de la caja (pago a proveedor, gastos, etc.)
-              </p>
-              <div class="form-group">
-                <label class="form-label">Monto retirado</label>
-                <input
-                  v-model.number="retiroForm.amount"
-                  type="number"
-                  class="form-control"
-                  :class="{ 'input-error': retiroSubmitted && !retiroForm.amount }"
-                  min="1"
-                  step="1000"
-                  placeholder="Ej: 20000"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Motivo</label>
-                <input
-                  v-model="retiroForm.reason"
-                  type="text"
-                  class="form-control"
-                  :class="{ 'input-error': retiroSubmitted && !retiroForm.reason }"
-                  placeholder="Ej: Pago a proveedor de bebidas"
-                />
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-outline" @click="showRetiroModal = false">Cancelar</button>
-              <button class="btn btn-primary" @click="handleWithdrawal" :disabled="saving">
-                <div class="spinner" v-if="saving" style="width:14px;height:14px;border-width:2px"></div>
-                {{ saving ? 'Guardando...' : 'Registrar retiro' }}
+                {{ saving ? 'Guardando...' : 'Registrar' }}
               </button>
             </div>
           </div>
@@ -548,35 +442,53 @@ const toast = inject('toast')
 // ── Estado de modales ────────────────────────────────────────────
 const showAbrirModal  = ref(false)
 const showCierreModal = ref(false)
-const showRetiroModal = ref(false)
-const showGastoModal  = ref(false)
+const showSacarModal  = ref(false)
 const selectedShift   = ref(null)
 const saving          = ref(false)
 const showResumenModal = ref(false)
 const resumenShift = ref(null)
 
 const abrirSubmitted  = ref(false)
-const retiroSubmitted = ref(false)
-const gastoSubmitted  = ref(false)
+const sacarSubmitted  = ref(false)
 
 const openingCashInput = ref(null)
+const sacarInput = ref(null)
+const closingInput = ref(null)
 
 const abrirForm  = ref({ openingCash: 0, notes: '' })
 const cierreForm = ref({ closingCash: '' })
-const retiroForm = ref({ amount: '', reason: '' })
-const gastoForm  = ref({ amount: '', category: 'insumos', description: '' })
+const sacarForm  = ref({ amount: '', category: 'insumos', description: '' })
 
 // ── Computeds ────────────────────────────────────────────────────
 const closedShifts = computed(() =>
   shiftsStore.shifts.filter(s => s.status === 'closed')
 )
 
-/** Diferencia en tiempo real mientras el admin cuenta en el modal de cierre */
-const calcDiff = computed(() => {
+/** Efectivo que debe haber físicamente en la caja en este momento */
+const efectivoEnCaja = computed(() => {
   const s = shiftsStore.currentShift
-  if (!s || cierreForm.value.closingCash === '') return 0
-  const expected = (s.openingCash || 0) + (s.totalCashSales || 0) - (s.totalWithdrawals || 0) - (s.totalExpenses || 0)
-  return Number(cierreForm.value.closingCash) - expected
+  if (!s) return 0
+  return (s.openingCash || 0) + (s.totalCashSales || 0) - (s.totalWithdrawals || 0) - (s.totalExpenses || 0)
+})
+
+/** Total de dinero sacado de la caja (gastos + retiros) */
+const totalSalidasCaja = computed(() =>
+  (shiftsStore.currentShift?.totalWithdrawals || 0) + (shiftsStore.currentShift?.totalExpenses || 0)
+)
+
+/** Lista unificada del dinero sacado de la caja (gastos + retiros) */
+const salidasCaja = computed(() => {
+  const s = shiftsStore.currentShift
+  if (!s) return []
+  const exp = (s.expenses || []).map(e => ({ ...e }))
+  const wd = (s.withdrawals || []).map(w => ({ id: w.id, amount: w.amount, description: w.reason, date: w.date }))
+  return [...exp, ...wd].sort((a, b) => new Date(b.date) - new Date(a.date))
+})
+
+/** Diferencia en tiempo real mientras se cuenta en el modal de cierre */
+const calcDiff = computed(() => {
+  if (cierreForm.value.closingCash === '') return 0
+  return Number(cierreForm.value.closingCash) - efectivoEnCaja.value
 })
 
 // ── Helpers de formato ───────────────────────────────────────────
@@ -615,18 +527,14 @@ function openAbrirModal() {
 function openCierreModal() {
   cierreForm.value = { closingCash: '' }
   showCierreModal.value = true
+  nextTick(() => closingInput.value?.focus())
 }
 
-function openRetiroModal() {
-  retiroForm.value = { amount: '', reason: '' }
-  retiroSubmitted.value = false
-  showRetiroModal.value = true
-}
-
-function openGastoModal() {
-  gastoForm.value = { amount: '', category: 'insumos', description: '' }
-  gastoSubmitted.value = false
-  showGastoModal.value = true
+function openSacarModal() {
+  sacarForm.value = { amount: '', category: 'insumos', description: '' }
+  sacarSubmitted.value = false
+  showSacarModal.value = true
+  nextTick(() => sacarInput.value?.focus())
 }
 
 function selectShift(shift) {
@@ -668,40 +576,21 @@ async function handleCloseShift() {
   }
 }
 
-async function handleGasto() {
-  gastoSubmitted.value = true
-  if (!gastoForm.value.amount || !gastoForm.value.description) return
+async function handleSacar() {
+  sacarSubmitted.value = true
+  if (!sacarForm.value.amount || !sacarForm.value.description) return
   saving.value = true
   try {
     await shiftsStore.addExpense(
       shiftsStore.currentShift.id,
-      gastoForm.value.amount,
-      gastoForm.value.category,
-      gastoForm.value.description
+      sacarForm.value.amount,
+      sacarForm.value.category,
+      sacarForm.value.description
     )
-    showGastoModal.value = false
-    toast(`Gasto de ${formatCOP(gastoForm.value.amount)} registrado`, 'success')
+    showSacarModal.value = false
+    toast(`Salida de ${formatCOP(sacarForm.value.amount)} registrada`, 'success')
   } catch (err) {
-    toast(err.response?.data?.error || 'Error al registrar gasto', 'error')
-  } finally {
-    saving.value = false
-  }
-}
-
-async function handleWithdrawal() {
-  retiroSubmitted.value = true
-  if (!retiroForm.value.amount || !retiroForm.value.reason) return
-  saving.value = true
-  try {
-    await shiftsStore.addWithdrawal(
-      shiftsStore.currentShift.id,
-      retiroForm.value.amount,
-      retiroForm.value.reason
-    )
-    showRetiroModal.value = false
-    toast(`Retiro de ${formatCOP(retiroForm.value.amount)} registrado`, 'success')
-  } catch (err) {
-    toast(err.response?.data?.error || 'Error al registrar retiro', 'error')
+    toast(err.response?.data?.error || 'Error al registrar', 'error')
   } finally {
     saving.value = false
   }
@@ -847,6 +736,33 @@ onMounted(async () => {
   margin-top: 4px;
 }
 .field-hint { font-size: 12.5px; color: var(--text-light); margin-top: 6px; display: block; }
+
+/* Número gigante: efectivo que debe haber en la caja */
+.cash-hero {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.cash-hero-label { font-size: 13px; color: rgba(255,255,255,0.75); margin-bottom: 8px; }
+.cash-hero-value { font-size: clamp(34px, 9vw, 46px); font-weight: 900; color: #fff; letter-spacing: -0.03em; line-height: 1; }
+.cash-hero-formula { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 10px; }
+.ventas-line { font-size: 12.5px; color: rgba(255,255,255,0.7); text-align: center; margin-bottom: 4px; }
+
+/* Cierre simple */
+.cierre-input { font-size: 22px; font-weight: 800; text-align: center; }
+.cuadre-result {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 16px; border-radius: var(--radius); margin: 16px 0 10px; font-weight: 800;
+}
+.cuadre-result.ok    { background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; }
+.cuadre-result.over  { background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
+.cuadre-result.under { background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; }
+.cuadre-emoji { font-size: 26px; }
+.cuadre-text  { font-size: 18px; }
+.cierre-hint  { font-size: 13px; color: var(--text-light); text-align: center; }
 
 /* Detalle del turno */
 .detail-grid { display: flex; flex-direction: column; gap: 0; }
