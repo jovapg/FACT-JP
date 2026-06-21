@@ -35,6 +35,12 @@ export const useFinanceStore = defineStore('finance', () => {
     return res.data
   }
 
+  /** Obtiene el reporte del día (ventas, fiados, salidas, saldos) */
+  async function fetchDaily(date) {
+    const res = await api.get(`/api/${bizId()}/finance/daily`, { params: date ? { date } : {} })
+    return res.data
+  }
+
   /** Guarda el resumen del mes de referencia (no afecta saldos) */
   async function setReference(reference) {
     const res = await api.put(`/api/${bizId()}/finance/reference`, { reference })
@@ -52,5 +58,5 @@ export const useFinanceStore = defineStore('finance', () => {
     await api.delete(`/api/${bizId()}/finance/manual/${id}`)
   }
 
-  return { data, loading, fetchFinance, setOpening, setReference, addManual, deleteManual }
+  return { data, loading, fetchFinance, fetchDaily, setOpening, setReference, addManual, deleteManual }
 })

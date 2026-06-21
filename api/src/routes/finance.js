@@ -35,6 +35,14 @@ const financePath   = (id) => path.join(getBusinessPath(id), 'finance.json');
 const shiftsPath    = (id) => path.join(getBusinessPath(id), 'shifts.json');
 const purchasesPath = (id) => path.join(getBusinessPath(id), 'purchases.json');
 const suppliersPath = (id) => path.join(getBusinessPath(id), 'suppliers.json');
+const salesPath     = (id) => path.join(getBusinessPath(id), 'sales.json');
+const debtorsPath   = (id) => path.join(getBusinessPath(id), 'debtors.json');
+
+/** Bucket de Finanzas según forma de pago: 💵 efectivo o 🏦 banco */
+function bucketOfMethod(m) {
+  const v = (m || '').toLowerCase();
+  return (v === 'banco' || v === 'transferencia' || v === 'tarjeta') ? 'banco' : 'efectivo';
+}
 
 const emptyArea = () => ({ efectivo: 0, banco: 0 });
 const emptyBalances = () => ({ bar: emptyArea(), restaurante: emptyArea(), general: emptyArea() });
@@ -297,6 +305,100 @@ router.delete('/finance/manual/:id', authenticate, adminOnly, async (req, res) =
     if (cfg.manual.length === before) return res.status(404).json({ error: 'Movimiento no encontrado' });
     await saveConfig(req.params.businessId, cfg);
     res.json({ success: true });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /finance/daily — Reporte del día para el dueño.
+ * Resume ventas (por área × efectivo/banco), fiados nuevos, abonos, salidas
+ * del día, y los saldos actuales (lo que debería tener). Día en hora Colombia.
+ * Query: ?date=YYYY-MM-DD (por defecto hoy).
+ */
+router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
+  try {
+    const id = req.params.businessId;
+    const cotStart = (s) => new Date(String(s).slice(0, 10) + 'T05:00:00.000Z').getTime();
+    // Fecha de hoy en hora Colombia (UTC-5)
+    const todayCot = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+    const dateStr = (req.query.date && !isNaN(new Date(req.query.date).getTime()))
+      ? String(req.query.date).slice(0, 10) : todayCot;
+    const dayStart = cotStart(dateStr);
+    const dayEnd = dayStart + 86400000;
+    const inDay = (iso) => { const t = new Date(iso).getTime(); return !isNaN(t) && t >= dayStart && t < dayEnd; };
+
+    // Ventas del día (todas, por área × bucket)
+    const sales = await readJSON(salesPath(id)) || [];
+    const ventas = { bar: emptyArea(), restaurante: emptyArea(), total: 0, count: 0 };
+    for (const s of sales) {
+      if (!inDay(s.createdAt)) continue;
+      ventas.count++;
+      ventas.total += s.total || 0;
+      const bucket = bucketOfMethod(s.paymentMethod);
+      const tba = s.totalsByArea;
+      if (tba && ((tba.bar || 0) + (tba.restaurante || 0)) > 0) {
+        ventas.bar[bucket] += tba.bar || 0;
+        ventas.restaurante[bucket] += tba.restaurante || 0;
+      } else {
+        ventas.bar[bucket] += s.total || 0;
+      }
+    }
+
+    // Fiados nuevos y abonos del día
+    const debtors = await readJSON(debtorsPath(id)) || [];
+    let fiadosNuevos = 0, abonos = 0;
+    for (const d of debtors) {
+      for (const t of (d.transactions || [])) {
+        if (!inDay(t.date)) continue;
+        if (t.type === 'charge') fiadosNuevos += t.amount || 0;
+        else if (t.type === 'payment') abonos += t.amount || 0;
+      }
+    }
+
+    // Salidas del día (compras/gastos/arriendo + pagos del directorio)
+    const salidas = { total: 0, efectivo: 0, banco: 0, compras: 0, gastos: 0, arriendo: 0, nomina: 0, credito: 0, proveedor: 0 };
+    const purchases = await readJSON(purchasesPath(id)) || [];
+    for (const p of purchases) {
+      if (!inDay(p.date)) continue;
+      const amt = p.total || 0;
+      salidas.total += amt;
+      salidas[p.paidWith === 'banco' ? 'banco' : 'efectivo'] += amt;
+      const k = p.type || 'reponer';
+      if (k === 'reponer') salidas.compras += amt;
+      else if (k === 'gasto') salidas.gastos += amt;
+      else if (k === 'arriendo') salidas.arriendo += amt;
+    }
+    const suppliers = await readJSON(suppliersPath(id)) || [];
+    for (const sup of suppliers) {
+      for (const pay of (sup.payments || [])) {
+        if (!inDay(pay.date)) continue;
+        const amt = pay.amount || 0;
+        salidas.total += amt;
+        salidas[bucketOfMethod(pay.paidWith || pay.method)] += amt;
+        const k = sup.tipo === 'empleado' ? 'nomina' : sup.tipo === 'credito' ? 'credito' : 'proveedor';
+        salidas[k] += amt;
+      }
+    }
+
+    // Saldos actuales (lo que debería tener) — saldo inicial + movimientos desde openingDate
+    const cfg = await loadConfig(id);
+    const all = await buildMovements(id);
+    const openingTime = cfg.openingDate ? cotStart(cfg.openingDate) : -Infinity;
+    const balances = emptyBalances();
+    balances.bar = { ...emptyArea(), ...(cfg.opening.bar || {}) };
+    balances.restaurante = { ...emptyArea(), ...(cfg.opening.restaurante || {}) };
+    for (const m of all) {
+      const t = new Date(m.date).getTime();
+      if (isNaN(t) || t < openingTime) continue;
+      applyMovement(balances, m);
+    }
+    const saldos = {
+      efectivo: balances.bar.efectivo + balances.restaurante.efectivo + balances.general.efectivo,
+      banco: balances.bar.banco + balances.restaurante.banco + balances.general.banco
+    };
+
+    res.json({ date: dateStr, ventas, fiados: { nuevos: fiadosNuevos, abonos }, salidas, saldos });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }

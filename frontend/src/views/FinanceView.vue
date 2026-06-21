@@ -6,6 +6,10 @@
         <p class="page-subtitle">Cuánto tienes en efectivo y banco, por Bar y Restaurante</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-whatsapp" @click="sendDailyReport" :disabled="reporting">
+          <div class="spinner" v-if="reporting" style="width:14px;height:14px;border-width:2px"></div>
+          📲 Reporte del día
+        </button>
         <button class="btn btn-outline" @click="openConfig">⚙️ Saldo inicial</button>
         <button class="btn btn-primary" @click="openManual">+ Movimiento</button>
       </div>
@@ -233,10 +237,13 @@
  */
 import { ref, computed, onMounted, inject } from 'vue'
 import { useFinanceStore } from '../stores/finance.js'
+import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 
 const finance = useFinanceStore()
+const auth = useAuthStore()
 const toast = inject('toast')
+const reporting = ref(false)
 
 const area = ref('total')
 const period = ref('mes')
@@ -380,11 +387,55 @@ async function removeManual(m) {
   }
 }
 
+// ── Reporte del día por WhatsApp ──
+function buildDailyText(r) {
+  const f = (v) => '$' + Number(v || 0).toLocaleString('es-CO')
+  const fecha = new Date(r.date + 'T12:00:00').toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  const barT = (r.ventas.bar.efectivo || 0) + (r.ventas.bar.banco || 0)
+  const restT = (r.ventas.restaurante.efectivo || 0) + (r.ventas.restaurante.banco || 0)
+  const L = []
+  L.push(`📊 *REPORTE DEL DÍA* — ${auth.currentBusiness?.name || 'Negocio'}`)
+  L.push(`📅 ${fecha}`)
+  L.push('')
+  L.push(`💰 *VENTAS: ${f(r.ventas.total)}* (${r.ventas.count} ventas)`)
+  L.push(`🍺 Bar: ${f(barT)}  (💵 ${f(r.ventas.bar.efectivo)} · 🏦 ${f(r.ventas.bar.banco)})`)
+  L.push(`🍽️ Restaurante: ${f(restT)}  (💵 ${f(r.ventas.restaurante.efectivo)} · 🏦 ${f(r.ventas.restaurante.banco)})`)
+  L.push('')
+  if (r.fiados.nuevos > 0 || r.fiados.abonos > 0) {
+    L.push(`📥 Fiados nuevos: ${f(r.fiados.nuevos)}`)
+    L.push(`📗 Abonos recibidos: ${f(r.fiados.abonos)}`)
+    L.push('')
+  }
+  L.push(`📤 *Salidas del día: ${f(r.salidas.total)}*  (💵 ${f(r.salidas.efectivo)} · 🏦 ${f(r.salidas.banco)})`)
+  L.push('')
+  L.push('🏦 *Lo que deberías tener ahora:*')
+  L.push(`   💵 Efectivo: ${f(r.saldos.efectivo)}`)
+  L.push(`   🏦 Banco: ${f(r.saldos.banco)}`)
+  L.push(`   💰 Total: ${f((r.saldos.efectivo || 0) + (r.saldos.banco || 0))}`)
+  return L.join('\n')
+}
+
+async function sendDailyReport() {
+  reporting.value = true
+  try {
+    const r = await finance.fetchDaily()
+    const text = encodeURIComponent(buildDailyText(r))
+    window.open(`https://wa.me/?text=${text}`, '_blank')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al generar el reporte', 'error')
+  } finally {
+    reporting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
 .mb-3 { margin-bottom: 16px; }
+.btn-whatsapp { background: #25D366; color: white; border: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.btn-whatsapp:hover { background: #1ebe5d; }
+.btn-whatsapp:disabled { opacity: 0.6; }
 .filters-bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 14px; }
 .seg { display: inline-flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 3px; flex-wrap: wrap; }
 .seg-btn { border: none; background: none; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
