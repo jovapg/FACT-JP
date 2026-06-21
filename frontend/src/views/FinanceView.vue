@@ -66,6 +66,32 @@
         </div>
       </div>
 
+      <!-- Análisis de costo (food cost) -->
+      <div class="card cost-card mb-3">
+        <div class="cost-head">
+          <span>📊 Análisis de costo y ganancia — <strong>{{ areaLabel }}</strong></span>
+          <span class="cost-meta-target">Meta de costo: 30–40%</span>
+        </div>
+        <div v-if="periodIngresos > 0" class="cost-body">
+          <div class="cost-row"><span class="cost-l">Ventas</span><span class="cost-v">{{ formatCOP(periodIngresos) }}</span></div>
+          <div class="cost-row">
+            <span class="cost-l">Costo de insumos <em>(compras · mercado · proveedores)</em></span>
+            <span class="cost-v">{{ formatCOP(costoInsumos) }} <span :class="['cost-badge', costoClass]">{{ costoPct.toFixed(0) }}%</span></span>
+          </div>
+          <div class="cost-row"><span class="cost-l">Otros gastos <em>(nómina · arriendo · etc.)</em></span><span class="cost-v">{{ formatCOP(otrosGastos) }}</span></div>
+          <div class="cost-row total">
+            <span class="cost-l">Ganancia del periodo</span>
+            <span :class="['cost-v', ganancia >= 0 ? 'pos' : 'neg']">{{ formatCOP(ganancia) }} <span class="cost-margin">margen {{ margenPct.toFixed(0) }}%</span></span>
+          </div>
+          <p :class="['cost-tip', costoClass]">
+            {{ costoClass === 'good' ? '✅ Costo dentro de la meta — buena ganancia' : costoClass === 'warn' ? '⚠️ Costo un poco alto, vigila los insumos' : '🔴 Costo alto: revisa precios o porciones' }}
+          </p>
+        </div>
+        <div v-else class="cost-empty">
+          Aún no hay ventas en este periodo (las ventas entran al cerrar turno). Cierra un turno para ver el costo %.
+        </div>
+      </div>
+
       <!-- Listas Entradas / Salidas -->
       <div class="ledger-grid">
         <div class="card ledger-col">
@@ -279,6 +305,20 @@ const periodIngresos = computed(() => entradas.value.reduce((s, m) => s + m.amou
 const periodEgresos = computed(() => movs.value.filter(m => m.type === 'egreso').reduce((s, m) => s + m.amount, 0))
 const neto = computed(() => periodIngresos.value - periodEgresos.value)
 
+// ── Análisis de costo (food cost) del periodo + área seleccionada ──
+const areaLabel = computed(() => area.value === 'bar' ? 'Bar' : area.value === 'restaurante' ? 'Restaurante' : 'Total')
+// Qué tipos cuentan como "costo de insumos" (mercancía/comida)
+const COSTO_KINDS = ['reponer', 'gasto', 'proveedor']
+const costoInsumos = computed(() =>
+  movs.value.filter(m => m.type === 'egreso' && COSTO_KINDS.includes(m.kind)).reduce((s, m) => s + m.amount, 0)
+)
+const otrosGastos = computed(() => Math.max(0, periodEgresos.value - costoInsumos.value))
+const costoPct = computed(() => periodIngresos.value > 0 ? (costoInsumos.value / periodIngresos.value * 100) : 0)
+const ganancia = computed(() => periodIngresos.value - periodEgresos.value)
+const margenPct = computed(() => periodIngresos.value > 0 ? (ganancia.value / periodIngresos.value * 100) : 0)
+// Semáforo: meta 30–40% → ≤40 bien, 41–50 cuidado, >50 alto
+const costoClass = computed(() => costoPct.value <= 40 ? 'good' : costoPct.value <= 50 ? 'warn' : 'bad')
+
 // Resumen del mes (referencia)
 const refData = computed(() => finance.data?.reference || { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } })
 const refSel = computed(() => {
@@ -483,6 +523,30 @@ onMounted(load)
 .ref-v { font-size: 18px; font-weight: 800; }
 .ref-v.pos { color: #16a34a; }
 .ref-v.neg { color: var(--danger); }
+
+/* Análisis de costo */
+.cost-card { padding: 0; }
+.cost-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; }
+.cost-meta-target { font-size: 11.5px; font-weight: 600; color: var(--text-light); }
+.cost-body { padding: 6px 16px 14px; }
+.cost-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.cost-row:last-of-type { border-bottom: none; }
+.cost-row.total { border-top: 2px solid var(--border); margin-top: 4px; padding-top: 10px; font-weight: 800; font-size: 15px; }
+.cost-l { color: var(--text-secondary); }
+.cost-l em { font-style: normal; font-size: 11.5px; color: var(--text-light); }
+.cost-v { font-weight: 700; white-space: nowrap; }
+.cost-v.pos { color: #16a34a; }
+.cost-v.neg { color: var(--danger); }
+.cost-margin { font-size: 11.5px; font-weight: 600; color: var(--text-light); margin-left: 6px; }
+.cost-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 800; }
+.cost-badge.good { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.cost-badge.warn { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+.cost-badge.bad  { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.cost-tip { font-size: 12.5px; margin-top: 10px; font-weight: 600; }
+.cost-tip.good { color: #15803d; }
+.cost-tip.warn { color: #b45309; }
+.cost-tip.bad  { color: #dc2626; }
+.cost-empty { padding: 16px; text-align: center; color: var(--text-light); font-size: 13px; }
 
 .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: center; }
 .config-grid .ch { font-size: 12px; font-weight: 700; text-align: center; color: var(--text-light); }
