@@ -254,52 +254,62 @@
               <div class="purchase-items">
                 <div class="items-header">
                   <h4>Productos comprados</h4>
-                  <div style="display:flex;gap:8px">
-                    <button class="btn btn-sm btn-outline" @click="openQuickCreate(null)">+ Crear nuevo producto</button>
-                    <button class="btn btn-sm btn-primary" @click="addItem">+ Agregar producto</button>
+                  <button class="btn btn-sm btn-outline" @click="openQuickCreate(null)">+ Crear nuevo producto</button>
+                </div>
+
+                <!-- Buscador: escribe y agrega el producto al instante -->
+                <div class="item-search-box">
+                  <input v-model="itemSearch" class="form-control" placeholder="🔍 Escribe para buscar y agregar un producto..." />
+                  <div v-if="itemSearch.trim()" class="item-search-results">
+                    <button
+                      v-for="inv in itemSearchResults"
+                      :key="inv.id"
+                      type="button"
+                      class="item-search-opt"
+                      @click="addItemById(inv)"
+                    >
+                      <span class="opt-name">{{ inv.name }}</span>
+                      <span class="opt-meta">stock {{ inv.stock }} {{ inv.unit }} · costo {{ formatCOP(inv.cost) }}</span>
+                    </button>
+                    <div v-if="itemSearchResults.length === 0" class="item-search-empty">
+                      Sin resultados ·
+                      <button type="button" class="link-btn" @click="openQuickCreate(null)">crear nuevo producto</button>
+                    </div>
                   </div>
                 </div>
 
-                <div class="table-wrap">
+                <div class="table-wrap" v-if="form.items.length > 0">
                   <table class="table items-table">
                     <thead>
                       <tr>
-                        <th>Producto *</th>
+                        <th>Producto</th>
                         <th style="width:110px">Cantidad *</th>
-                        <th style="width:140px">Costo unitario *</th>
-                        <th style="width:130px">Subtotal</th>
+                        <th style="width:170px">Costo unitario *</th>
+                        <th style="width:120px">Subtotal</th>
                         <th style="width:40px"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="(item, idx) in form.items" :key="idx">
-                        <td>
-                          <select v-model="item.inventoryId" @change="onProductChange(item)" :class="['form-control', { 'input-error': submitted && !item.inventoryId }]">
-                            <option value="">— Seleccionar —</option>
-                            <option v-for="inv in filteredInventory" :key="inv.id" :value="inv.id">
-                              {{ inv.name }} (stock: {{ inv.stock }} {{ inv.unit }})
-                            </option>
-                          </select>
-                        </td>
+                      <tr v-for="(item, idx) in form.items" :key="item.inventoryId || idx">
+                        <td><strong>{{ getProductName(item.inventoryId) }}</strong></td>
                         <td>
                           <input v-model.number="item.quantity" type="number" :class="['form-control', { 'input-error': submitted && !(item.quantity > 0) }]" min="0" placeholder="0" />
                         </td>
                         <td>
                           <input v-model.number="item.unitCost" type="number" :class="['form-control', { 'input-error': submitted && !(item.unitCost > 0) }]" min="0" placeholder="0" />
+                          <span v-if="costChanged(item)" :class="['cost-hint', item.unitCost > costoAnterior(item) ? 'up' : 'down']">
+                            antes {{ formatCOP(costoAnterior(item)) }} {{ item.unitCost > costoAnterior(item) ? '▲' : '▼' }}
+                          </span>
                         </td>
                         <td class="subtotal-cell">{{ formatCOP(item.quantity * item.unitCost) }}</td>
-                        <td>
-                          <button class="btn btn-sm btn-danger" @click="removeItem(idx)">×</button>
-                        </td>
-                      </tr>
-                      <tr v-if="form.items.length === 0">
-                        <td colspan="5" style="text-align:center;color:var(--text-light);padding:20px">
-                          Usa los botones de arriba para agregar productos
-                        </td>
+                        <td><button class="btn btn-sm btn-danger" @click="removeItem(idx)">×</button></td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
+                <p v-else class="text-muted" style="text-align:center;padding:16px 0;font-size:13px">
+                  Busca arriba y agrega los productos de la compra
+                </p>
 
                 <div class="purchase-total">
                   <strong>Total: {{ formatCOP(purchaseTotal) }}</strong>
@@ -329,11 +339,11 @@
               </div>
               <div class="form-group">
                 <label class="form-label">Categoría</label>
-                <input v-model="quickForm.category" class="form-control" list="qcats" placeholder="bebidas" />
-                <datalist id="qcats">
-                  <option value="bebidas" /><option value="licores" />
-                  <option value="alimentos" /><option value="insumos" />
-                </datalist>
+                <select v-model="quickForm.category" class="form-control" v-if="!quickCatNew" @change="onQuickCatChange">
+                  <option v-for="c in allCategories" :key="c" :value="c">{{ c }}</option>
+                  <option value="__new__">➕ Nueva categoría…</option>
+                </select>
+                <input v-else v-model="quickForm.category" class="form-control" placeholder="Escribe la nueva categoría" />
               </div>
               <div class="form-group">
                 <label class="form-label">Unidad</label>
@@ -409,6 +419,16 @@ const submitted = ref(false)       // true después del primer intento de guarda
 const showQuickCreate = ref(false)
 const quickSaving = ref(false)
 const quickForm = reactive({ name: '', category: 'bebidas', unit: 'unidad', minStock: 0, salePrice: 0, supplierId: '' })
+const quickCatNew = ref(false)
+// Categorías para el desplegable: las existentes en inventario o una base por defecto
+const allCategories = computed(() => {
+  const cats = inventoryStore.categories || []
+  return cats.length ? cats : ['bebidas', 'licores', 'alimentos', 'insumos']
+})
+/** Si elige "Nueva categoría…", muestra el campo de texto para escribirla */
+function onQuickCatChange() {
+  if (quickForm.category === '__new__') { quickForm.category = ''; quickCatNew.value = true }
+}
 const editPurchaseId = ref(null)   // null = nueva compra, string = editando compra existente
 const hasDraft = ref(false)        // true si hay un borrador guardado en localStorage para este negocio
 
@@ -609,7 +629,8 @@ function clearDraft() {
  * para no tener que repetir la selección.
  */
 function openQuickCreate() {
-  Object.assign(quickForm, { name: '', category: 'bebidas', unit: 'unidad', minStock: 0, salePrice: 0, supplierId: form.supplierId || '' })
+  quickCatNew.value = false
+  Object.assign(quickForm, { name: '', category: allCategories.value[0] || 'bebidas', unit: 'unidad', minStock: 0, salePrice: 0, supplierId: form.supplierId || '' })
   showQuickCreate.value = true
 }
 
@@ -648,6 +669,34 @@ async function saveQuickProduct() {
 
 /** Agrega una fila vacía en la tabla de ítems de la compra */
 function addItem() { form.items.push({ inventoryId: '', quantity: 0, unitCost: 0 }) }
+
+// ── Buscador de productos para agregar a la compra ──
+const itemSearch = ref('')
+const itemSearchResults = computed(() => {
+  const q = itemSearch.value.trim().toLowerCase()
+  if (!q) return []
+  const used = new Set(form.items.map(i => i.inventoryId))
+  return inventoryStore.items
+    .filter(i => !used.has(i.id) && i.name.toLowerCase().includes(q))
+    .slice(0, 12)
+})
+/** Agrega un producto a la compra (cantidad 1, costo precargado del inventario) */
+function addItemById(inv) {
+  if (!form.items.some(i => i.inventoryId === inv.id)) {
+    form.items.push({ inventoryId: inv.id, quantity: 1, unitCost: inv.cost || 0 })
+  }
+  itemSearch.value = ''
+}
+/** Costo actual registrado del producto (para comparar con el nuevo) */
+function costoAnterior(item) {
+  const inv = inventoryStore.items.find(i => i.id === item.inventoryId)
+  return inv ? (inv.cost || 0) : null
+}
+/** True si el costo ingresado difiere del costo registrado actual */
+function costChanged(item) {
+  const prev = costoAnterior(item)
+  return prev !== null && Number(item.unitCost) > 0 && Number(item.unitCost) !== Number(prev)
+}
 
 /**
  * Al seleccionar un producto, autocompleta el costo unitario con el costo
@@ -760,6 +809,7 @@ function closeModal() {
   showQuickCreate.value = false
   submitted.value = false
   editPurchaseId.value = null
+  itemSearch.value = ''
   Object.assign(form, { type: 'reponer', area: 'bar', paidWith: 'efectivo', date: todayStr(), supplierId: '', notes: '', items: [], amount: 0, description: '', employeeId: '', creditId: '' })
 }
 
@@ -826,6 +876,32 @@ onMounted(async () => {
   align-self: flex-start;
 }
 .purchase-items { margin-top: 20px; }
+
+/* Buscador de productos para agregar a la compra */
+.item-search-box { position: relative; margin-bottom: 12px; }
+.item-search-results {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.item-search-opt {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%; text-align: left;
+  padding: 9px 12px; border: none; background: none; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.item-search-opt:last-child { border-bottom: none; }
+.item-search-opt:hover { background: var(--surface-2); }
+.opt-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.opt-meta { font-size: 11.5px; color: var(--text-light); }
+.item-search-empty { padding: 12px; font-size: 13px; color: var(--text-light); }
+.link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-weight: 600; padding: 0; text-decoration: underline; }
+.cost-hint { display: block; font-size: 11px; font-weight: 700; margin-top: 2px; }
+.cost-hint.up { color: var(--danger); }
+.cost-hint.down { color: var(--success); }
 .items-header {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
 }

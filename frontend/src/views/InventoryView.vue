@@ -396,8 +396,13 @@ const suppliers = ref([])   // Lista de proveedores del negocio para el selector
 /** Categorías completas configuradas por el admin del negocio */
 const bizCategories = computed(() => businessStore.profile?.categories || [])
 
-/** Solo los nombres de las categorías, para el datalist del formulario */
-const catNames = computed(() => bizCategories.value.map(c => c.name))
+/** Nombres de categorías para el desplegable: las del negocio + las que ya
+ *  tienen los productos registrados (así nunca sale vacío el desplegable). */
+const catNames = computed(() => {
+  const fromBiz = bizCategories.value.map(c => c.name)
+  const fromItems = inventoryStore.categories || []
+  return [...new Set([...fromBiz, ...fromItems].filter(Boolean))]
+})
 
 /** Categorías cuyo flag autoRecipe = true; al crear un producto de éstas
  *  se genera automáticamente una receta/ítem de menú vinculado */
