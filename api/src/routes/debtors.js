@@ -394,14 +394,32 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
     const currentBalance = debtors[idx].balance || 0;
     const actualAmount = Math.min(amount, currentBalance);
 
+    // Repartir el abono entre Bar/Restaurante según la composición de la deuda
+    // (cargos no liquidados). Se calcula AHORA y se guarda, para que sea exacto.
+    let barDebt = 0, restDebt = 0;
+    for (const t of (debtors[idx].transactions || [])) {
+      if (t.type !== 'charge' || t.settled) continue;
+      if (Array.isArray(t.items) && t.items.length > 0) {
+        for (const it of t.items) {
+          const val = (Number(it.price) || 0) * (it.qty || 1);
+          if (it.area === 'restaurante') restDebt += val; else barDebt += val;
+        }
+      } else {
+        barDebt += t.amount || 0; // cargo sin items → se asume Bar
+      }
+    }
+    const debtTotal = barDebt + restDebt;
+    const barPart = debtTotal > 0 ? Math.round(actualAmount * (barDebt / debtTotal)) : actualAmount;
+    const restPart = actualAmount - barPart;
+
     const transaction = {
       id: uuidv4(),
       type: 'payment',
       amount: actualAmount,
       description: req.body.description || 'Abono',
-      // Forma de pago y área del abono → para que Finanzas lo cuente en su bucket
+      // Forma de pago del abono (efectivo/banco) y reparto por área para Finanzas
       paidWith: req.body.paidWith === 'banco' ? 'banco' : 'efectivo',
-      area: req.body.area === 'restaurante' ? 'restaurante' : 'bar',
+      areaSplit: { bar: barPart, restaurante: restPart },
       date: new Date().toISOString(),
       registeredBy: req.user.name || req.user.username
     };

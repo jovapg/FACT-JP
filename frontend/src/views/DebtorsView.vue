@@ -289,13 +289,7 @@
               <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'efectivo' }]" @click="paymentForm.paidWith = 'efectivo'">💵 Efectivo</button>
               <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'banco' }]" @click="paymentForm.paidWith = 'banco'">🏦 Banco</button>
             </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">¿De qué área es?</label>
-            <div class="seg-toggle">
-              <button type="button" :class="['seg-opt', { active: paymentForm.area === 'bar' }]" @click="paymentForm.area = 'bar'">🍺 Bar</button>
-              <button type="button" :class="['seg-opt', { active: paymentForm.area === 'restaurante' }]" @click="paymentForm.area = 'restaurante'">🍽️ Restaurante</button>
-            </div>
+            <span class="field-hint">El área (Bar/Restaurante) se reparte automático según lo que debe el cliente.</span>
           </div>
           <div class="form-group">
             <label class="form-label">Notas (opcional)</label>
@@ -507,7 +501,7 @@ const chargeSubmitted  = ref(false)
 const paymentSubmitted = ref(false)
 
 const clientForm  = ref({ name: '', phone: '', notes: '' })
-const paymentForm = ref({ amount: '', description: '', paidWith: 'efectivo', area: 'bar' })
+const paymentForm = ref({ amount: '', description: '', paidWith: 'efectivo' })
 
 // ── Mini-POS del fiado ────────────────────────────────────────────
 const chargeCart   = ref([])   // [{ recipeId, name, price, qty }]
@@ -541,12 +535,12 @@ const chargeSellableItems = computed(() => {
           return ii && (ii.stock || 0) <= 0
         })
       }
-      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, outOfStock }
+      return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: (inv?.area) || r.area || 'bar', outOfStock }
     })
   const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
   for (const i of inventoryStore.items) {
     if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
-      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, available: true, outOfStock: (i.stock || 0) <= 0 })
+      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, area: i.area || 'bar', available: true, outOfStock: (i.stock || 0) <= 0 })
     }
   }
   return result
@@ -577,7 +571,7 @@ function addToChargeCart(r) {
     _itemId: r._itemId,
     recipeId: r._invOnly ? undefined : r.id,
     inventoryId: r._invOnly ? r.id : undefined,
-    name: r.name, price: r.price, qty: 1
+    name: r.name, price: r.price, area: r.area || 'bar', qty: 1
   })
 }
 function decreaseChargeQty(item) {
@@ -645,6 +639,7 @@ function openEditCharge(d, tx) {
     inventoryId: i.inventoryId,
     name: i.name,
     price: i.price,
+    area: i.area || 'bar',
     qty: i.qty || 1
   }))
   // Recuperar la nota libre (lo que va después de " — " en la descripción)
@@ -658,7 +653,7 @@ function openEditCharge(d, tx) {
 
 function openPayment(d) {
   activeDebtor.value = d
-  paymentForm.value = { amount: '', description: '', paidWith: 'efectivo', area: 'bar' }
+  paymentForm.value = { amount: '', description: '', paidWith: 'efectivo' }
   paymentSubmitted.value = false
   showPaymentModal.value = true
 }
@@ -705,6 +700,7 @@ async function handleCharge() {
       inventoryId: i.inventoryId,
       name: i.name,
       price: i.price,
+      area: i.area || 'bar',
       qty: i.qty
     }))
     let res
@@ -735,7 +731,7 @@ async function handlePayment() {
   if (!paymentForm.value.amount) return
   saving.value = true
   try {
-    const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description, paymentForm.value.paidWith, paymentForm.value.area)
+    const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description, paymentForm.value.paidWith)
     showPaymentModal.value = false
     if (res.generatedSale) {
       toast(`✅ Saldo cubierto. Factura ${res.generatedSale.invoiceNumber} generada`, 'success')

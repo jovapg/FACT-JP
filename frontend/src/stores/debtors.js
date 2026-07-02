@@ -77,8 +77,8 @@ export const useDebtorsStore = defineStore('debtors', () => {
   }
 
   /** Registra abono. Si salda, el backend genera factura y la retorna en generatedSale. */
-  async function addPayment(id, amount, description, paidWith = 'efectivo', area = 'bar') {
-    const res = await api.post(`/api/${bizId()}/debtors/${id}/payment`, { amount, description, paidWith, area })
+  async function addPayment(id, amount, description, paidWith = 'efectivo') {
+    const res = await api.post(`/api/${bizId()}/debtors/${id}/payment`, { amount, description, paidWith })
     const debtor = res.data.debtor
     const idx = debtors.value.findIndex(d => d.id === id)
     if (idx !== -1) debtors.value[idx] = debtor

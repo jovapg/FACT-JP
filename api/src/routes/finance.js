@@ -145,17 +145,20 @@ async function buildMovements(id) {
     }
   }
 
-  // 4. Abonos de fiados = ingreso real (en su forma de pago y área)
+  // 4. Abonos de fiados = ingreso real (forma de pago real + reparto por área)
   const debtors = await readJSON(debtorsPath(id)) || [];
   for (const d of debtors) {
     for (const t of (d.transactions || [])) {
       if (t.type !== 'payment') continue;
-      moves.push({
-        id: `abono-${t.id}`, date: t.date, type: 'ingreso',
-        area: t.area === 'restaurante' ? 'restaurante' : 'bar',
-        bucket: t.paidWith === 'banco' ? 'banco' : 'efectivo',
-        amount: t.amount || 0, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true
-      });
+      const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';
+      const split = t.areaSplit;
+      if (split && ((split.bar || 0) + (split.restaurante || 0)) > 0) {
+        if (split.bar > 0) moves.push({ id: `abono-${t.id}-bar`, date: t.date, type: 'ingreso', area: 'bar', bucket, amount: split.bar, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
+        if (split.restaurante > 0) moves.push({ id: `abono-${t.id}-rest`, date: t.date, type: 'ingreso', area: 'restaurante', bucket, amount: split.restaurante, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
+      } else {
+        // Abonos viejos sin reparto → todo a Bar (compatibilidad)
+        moves.push({ id: `abono-${t.id}`, date: t.date, type: 'ingreso', area: t.area === 'restaurante' ? 'restaurante' : 'bar', bucket, amount: t.amount || 0, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
+      }
     }
   }
 
