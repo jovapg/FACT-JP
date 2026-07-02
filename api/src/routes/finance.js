@@ -145,7 +145,21 @@ async function buildMovements(id) {
     }
   }
 
-  // 4. Movimientos manuales
+  // 4. Abonos de fiados = ingreso real (en su forma de pago y área)
+  const debtors = await readJSON(debtorsPath(id)) || [];
+  for (const d of debtors) {
+    for (const t of (d.transactions || [])) {
+      if (t.type !== 'payment') continue;
+      moves.push({
+        id: `abono-${t.id}`, date: t.date, type: 'ingreso',
+        area: t.area === 'restaurante' ? 'restaurante' : 'bar',
+        bucket: t.paidWith === 'banco' ? 'banco' : 'efectivo',
+        amount: t.amount || 0, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true
+      });
+    }
+  }
+
+  // 5. Movimientos manuales
   const cfg = await loadConfig(id);
   for (const m of cfg.manual) {
     moves.push({
@@ -354,6 +368,7 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
     const ventas = { bar: emptyArea(), restaurante: emptyArea(), total: 0, count: 0 };
     for (const s of sales) {
       if (!inDay(s.createdAt)) continue;
+      if (s.paymentMethod === 'pago_fiado') continue; // el fiado cobrado se ve en "abonos"
       ventas.count++;
       ventas.total += s.total || 0;
       const bucket = bucketOfMethod(s.paymentMethod);

@@ -284,6 +284,20 @@
             </span>
           </div>
           <div class="form-group">
+            <label class="form-label">¿Con qué pagó?</label>
+            <div class="seg-toggle">
+              <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'efectivo' }]" @click="paymentForm.paidWith = 'efectivo'">💵 Efectivo</button>
+              <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'banco' }]" @click="paymentForm.paidWith = 'banco'">🏦 Banco</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">¿De qué área es?</label>
+            <div class="seg-toggle">
+              <button type="button" :class="['seg-opt', { active: paymentForm.area === 'bar' }]" @click="paymentForm.area = 'bar'">🍺 Bar</button>
+              <button type="button" :class="['seg-opt', { active: paymentForm.area === 'restaurante' }]" @click="paymentForm.area = 'restaurante'">🍽️ Restaurante</button>
+            </div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Notas (opcional)</label>
             <input v-model="paymentForm.description" type="text" class="form-control"
               placeholder="Ej: Pago completo, Pago parcial..." />
@@ -493,7 +507,7 @@ const chargeSubmitted  = ref(false)
 const paymentSubmitted = ref(false)
 
 const clientForm  = ref({ name: '', phone: '', notes: '' })
-const paymentForm = ref({ amount: '', description: '' })
+const paymentForm = ref({ amount: '', description: '', paidWith: 'efectivo', area: 'bar' })
 
 // ── Mini-POS del fiado ────────────────────────────────────────────
 const chargeCart   = ref([])   // [{ recipeId, name, price, qty }]
@@ -644,7 +658,7 @@ function openEditCharge(d, tx) {
 
 function openPayment(d) {
   activeDebtor.value = d
-  paymentForm.value = { amount: '', description: '' }
+  paymentForm.value = { amount: '', description: '', paidWith: 'efectivo', area: 'bar' }
   paymentSubmitted.value = false
   showPaymentModal.value = true
 }
@@ -721,7 +735,7 @@ async function handlePayment() {
   if (!paymentForm.value.amount) return
   saving.value = true
   try {
-    const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description)
+    const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description, paymentForm.value.paidWith, paymentForm.value.area)
     showPaymentModal.value = false
     if (res.generatedSale) {
       toast(`✅ Saldo cubierto. Factura ${res.generatedSale.invoiceNumber} generada`, 'success')
@@ -945,6 +959,14 @@ onMounted(() => {
   padding: 12px 14px;
 }
 .field-hint { font-size: 12.5px; color: var(--text-light); margin-top: 6px; display: block; }
+
+/* Selector segmentado (efectivo/banco, área) */
+.seg-toggle { display: flex; gap: 8px; }
+.seg-opt {
+  flex: 1; padding: 9px; border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.seg-opt.active { border-color: var(--accent); background: var(--accent-light, #fffbeb); color: #b45309; }
 
 /* Modal: detalle */
 .detail-header-info { display: flex; align-items: center; gap: 12px; }

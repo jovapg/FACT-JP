@@ -54,6 +54,8 @@ function incomeByAreaBucket(sales, fromISO, toISO) {
   for (const s of sales) {
     const t = new Date(s.createdAt).getTime();
     if (isNaN(t) || t < from || t > to) continue;
+    // El ingreso del fiado se cuenta como abono (con su forma de pago real), no aquí
+    if (s.paymentMethod === 'pago_fiado') continue;
     const bucket = bucketOf(s.paymentMethod);
     const tba = s.totalsByArea;
     if (tba && ((tba.bar || 0) + (tba.restaurante || 0)) > 0) {

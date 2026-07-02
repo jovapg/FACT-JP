@@ -399,6 +399,9 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
       type: 'payment',
       amount: actualAmount,
       description: req.body.description || 'Abono',
+      // Forma de pago y área del abono → para que Finanzas lo cuente en su bucket
+      paidWith: req.body.paidWith === 'banco' ? 'banco' : 'efectivo',
+      area: req.body.area === 'restaurante' ? 'restaurante' : 'bar',
       date: new Date().toISOString(),
       registeredBy: req.user.name || req.user.username
     };
