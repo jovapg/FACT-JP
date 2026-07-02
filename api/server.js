@@ -355,6 +355,63 @@ app.get('/api/:businessId/backup', ...bizAccess, async (req, res) => {
   }
 });
 
+/**
+ * Reinicio para producción — pone en CERO los datos transaccionales de prueba,
+ * conservando recetas, inventario, deudas, directorio (contactos), usuarios y config.
+ * Requiere rol admin/superadmin y body { confirm: 'REINICIAR' }.
+ * Limpia: ventas, salidas (compras), turnos, bitácora, finanzas; libera mesas;
+ * conserva el directorio pero borra su historial de pagos y deudas; reinicia
+ * el contador de facturas.
+ */
+app.post('/api/:businessId/reset-produccion', ...bizAccess, async (req, res) => {
+  try {
+    if (!['superadmin', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (req.body.confirm !== 'REINICIAR') {
+      return res.status(400).json({ error: 'Confirmación inválida' });
+    }
+    const bizPath = getBusinessPath(req.params.businessId);
+    const P = (n) => path.join(bizPath, `${n}.json`);
+    const write = (n, data) => writeJSON(P(n), data);
+
+    // Vaciar datos transaccionales
+    await write('sales', []);
+    await write('purchases', []);
+    await write('shifts', []);
+    await write('audit', []);
+
+    // Finanzas: saldo inicial en 0, sin movimientos ni resumen (se conserva la meta de costo)
+    const finance = await readJSON(P('finance')) || {};
+    await write('finance', {
+      opening: { bar: { efectivo: 0, banco: 0 }, restaurante: { efectivo: 0, banco: 0 } },
+      openingDate: null,
+      manual: [],
+      reference: { bar: { ventas: 0, salidas: 0 }, restaurante: { ventas: 0, salidas: 0 } },
+      costTarget: finance.costTarget || { min: 30, max: 40 }
+    });
+
+    // Directorio: conservar contactos, borrar historial de pagos y deudas
+    const suppliers = await readJSON(P('suppliers')) || [];
+    for (const s of suppliers) { s.payments = []; s.nominaHistory = []; s.totalDebt = 0; }
+    await write('suppliers', suppliers);
+
+    // Mesas: liberar (sin pedidos abiertos)
+    const tables = await readJSON(P('tables')) || [];
+    for (const t of tables) { t.status = 'libre'; t.order = null; }
+    await write('tables', tables);
+
+    // Facturas: reiniciar el contador
+    const profile = await readJSON(P('profile')) || {};
+    profile.invoiceCounter = 0;
+    await write('profile', profile);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Error al reiniciar' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

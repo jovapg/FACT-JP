@@ -194,6 +194,23 @@
           <p class="text-muted mt-2" style="font-size:12px">
             El archivo se descarga con la fecha de hoy en el nombre. Recomendamos hacerlo semanalmente.
           </p>
+
+          <!-- Zona de reinicio para iniciar producción -->
+          <div class="reset-zone">
+            <h4 class="reset-title">⚠️ Iniciar producción (reiniciar datos)</h4>
+            <p class="reset-desc">
+              Pone en <strong>CERO</strong>: ventas/facturas, salidas (compras/gastos), turnos de caja,
+              finanzas y bitácora; y libera las mesas. Los contactos del directorio se conservan pero se
+              borra su historial de pagos. <strong>Se conservan recetas, inventario y deudas.</strong>
+            </p>
+            <p class="reset-warn">Descarga primero el backup ⬆️. Esta acción NO se puede deshacer.</p>
+            <div class="reset-row">
+              <input v-model="resetConfirm" class="form-control" placeholder="Escribe REINICIAR" style="max-width:220px" />
+              <button class="btn btn-danger" @click="doReset" :disabled="resetting || resetConfirm !== 'REINICIAR'">
+                {{ resetting ? 'Reiniciando...' : 'Reiniciar datos' }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- User modal -->
@@ -268,6 +285,25 @@ const tabs = [
 ]
 const activeTab = ref('profile')
 const backingUp = ref(false)
+const resetConfirm = ref('')
+const resetting = ref(false)
+
+/** Reinicia los datos transaccionales para iniciar producción (irreversible) */
+async function doReset() {
+  if (resetConfirm.value !== 'REINICIAR') return
+  if (!confirm('¿Seguro? Se ponen en CERO ventas, salidas, turnos, finanzas y bitácora. No se puede deshacer.')) return
+  resetting.value = true
+  try {
+    const bizId = authStore.currentBusiness?.id
+    await api.post(`/api/${bizId}/reset-produccion`, { confirm: 'REINICIAR' })
+    toast('✅ Datos reiniciados. ¡Listo para producción!', 'success')
+    resetConfirm.value = ''
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al reiniciar', 'error')
+  } finally {
+    resetting.value = false
+  }
+}
 
 const profile = reactive({
   name: '', nit: '', address: '', city: '', phone: '',
@@ -566,6 +602,13 @@ onMounted(async () => {
 }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+/* Zona de reinicio */
+.reset-zone { margin-top: 24px; padding: 16px; border: 1.5px solid var(--danger); border-radius: 10px; background: #fef2f2; }
+.reset-title { font-size: 14px; font-weight: 800; color: var(--danger); margin: 0 0 8px; }
+.reset-desc { font-size: 13px; color: var(--text-secondary); margin: 0 0 6px; line-height: 1.5; }
+.reset-warn { font-size: 12.5px; font-weight: 700; color: var(--danger); margin: 0 0 12px; }
+.reset-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .mb-3 { margin-bottom: 14px; }
 .text-muted { color: var(--text-light); font-size: 13px; }
 .action-btns { display: flex; gap: 6px; }
