@@ -50,20 +50,28 @@ function generateInvoiceNumber(profile) {
   return `${prefix}-${counter}-${year}`;
 }
 
-/** Si hay un turno abierto, registra la venta de pago_fiado en él */
-async function updateActiveShift(businessId, sale) {
+/**
+ * Suma un abono de fiado al turno abierto EN TIEMPO REAL, para que el efectivo
+ * (y banco) del turno reflejen la plata que realmente entró a la caja al recibir
+ * el abono — así el cuadre no marca sobrante. Si no hay turno abierto, no hace nada.
+ */
+async function addAbonoToActiveShift(businessId, amount, paidWith, areaSplit) {
   try {
     const shifts = await readJSON(shiftsPath(businessId)) || [];
     const idx = shifts.findIndex(s => s.status === 'open');
     if (idx === -1) return;
-    const isEfectivo = (sale.paymentMethod || '').toLowerCase() === 'efectivo';
-    shifts[idx].salesCount     = (shifts[idx].salesCount || 0) + 1;
-    shifts[idx].totalSales     = (shifts[idx].totalSales || 0) + sale.total;
-    shifts[idx].totalCashSales = (shifts[idx].totalCashSales || 0) + (isEfectivo ? sale.total : 0);
-    shifts[idx].totalOtherSales= (shifts[idx].totalOtherSales || 0) + (isEfectivo ? 0 : sale.total);
+    const isEfectivo = paidWith !== 'banco';
+    shifts[idx].totalSales      = (shifts[idx].totalSales || 0) + amount;
+    shifts[idx].totalCashSales  = (shifts[idx].totalCashSales || 0) + (isEfectivo ? amount : 0);
+    shifts[idx].totalOtherSales = (shifts[idx].totalOtherSales || 0) + (isEfectivo ? 0 : amount);
+    const prev = shifts[idx].salesByArea || { bar: 0, restaurante: 0 };
+    shifts[idx].salesByArea = {
+      bar: (prev.bar || 0) + ((areaSplit && areaSplit.bar) || 0),
+      restaurante: (prev.restaurante || 0) + ((areaSplit && areaSplit.restaurante) || 0)
+    };
     await writeJSON(shiftsPath(businessId), shifts);
   } catch (err) {
-    console.error('[shifts] Error actualizando turno activo:', err);
+    console.error('[shifts] Error acumulando abono en turno:', err);
   }
 }
 
@@ -477,7 +485,7 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
         profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
         await writeJSON(profilePath(req.params.businessId), profile);
 
-        await updateActiveShift(req.params.businessId, sale);
+        // Nota: la factura pago_fiado NO se suma al turno (la plata ya se contó como abono)
 
         // Marcar cargos como liquidados para no volver a facturarlos y
         // guardar el enlace en el abono (permite revertir con precisión luego)
@@ -493,6 +501,10 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
     }
 
     await writeJSON(debtorsPath(req.params.businessId), debtors);
+
+    // Sumar el abono al turno abierto en tiempo real (efectivo/banco + área)
+    await addAbonoToActiveShift(req.params.businessId, actualAmount, transaction.paidWith, transaction.areaSplit);
+
     res.json({ debtor: debtors[idx], generatedSale });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
