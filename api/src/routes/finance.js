@@ -145,24 +145,11 @@ async function buildMovements(id) {
     }
   }
 
-  // 4. Abonos de fiados = ingreso real (forma de pago real + reparto por área)
-  const debtors = await readJSON(debtorsPath(id)) || [];
-  for (const d of debtors) {
-    for (const t of (d.transactions || [])) {
-      if (t.type !== 'payment') continue;
-      const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';
-      const split = t.areaSplit;
-      if (split && ((split.bar || 0) + (split.restaurante || 0)) > 0) {
-        if (split.bar > 0) moves.push({ id: `abono-${t.id}-bar`, date: t.date, type: 'ingreso', area: 'bar', bucket, amount: split.bar, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
-        if (split.restaurante > 0) moves.push({ id: `abono-${t.id}-rest`, date: t.date, type: 'ingreso', area: 'restaurante', bucket, amount: split.restaurante, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
-      } else {
-        // Abonos viejos sin reparto → todo a Bar (compatibilidad)
-        moves.push({ id: `abono-${t.id}`, date: t.date, type: 'ingreso', area: t.area === 'restaurante' ? 'restaurante' : 'bar', bucket, amount: t.amount || 0, label: `Abono de ${d.name}`, kind: 'abono', source: 'debtor', locked: true });
-      }
-    }
-  }
+  // NOTA: los abonos de fiado NO se listan aquí por separado. Se consolidan dentro
+  // del ingreso del turno al cerrar caja (incomeByAreaBucket), para que en Finanzas
+  // aparezcan sumados a la venta del día y no como líneas sueltas.
 
-  // 5. Movimientos manuales
+  // 4. Movimientos manuales
   const cfg = await loadConfig(id);
   for (const m of cfg.manual) {
     moves.push({
@@ -384,14 +371,21 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
       }
     }
 
-    // Fiados nuevos y abonos del día
+    // Fiados nuevos y abonos del día. Los abonos se SUMAN a las ventas del día,
+    // repartidos por área (areaSplit) y en su forma de pago (efectivo/banco).
     const debtors = await readJSON(debtorsPath(id)) || [];
     let fiadosNuevos = 0, abonos = 0;
     for (const d of debtors) {
       for (const t of (d.transactions || [])) {
         if (!inDay(t.date)) continue;
-        if (t.type === 'charge') fiadosNuevos += t.amount || 0;
-        else if (t.type === 'payment') abonos += t.amount || 0;
+        if (t.type === 'charge') { fiadosNuevos += t.amount || 0; continue; }
+        if (t.type !== 'payment') continue;
+        abonos += t.amount || 0;
+        const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';
+        const split = t.areaSplit || { bar: t.amount || 0, restaurante: 0 };
+        ventas.bar[bucket] += split.bar || 0;
+        ventas.restaurante[bucket] += split.restaurante || 0;
+        ventas.total += t.amount || 0;
       }
     }
 

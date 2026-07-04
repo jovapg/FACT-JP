@@ -496,10 +496,10 @@ function buildDailyText(r) {
   L.push(`💰 *VENTAS: ${f(r.ventas.total)}* (${r.ventas.count} ventas)`)
   L.push(`🍺 Bar: ${f(barT)}  (💵 ${f(r.ventas.bar.efectivo)} · 🏦 ${f(r.ventas.bar.banco)})`)
   L.push(`🍽️ Restaurante: ${f(restT)}  (💵 ${f(r.ventas.restaurante.efectivo)} · 🏦 ${f(r.ventas.restaurante.banco)})`)
+  if (r.fiados.abonos > 0) L.push(`   (incluye ${f(r.fiados.abonos)} de abonos de fiado)`)
   L.push('')
-  if (r.fiados.nuevos > 0 || r.fiados.abonos > 0) {
-    L.push(`📥 Fiados nuevos: ${f(r.fiados.nuevos)}`)
-    L.push(`📗 Abonos recibidos: ${f(r.fiados.abonos)}`)
+  if (r.fiados.nuevos > 0) {
+    L.push(`📥 Fiados nuevos a crédito: ${f(r.fiados.nuevos)}`)
     L.push('')
   }
   L.push(`📤 *Salidas del día: ${f(r.salidas.total)}*  (💵 ${f(r.salidas.efectivo)} · 🏦 ${f(r.salidas.banco)})`)

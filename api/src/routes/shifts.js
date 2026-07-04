@@ -34,6 +34,7 @@ const { authenticate } = require('../middleware/auth');
 
 const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
 const salesPath  = (id) => path.join(getBusinessPath(id), 'sales.json');
+const debtorsPath = (id) => path.join(getBusinessPath(id), 'debtors.json');
 
 /** Clasifica una forma de pago en su bucket de Finanzas: 💵 efectivo o 🏦 banco */
 function bucketOf(method) {
@@ -178,9 +179,27 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
     // Desglose del ingreso del turno por área × efectivo/banco (para Finanzas).
     // Es la "foto" del ingreso del día que queda registrada al cerrar.
     let incomeBreakdown = { bar: { efectivo: 0, banco: 0 }, restaurante: { efectivo: 0, banco: 0 } };
+    let fiadoAbonos = 0; // cuánto del ingreso del turno vino de abonos de fiado
     try {
       const sales = await readJSON(salesPath(req.params.businessId)) || [];
       incomeBreakdown = incomeByAreaBucket(sales, shift.openedAt, closedAt);
+
+      // Sumar los abonos de fiado hechos durante el turno, repartidos por área (areaSplit)
+      const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
+      const fromT = new Date(shift.openedAt).getTime();
+      const toT = new Date(closedAt).getTime();
+      for (const d of debtors) {
+        for (const t of (d.transactions || [])) {
+          if (t.type !== 'payment') continue;
+          const tt = new Date(t.date).getTime();
+          if (isNaN(tt) || tt < fromT || tt > toT) continue;
+          const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';
+          const split = t.areaSplit || { bar: t.amount || 0, restaurante: 0 };
+          incomeBreakdown.bar[bucket] += split.bar || 0;
+          incomeBreakdown.restaurante[bucket] += split.restaurante || 0;
+          fiadoAbonos += t.amount || 0;
+        }
+      }
     } catch (e) {
       console.error('[shifts] Error calculando desglose de ingresos:', e);
     }
@@ -191,7 +210,8 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
       closingCash,
       expectedCash,
       difference,
-      incomeByAreaBucket: incomeBreakdown,   // { bar:{efectivo,banco}, restaurante:{efectivo,banco} }
+      incomeByAreaBucket: incomeBreakdown,   // { bar:{efectivo,banco}, restaurante:{efectivo,banco} } — incluye abonos de fiado
+      fiadoAbonos,                           // cuánto de ese ingreso fueron abonos de fiado
       status: 'closed'
     };
 

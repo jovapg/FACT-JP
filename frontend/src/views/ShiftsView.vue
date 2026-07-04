@@ -376,6 +376,10 @@
                   <span>TOTAL VENTAS</span>
                   <span class="resumen-val success">{{ formatCOP(ventasTotal(resumenShift)) }}</span>
                 </div>
+                <div v-if="resumenShift?.fiadoAbonos > 0" class="resumen-row" style="font-size:12px;color:var(--text-light)">
+                  <span>Incluye abonos de fiado</span>
+                  <span>{{ formatCOP(resumenShift.fiadoAbonos) }}</span>
+                </div>
               </div>
 
               <!-- Movimientos -->
@@ -652,6 +656,7 @@ function buildShiftText(s) {
   L.push(`   Total Restaurante: ${f(areaTotal(s, 'restaurante'))}`)
   L.push('')
   L.push(`💰 *TOTAL VENTAS: ${f(ventasTotal(s))}*`)
+  if ((s.fiadoAbonos || 0) > 0) L.push(`   (incluye ${f(s.fiadoAbonos)} de abonos de fiado)`)
   if ((s.totalWithdrawals || 0) + (s.totalExpenses || 0) > 0) {
     L.push('')
     L.push(`📤 Dinero sacado de caja: ${f((s.totalWithdrawals || 0) + (s.totalExpenses || 0))}`)
