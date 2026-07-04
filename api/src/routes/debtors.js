@@ -285,7 +285,7 @@ router.put('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
 
     const newItems = Array.isArray(req.body.items) ? req.body.items : oldItems;
     const newAmount = newItems.length > 0
-      ? newItems.reduce((s, i) => s + (Number(i.price) || 0) * (i.qty || 1), 0)
+      ? newItems.reduce((s, i) => s + Math.max(0, (Number(i.price) || 0) * (i.qty || 1) - (Number(i.discount) || 0)), 0)
       : Number(req.body.amount);
 
     if (!newAmount || newAmount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
@@ -401,7 +401,7 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
       if (t.type !== 'charge' || t.settled) continue;
       if (Array.isArray(t.items) && t.items.length > 0) {
         for (const it of t.items) {
-          const val = (Number(it.price) || 0) * (it.qty || 1);
+          const val = Math.max(0, (Number(it.price) || 0) * (it.qty || 1) - (Number(it.discount) || 0));
           if (it.area === 'restaurante') restDebt += val; else barDebt += val;
         }
       } else {

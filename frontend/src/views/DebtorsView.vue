@@ -216,17 +216,29 @@
           <div class="pos-cart" v-if="chargeCart.length > 0">
             <p class="section-mini-title mb-2">Pedido</p>
             <div class="cart-items">
-              <div class="cart-item" v-for="item in chargeCart" :key="item.recipeId">
-                <div class="item-info">
-                  <span class="item-name">{{ item.name }}</span>
-                  <span class="item-unit-price">{{ formatCOP(item.price) }} c/u</span>
+              <div class="cart-item-wrap" v-for="item in chargeCart" :key="item._itemId">
+                <div class="cart-item">
+                  <div class="item-info">
+                    <span class="item-name">{{ item.name }}</span>
+                    <span class="item-unit-price">{{ formatCOP(item.price) }} c/u</span>
+                  </div>
+                  <div class="item-controls">
+                    <button class="qty-btn" @click="decreaseChargeQty(item)">−</button>
+                    <span class="qty-value">{{ item.qty }}</span>
+                    <button class="qty-btn" @click="item.qty++">+</button>
+                    <span class="item-total">{{ formatCOP(Math.max(0, item.qty * item.price - (item.discount || 0))) }}</span>
+                    <button class="remove-btn" @click="removeFromChargeCart(item)">×</button>
+                  </div>
                 </div>
-                <div class="item-controls">
-                  <button class="qty-btn" @click="decreaseChargeQty(item)">−</button>
-                  <span class="qty-value">{{ item.qty }}</span>
-                  <button class="qty-btn" @click="item.qty++">+</button>
-                  <span class="item-total">{{ formatCOP(item.qty * item.price) }}</span>
-                  <button class="remove-btn" @click="removeFromChargeCart(item)">×</button>
+                <!-- Descuento por producto (igual que en la factura) -->
+                <div class="item-disc-row">
+                  <button v-if="!item._showDisc && !(item.discount > 0)" class="disc-add-btn" @click="item._showDisc = true">🏷️ Agregar descuento</button>
+                  <div v-else class="disc-input-row">
+                    <span class="disc-label">Descuento:</span>
+                    <input v-model.number="item.discount" type="number" min="0" :max="item.qty * item.price" class="disc-input" placeholder="0" />
+                    <span class="disc-applied">− {{ formatCOP(item.discount || 0) }}</span>
+                    <button class="disc-remove" @click="item.discount = 0; item._showDisc = false" title="Quitar descuento">×</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -556,7 +568,7 @@ const chargeFilteredRecipes = computed(() => {
   return list
 })
 const chargeTotal = computed(() =>
-  chargeCart.value.reduce((s, i) => s + i.qty * i.price, 0)
+  chargeCart.value.reduce((s, i) => s + Math.max(0, i.qty * i.price - (i.discount || 0)), 0)
 )
 function isInChargeCart(r) { return chargeCart.value.some(i => i._itemId === r._itemId) }
 function getChargeQty(r)   { return chargeCart.value.find(i => i._itemId === r._itemId)?.qty || 0 }
@@ -571,7 +583,8 @@ function addToChargeCart(r) {
     _itemId: r._itemId,
     recipeId: r._invOnly ? undefined : r.id,
     inventoryId: r._invOnly ? r.id : undefined,
-    name: r.name, price: r.price, area: r.area || 'bar', qty: 1
+    name: r.name, price: r.price, area: r.area || 'bar', qty: 1,
+    discount: 0, _showDisc: false
   })
 }
 function decreaseChargeQty(item) {
@@ -640,6 +653,8 @@ function openEditCharge(d, tx) {
     name: i.name,
     price: i.price,
     area: i.area || 'bar',
+    discount: Number(i.discount) || 0,
+    _showDisc: (Number(i.discount) || 0) > 0,
     qty: i.qty || 1
   }))
   // Recuperar la nota libre (lo que va después de " — " en la descripción)
@@ -701,6 +716,7 @@ async function handleCharge() {
       name: i.name,
       price: i.price,
       area: i.area || 'bar',
+      discount: Number(i.discount) || 0,
       qty: i.qty
     }))
     let res
@@ -1115,7 +1131,17 @@ onMounted(() => {
 .pos-cart { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
 .pos-cart-empty { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .cart-items { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.cart-item-wrap { border-bottom: 1px dotted var(--border); padding-bottom: 6px; }
+.cart-item-wrap:last-child { border-bottom: none; }
 .cart-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.item-disc-row { padding: 2px 0 0; }
+.disc-add-btn { background: none; border: 1px dashed var(--accent); color: var(--accent); font-size: 11px; padding: 2px 8px; border-radius: 12px; cursor: pointer; font-weight: 600; }
+.disc-add-btn:hover { background: var(--accent-light, #fffbeb); }
+.disc-input-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.disc-label { color: var(--text-light); }
+.disc-input { width: 90px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.disc-applied { color: var(--danger); font-weight: 700; }
+.disc-remove { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
 .item-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .item-name { font-size: 13px; font-weight: 600; }
 .item-unit-price { font-size: 11px; color: var(--text-light); }
