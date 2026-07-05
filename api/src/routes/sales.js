@@ -32,6 +32,62 @@ const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
 const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
 const shiftsPath  = (id) => path.join(getBusinessPath(id), 'shifts.json');
 
+/** Clasifica una forma de pago en su bucket: 💵 efectivo o 🏦 banco */
+function bucketOf(method) {
+  const m = (method || '').toLowerCase();
+  return (m === 'transferencia' || m === 'tarjeta' || m === 'banco') ? 'banco' : 'efectivo';
+}
+
+/**
+ * Ajusta los totales del turno al que pertenece una venta cuando ésta se edita
+ * (cambió el total y/o el método de pago). Revierte la contribución vieja y aplica
+ * la nueva, en el turno cuyo rango de fechas contiene la venta (abierto o cerrado).
+ * Si el turno está cerrado, recalcula también el desglose de Finanzas y el cuadre.
+ */
+async function adjustShiftForSaleEdit(businessId, oldSale, newSale) {
+  try {
+    const shifts = await readJSON(shiftsPath(businessId)) || [];
+    const t = new Date(oldSale.createdAt).getTime();
+    const idx = shifts.findIndex(s => {
+      const from = new Date(s.openedAt).getTime();
+      const to = s.closedAt ? new Date(s.closedAt).getTime() : Infinity;
+      return !isNaN(from) && t >= from && t <= to;
+    });
+    if (idx === -1) return; // la venta no pertenece a ningún turno
+    const sh = shifts[idx];
+    const isEf = (m) => (m || '').toLowerCase() === 'efectivo';
+    const oA = oldSale.totalsByArea || { bar: oldSale.total || 0, restaurante: 0 };
+    const nA = newSale.totalsByArea || { bar: newSale.total || 0, restaurante: 0 };
+
+    sh.totalSales      = (sh.totalSales || 0) - (oldSale.total || 0) + (newSale.total || 0);
+    sh.totalCashSales  = (sh.totalCashSales || 0) - (isEf(oldSale.paymentMethod) ? oldSale.total : 0) + (isEf(newSale.paymentMethod) ? newSale.total : 0);
+    sh.totalOtherSales = (sh.totalOtherSales || 0) - (!isEf(oldSale.paymentMethod) ? oldSale.total : 0) + (!isEf(newSale.paymentMethod) ? newSale.total : 0);
+    const prev = sh.salesByArea || { bar: 0, restaurante: 0 };
+    sh.salesByArea = {
+      bar: (prev.bar || 0) - (oA.bar || 0) + (nA.bar || 0),
+      restaurante: (prev.restaurante || 0) - (oA.restaurante || 0) + (nA.restaurante || 0)
+    };
+
+    // Turno cerrado: ajustar el desglose de Finanzas (área × efectivo/banco) y el cuadre
+    if (sh.status === 'closed' && sh.incomeByAreaBucket) {
+      const bO = bucketOf(oldSale.paymentMethod), bN = bucketOf(newSale.paymentMethod);
+      const ib = sh.incomeByAreaBucket;
+      ib.bar[bO] = (ib.bar[bO] || 0) - (oA.bar || 0);
+      ib.restaurante[bO] = (ib.restaurante[bO] || 0) - (oA.restaurante || 0);
+      ib.bar[bN] = (ib.bar[bN] || 0) + (nA.bar || 0);
+      ib.restaurante[bN] = (ib.restaurante[bN] || 0) + (nA.restaurante || 0);
+    }
+    if (sh.status === 'closed') {
+      sh.expectedCash = (sh.openingCash || 0) + (sh.totalCashSales || 0) - (sh.totalWithdrawals || 0) - (sh.totalExpenses || 0);
+      sh.difference = (sh.closingCash || 0) - sh.expectedCash;
+    }
+
+    await writeJSON(shiftsPath(businessId), shifts);
+  } catch (err) {
+    console.error('[sales] Error ajustando turno al editar venta:', err);
+  }
+}
+
 /**
  * Acumula los totales de la venta en el turno activo (si existe uno abierto).
  * Se llama después de guardar la venta exitosamente.
@@ -344,6 +400,9 @@ router.put('/sales/:id', authenticate, async (req, res) => {
     };
 
     await writeJSON(salesPath(req.params.businessId), sales);
+
+    // Ajustar los totales del turno (efectivo/banco/área) por el cambio de la venta
+    await adjustShiftForSaleEdit(req.params.businessId, oldSale, sales[idx]);
 
     await logAudit(req.params.businessId, {
       user: req.user.name || req.user.username, role: req.user.role, action: 'edit_invoice',
