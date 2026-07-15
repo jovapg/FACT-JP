@@ -58,6 +58,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { useInventoryStore } from '../stores/inventory.js'
+import { usePayrollStore } from '../stores/payroll.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useMenu } from '../composables/useMenu.js'
 import {
@@ -69,6 +70,7 @@ import {
 const auth = useAuthStore()
 const businessStore = useBusinessStore()
 const inventoryStore = useInventoryStore()
+const payrollStore = usePayrollStore()
 const route = useRoute()
 const { isMenuOpen, closeMenu } = useMenu()
 const isCollapsed = ref(false)
@@ -96,7 +98,10 @@ const visibleMenuItems = computed(() => {
   const role = auth.user?.role
   return menuItems.filter(item => item.roles.includes(role)).map(item => ({
     ...item,
-    badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length : 0
+    badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length
+      // Badge rojo en Nómina: días pendientes por aprobar (solo lo ve el admin)
+      : (item.path === '/payroll' && auth.isAdmin) ? payrollStore.pendingCount
+      : 0
   }))
 })
 
@@ -126,7 +131,11 @@ watch(() => route.path, () => {
   if (isMobile.value) closeMenu()
 })
 
-onMounted(() => { handleResize(); window.addEventListener('resize', handleResize) })
+onMounted(() => {
+  handleResize(); window.addEventListener('resize', handleResize)
+  // Refresca el contador de nómina pendiente para el badge (solo admin)
+  if (auth.isAdmin) payrollStore.fetch().catch(() => {})
+})
 onUnmounted(() => window.removeEventListener('resize', handleResize))
 </script>
 

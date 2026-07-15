@@ -10,7 +10,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import api from '../services/api.js'
 import { useAuthStore } from './auth.js'
 
@@ -19,6 +19,9 @@ export const usePayrollStore = defineStore('payroll', () => {
   const entries = ref([])
   const rates = ref({ dia: 50000, medio: 25000, hora: 6250 })
   const loading = ref(false)
+
+  /** Días pendientes por aprobar (alimenta el badge rojo del menú) */
+  const pendingCount = computed(() => entries.value.filter(e => e.status === 'pendiente').length)
 
   function bizId() { return auth.currentBusiness?.id }
 
@@ -72,7 +75,7 @@ export const usePayrollStore = defineStore('payroll', () => {
   }
 
   return {
-    entries, rates, loading,
+    entries, rates, loading, pendingCount,
     fetch, fetchRates, saveRates,
     createEntry, updateEntry, deleteEntry, approve, pay
   }
