@@ -9,7 +9,7 @@
       </div>
       <div class="header-actions">
         <button v-if="isAdmin" class="btn btn-outline" @click="openRates">⚙️ Tarifas</button>
-        <button v-if="!isAdmin" class="btn btn-primary" @click="openCreate">➕ Registrar día</button>
+        <button class="btn btn-primary" @click="openCreate">➕ Registrar día</button>
       </div>
     </div>
 
@@ -131,6 +131,19 @@
           <button class="btn-close" @click="showForm = false">×</button>
         </div>
         <div class="modal-body">
+          <!-- Admin: elegir para quién es el día (él mismo, un cajero, o un trabajador por días) -->
+          <div class="form-group" v-if="isAdmin && !editing">
+            <label class="form-label">¿Para quién? *</label>
+            <select v-model="who" class="form-control">
+              <option v-for="o in employeeOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+              <option value="__new__">➕ Otro trabajador (por días)</option>
+            </select>
+            <input
+              v-if="who === '__new__'" v-model="newName" class="form-control"
+              style="margin-top:8px" placeholder="Nombre del trabajador"
+            />
+          </div>
+
           <div class="form-group">
             <label class="form-label">Fecha *</label>
             <input v-model="form.date" type="date" class="form-control" />
@@ -277,6 +290,8 @@ const showForm = ref(false)
 const editing = ref(null)
 const saving = ref(false)
 const form = reactive({ date: todayCOT(), type: 'completo', area: 'ambos', from: '', to: '' })
+const who = ref('')          // admin: para quién es el día (id o '__new__')
+const newName = ref('')      // admin: nombre de un trabajador ocasional
 
 const payModal = ref(null)   // { name, employeeId, ids, bar, rest }
 const payMethod = ref('efectivo')
@@ -358,10 +373,23 @@ const byEmployee = computed(() => {
   return Object.values(map)
 })
 
+/** Opciones de "¿para quién?" (admin): yo + empleados ya conocidos. */
+const employeeOptions = computed(() => {
+  const meId = auth.user?.id
+  const meName = auth.user?.name || auth.user?.username || 'Yo'
+  const opts = [{ id: meId, label: `Yo (${meName})`, name: meName }]
+  for (const e of byEmployee.value) {
+    if (e.id !== meId) opts.push({ id: e.id, label: e.name, name: e.name })
+  }
+  return opts
+})
+
 // ── Acciones ─────────────────────────────────────────────
 function openCreate() {
   editing.value = null
   Object.assign(form, { date: todayCOT(), type: 'completo', area: 'ambos', from: '', to: '' })
+  who.value = auth.user?.id       // por defecto: yo
+  newName.value = ''
   showForm.value = true
 }
 function openEdit(e) {
@@ -376,9 +404,22 @@ async function saveEntry() {
   if (form.type === 'rato' && previewHours.value <= 0) {
     return toast('Indica un horario válido (de → a).', 'error')
   }
+  if (isAdmin.value && !editing.value && who.value === '__new__' && !newName.value.trim()) {
+    return toast('Escribe el nombre del trabajador.', 'error')
+  }
   saving.value = true
   try {
     const payload = { date: form.date, type: form.type, area: form.area, from: form.from, to: form.to }
+    // Admin registrando: adjuntar a quién pertenece el día
+    if (isAdmin.value && !editing.value) {
+      if (who.value === '__new__') {
+        payload.employeeName = newName.value.trim()
+      } else {
+        const opt = employeeOptions.value.find(o => o.id === who.value)
+        payload.employeeId = who.value
+        if (opt) payload.employeeName = opt.name
+      }
+    }
     if (editing.value) {
       await store.updateEntry(editing.value.id, payload)
       toast('Día actualizado', 'success')

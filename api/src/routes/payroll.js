@@ -157,22 +157,35 @@ router.put('/payroll/rates', authenticate, async (req, res) => {
 router.post('/payroll', authenticate, async (req, res) => {
   try {
     const data = await loadPayroll(req.params.businessId);
+    const admin = isAdmin(req);
 
-    // El admin puede registrar a nombre de un empleado; el cajero solo para sí.
+    // Cajero: siempre para sí mismo. Admin: para sí, para un usuario existente
+    // (employeeId) o para un trabajador ocasional sin cuenta (solo employeeName).
     let employeeId = req.user.id;
     let employeeName = req.user.name || req.user.username;
-    if (isAdmin(req) && req.body.employeeId) {
-      employeeId = req.body.employeeId;
-      employeeName = req.body.employeeName || employeeName;
+    if (admin) {
+      if (req.body.employeeId) {
+        employeeId = req.body.employeeId;
+        employeeName = req.body.employeeName || employeeName;
+      } else if (req.body.employeeName && req.body.employeeName.trim()) {
+        // Trabajador por días sin usuario: id estable derivado del nombre
+        employeeName = req.body.employeeName.trim();
+        employeeId = 'manual:' + employeeName.toLowerCase().replace(/\s+/g, '-');
+      }
     }
 
+    const now = new Date().toISOString();
+    const author = req.user.name || req.user.username;
     const entry = {
       id: uuidv4(),
       employeeId,
       employeeName,
-      status: 'pendiente',
-      createdAt: new Date().toISOString(),
-      createdBy: req.user.name || req.user.username,
+      // Lo que registra el admin queda aprobado al instante (él es quien aprueba);
+      // lo que reporta el cajero entra pendiente de revisión.
+      status: admin ? 'aprobado' : 'pendiente',
+      createdAt: now,
+      createdBy: author,
+      ...(admin ? { approvedBy: author, approvedAt: now } : {}),
       ...buildEntry(req.body, data.rates)
     };
     data.entries.push(entry);
