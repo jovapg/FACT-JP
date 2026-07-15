@@ -159,7 +159,7 @@
               >
                 <span class="tc-emoji">{{ opt.emoji }}</span>
                 <span class="tc-label">{{ opt.label }}</span>
-                <span class="tc-price">{{ opt.value === 'rato' ? fmtCOP(store.rates.hora) + '/hora' : fmtCOP(opt.price) }}</span>
+                <span class="tc-price">{{ opt.value === 'rato' ? fmtCOP(opt.price) + '/hora' : fmtCOP(opt.price) }}</span>
               </button>
             </div>
           </div>
@@ -171,7 +171,7 @@
               <span class="time-sep">→</span>
               <input v-model="form.to" type="time" class="form-control" />
             </div>
-            <p class="hint" v-if="previewHours > 0">{{ previewHours }} h × {{ fmtCOP(store.rates.hora) }}</p>
+            <p class="hint" v-if="previewHours > 0">{{ previewHours }} h × {{ fmtCOP(activeRates.hora) }}</p>
           </div>
 
           <div class="form-group">
@@ -237,28 +237,76 @@
 
     <!-- ══════════ MODAL TARIFAS ══════════ -->
     <div class="modal-overlay" v-if="ratesModal" @click.self="ratesModal = false">
-      <div class="modal" style="max-width:420px">
+      <div class="modal" style="max-width:520px">
         <div class="modal-header">
           <h3 class="modal-title">Tarifas de nómina</h3>
           <button class="btn-close" @click="ratesModal = false">×</button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">🌞 Día completo</label>
-            <input v-model.number="ratesForm.dia" type="number" min="0" class="form-control" />
+          <!-- Tarifa general (la que se usa si una persona no tiene la suya) -->
+          <h4 class="rates-sub">Tarifa general</h4>
+          <p class="hint" style="margin-top:0">Se aplica a quien no tenga una tarifa propia.</p>
+          <div class="rates-grid">
+            <div>
+              <label class="form-label">🌞 Día</label>
+              <input v-model.number="ratesForm.dia" type="number" min="0" class="form-control" />
+            </div>
+            <div>
+              <label class="form-label">🌗 Medio</label>
+              <input v-model.number="ratesForm.medio" type="number" min="0" class="form-control" />
+            </div>
+            <div>
+              <label class="form-label">⏱️ Hora</label>
+              <input v-model.number="ratesForm.hora" type="number" min="0" class="form-control" />
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">🌗 Medio día</label>
-            <input v-model.number="ratesForm.medio" type="number" min="0" class="form-control" />
+          <button class="btn btn-sm btn-outline" style="margin-top:8px" @click="saveRates" :disabled="saving">
+            Guardar tarifa general
+          </button>
+
+          <hr class="rates-divider" />
+
+          <!-- Tarifa personalizada por persona -->
+          <h4 class="rates-sub">Tarifa por persona</h4>
+          <div class="form-group" style="margin-bottom:10px">
+            <select v-model="selPerson" class="form-control" @change="onSelPerson">
+              <option value="">Elegir persona…</option>
+              <option v-for="p in peopleForRates" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">⏱️ Valor por hora (rato)</label>
-            <input v-model.number="ratesForm.hora" type="number" min="0" class="form-control" />
+          <div v-if="selPerson" class="rates-grid">
+            <div>
+              <label class="form-label">🌞 Día</label>
+              <input v-model.number="personRates.dia" type="number" min="0" class="form-control" />
+            </div>
+            <div>
+              <label class="form-label">🌗 Medio</label>
+              <input v-model.number="personRates.medio" type="number" min="0" class="form-control" />
+            </div>
+            <div>
+              <label class="form-label">⏱️ Hora</label>
+              <input v-model.number="personRates.hora" type="number" min="0" class="form-control" />
+            </div>
+          </div>
+          <div v-if="selPerson" class="person-rate-actions">
+            <button class="btn btn-sm btn-primary" @click="savePersonRate" :disabled="saving">Guardar su tarifa</button>
+            <button v-if="store.employeeRates[selPerson]" class="btn btn-sm btn-outline" @click="clearPersonRate(selPerson)">
+              Usar la general
+            </button>
+          </div>
+
+          <!-- Lista de quienes ya tienen tarifa propia -->
+          <div v-if="customRatesList.length" class="custom-rates">
+            <p class="hint">Con tarifa propia:</p>
+            <div v-for="c in customRatesList" :key="c.id" class="custom-rate-row">
+              <span class="cr-name">{{ c.name }}</span>
+              <span class="cr-vals">{{ fmtCOP(c.dia) }} / {{ fmtCOP(c.medio) }} / {{ fmtCOP(c.hora) }}h</span>
+              <button class="icon-btn danger" @click="clearPersonRate(c.id)" title="Quitar">×</button>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-outline" @click="ratesModal = false">Cancelar</button>
-          <button class="btn btn-primary" @click="saveRates" :disabled="saving">Guardar tarifas</button>
+          <button class="btn btn-outline" @click="ratesModal = false">Cerrar</button>
         </div>
       </div>
     </div>
@@ -300,11 +348,21 @@ const paying = ref(false)
 
 const ratesModal = ref(false)
 const ratesForm = reactive({ dia: 0, medio: 0, hora: 0 })
+const selPerson = ref('')                              // persona elegida para tarifa propia
+const personRates = reactive({ dia: 0, medio: 0, hora: 0 })
+
+// Tarifa que aplica al día que se está registrando (según la persona elegida)
+const activeRates = computed(() => {
+  if (!isAdmin.value) return store.rates                       // cajero: backend envía su tarifa
+  if (editing.value) return store.ratesFor(editing.value.employeeId)
+  if (who.value === '__new__') return store.rates              // trabajador nuevo → general
+  return store.ratesFor(who.value)
+})
 
 const typeOptions = computed(() => [
-  { value: 'completo', label: 'Día completo', emoji: '🌞', price: store.rates.dia },
-  { value: 'medio',    label: 'Medio día',    emoji: '🌗', price: store.rates.medio },
-  { value: 'rato',     label: 'Un rato',      emoji: '⏱️', price: 0 }
+  { value: 'completo', label: 'Día completo', emoji: '🌞', price: activeRates.value.dia },
+  { value: 'medio',    label: 'Medio día',    emoji: '🌗', price: activeRates.value.medio },
+  { value: 'rato',     label: 'Un rato',      emoji: '⏱️', price: activeRates.value.hora }
 ])
 
 // ── Helpers ──────────────────────────────────────────────
@@ -336,9 +394,9 @@ function hoursBetween(from, to) {
 
 const previewHours = computed(() => form.type === 'rato' ? hoursBetween(form.from, form.to) : 0)
 const previewAmount = computed(() => {
-  if (form.type === 'completo') return store.rates.dia
-  if (form.type === 'medio') return store.rates.medio
-  return Math.round(previewHours.value * store.rates.hora)
+  if (form.type === 'completo') return activeRates.value.dia
+  if (form.type === 'medio') return activeRates.value.medio
+  return Math.round(previewHours.value * activeRates.value.hora)
 })
 
 // ── Resumen del trabajador ───────────────────────────────
@@ -372,6 +430,24 @@ const byEmployee = computed(() => {
   }
   return Object.values(map)
 })
+
+/** Personas a las que se les puede fijar tarifa: usuarios + trabajadores ocasionales. */
+const peopleForRates = computed(() => {
+  const map = new Map()
+  for (const u of store.users) map.set(u.id, { id: u.id, name: u.name || u.username })
+  for (const e of store.entries) {
+    if (String(e.employeeId).startsWith('manual:')) map.set(e.employeeId, { id: e.employeeId, name: e.employeeName })
+  }
+  return [...map.values()]
+})
+
+/** Quienes ya tienen una tarifa propia (para mostrarlas y poder quitarlas). */
+const customRatesList = computed(() =>
+  Object.entries(store.employeeRates).map(([id, r]) => {
+    const p = peopleForRates.value.find(x => x.id === id)
+    return { id, name: p?.name || id.replace(/^manual:/, ''), ...r }
+  })
+)
 
 /** Opciones de "¿para quién?" (admin): yo + empleados ya conocidos. */
 const employeeOptions = computed(() => {
@@ -486,18 +562,49 @@ async function confirmPay() {
 }
 function openRates() {
   Object.assign(ratesForm, store.rates)
+  selPerson.value = ''
+  store.fetchUsers()
   ratesModal.value = true
 }
 async function saveRates() {
   saving.value = true
   try {
     await store.saveRates({ dia: ratesForm.dia, medio: ratesForm.medio, hora: ratesForm.hora })
-    toast('Tarifas actualizadas', 'success')
-    ratesModal.value = false
+    toast('Tarifa general actualizada', 'success')
   } catch (err) {
     toast(err.response?.data?.error || 'Error', 'error')
   } finally {
     saving.value = false
+  }
+}
+/** Al elegir persona, precargar su tarifa (propia o la general). */
+function onSelPerson() {
+  const r = store.employeeRates[selPerson.value] || store.rates
+  Object.assign(personRates, { dia: r.dia, medio: r.medio, hora: r.hora })
+}
+async function savePersonRate() {
+  if (!selPerson.value) return toast('Elige una persona.', 'error')
+  saving.value = true
+  try {
+    const p = peopleForRates.value.find(x => x.id === selPerson.value)
+    await store.saveEmployeeRate({
+      employeeId: selPerson.value, employeeName: p?.name,
+      dia: personRates.dia, medio: personRates.medio, hora: personRates.hora
+    })
+    toast('Tarifa personalizada guardada', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+async function clearPersonRate(id) {
+  try {
+    await store.saveEmployeeRate({ employeeId: id, clear: true })
+    toast('Ahora usa la tarifa general', 'success')
+    if (selPerson.value === id) onSelPerson()
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error', 'error')
   }
 }
 
@@ -595,6 +702,17 @@ onMounted(() => store.fetch())
 .pb-row { display:flex; justify-content:space-between; padding:5px 0; font-size:14px; }
 .pb-row.total { border-top:1px solid var(--border); margin-top:4px; padding-top:8px; font-weight:800; }
 .pb-row.total strong { color:var(--success); }
+
+/* Modal de tarifas */
+.rates-sub { font-size:14px; font-weight:700; margin-bottom:2px; }
+.rates-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.rates-grid .form-label { font-size:12px; }
+.rates-divider { border:none; border-top:1px solid var(--border); margin:18px 0; }
+.person-rate-actions { display:flex; gap:8px; margin-top:10px; }
+.custom-rates { margin-top:16px; }
+.custom-rate-row { display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); }
+.cr-name { font-weight:600; font-size:13px; flex:1; }
+.cr-vals { font-size:12px; color:var(--text-secondary); }
 
 .empty-state { text-align:center; padding:40px 20px; }
 .empty-state-icon { font-size:40px; margin-bottom:10px; }

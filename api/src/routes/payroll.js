@@ -40,20 +40,27 @@ const DEFAULT_RATES = { dia: 50000, medio: 25000, hora: 6250 };
 
 const isAdmin = (req) => req.user.role === 'superadmin' || req.user.role === 'admin';
 
-/** Carga payroll.json normalizado: { rates, entries }. */
+/** Carga payroll.json normalizado: { rates, employeeRates, entries }. */
 async function loadPayroll(id) {
   const data = await readJSON(payrollPath(id));
   if (!data || Array.isArray(data)) {
     // Formato viejo (array suelto) o inexistente → normalizar
-    return { rates: { ...DEFAULT_RATES }, entries: Array.isArray(data) ? data : [] };
+    return { rates: { ...DEFAULT_RATES }, employeeRates: {}, entries: Array.isArray(data) ? data : [] };
   }
   return {
     rates: { ...DEFAULT_RATES, ...(data.rates || {}) },
+    employeeRates: (data.employeeRates && typeof data.employeeRates === 'object') ? data.employeeRates : {},
     entries: Array.isArray(data.entries) ? data.entries : []
   };
 }
 
 async function savePayroll(id, data) { await writeJSON(payrollPath(id), data); }
+
+/** Tarifa efectiva de un empleado: su tarifa propia si existe, si no la general. */
+function ratesFor(data, employeeId) {
+  const o = data.employeeRates[employeeId];
+  return o ? { ...data.rates, ...o } : data.rates;
+}
 
 /** Horas decimales entre dos "HH:MM" (soporta cruce de medianoche). */
 function hoursBetween(from, to) {
@@ -108,8 +115,8 @@ function buildEntry(body, rates, base = {}) {
 /** GET /payroll — cajero ve solo lo suyo; admin ve todo. Filtros opcionales. */
 router.get('/payroll', authenticate, async (req, res) => {
   try {
-    const { entries, rates } = await loadPayroll(req.params.businessId);
-    let list = entries;
+    const data = await loadPayroll(req.params.businessId);
+    let list = data.entries;
     if (!isAdmin(req)) {
       list = list.filter(e => e.employeeId === req.user.id);
     } else if (req.query.employeeId) {
@@ -119,7 +126,14 @@ router.get('/payroll', authenticate, async (req, res) => {
     if (from) list = list.filter(e => e.date >= from);
     if (to) list = list.filter(e => e.date <= to);
     list = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    res.json({ entries: list, rates });
+
+    if (isAdmin(req)) {
+      // El admin recibe la tarifa general + el mapa de tarifas por persona
+      res.json({ entries: list, rates: data.rates, employeeRates: data.employeeRates });
+    } else {
+      // El cajero solo recibe SU tarifa efectiva (para la vista previa), sin ver las demás
+      res.json({ entries: list, rates: ratesFor(data, req.user.id), employeeRates: {} });
+    }
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -148,6 +162,34 @@ router.put('/payroll/rates', authenticate, async (req, res) => {
     };
     await savePayroll(req.params.businessId, data);
     res.json(data.rates);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /payroll/employee-rate — fija (o quita) la tarifa propia de un empleado (admin).
+ * Body: { employeeId, dia, medio, hora }  → fija la tarifa personalizada
+ *       { employeeId, clear: true }        → la quita (vuelve a usar la general)
+ */
+router.put('/payroll/employee-rate', authenticate, async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
+    const { employeeId } = req.body;
+    if (!employeeId) return res.status(400).json({ error: 'Falta el empleado' });
+    const data = await loadPayroll(req.params.businessId);
+    if (req.body.clear) {
+      delete data.employeeRates[employeeId];
+    } else {
+      const r = req.body;
+      data.employeeRates[employeeId] = {
+        dia: Math.max(0, Number(r.dia) || 0),
+        medio: Math.max(0, Number(r.medio) || 0),
+        hora: Math.max(0, Number(r.hora) || 0)
+      };
+    }
+    await savePayroll(req.params.businessId, data);
+    res.json(data.employeeRates);
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -186,7 +228,7 @@ router.post('/payroll', authenticate, async (req, res) => {
       createdAt: now,
       createdBy: author,
       ...(admin ? { approvedBy: author, approvedAt: now } : {}),
-      ...buildEntry(req.body, data.rates)
+      ...buildEntry(req.body, ratesFor(data, employeeId))
     };
     data.entries.push(entry);
     await savePayroll(req.params.businessId, data);
@@ -217,7 +259,7 @@ router.put('/payroll/:id', authenticate, async (req, res) => {
     }
 
     data.entries[idx] = {
-      ...buildEntry(req.body, data.rates, entry),
+      ...buildEntry(req.body, ratesFor(data, entry.employeeId), entry),
       editedAt: new Date().toISOString(),
       editedBy: req.user.name || req.user.username
     };

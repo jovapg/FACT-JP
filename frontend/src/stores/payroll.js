@@ -18,6 +18,8 @@ export const usePayrollStore = defineStore('payroll', () => {
   const auth = useAuthStore()
   const entries = ref([])
   const rates = ref({ dia: 50000, medio: 25000, hora: 6250 })
+  const employeeRates = ref({})   // { [employeeId]: { dia, medio, hora } } — solo admin
+  const users = ref([])           // usuarios del negocio (para asignar tarifas)
   const loading = ref(false)
 
   /** Días pendientes por aprobar (alimenta el badge rojo del menú) */
@@ -33,9 +35,31 @@ export const usePayrollStore = defineStore('payroll', () => {
       const res = await api.get(`/api/${bizId()}/payroll`, { params })
       entries.value = res.data.entries || []
       if (res.data.rates) rates.value = res.data.rates
+      employeeRates.value = res.data.employeeRates || {}
     } finally {
       loading.value = false
     }
+  }
+
+  /** Carga los usuarios del negocio (para el listado de tarifas por persona). */
+  async function fetchUsers() {
+    if (!bizId()) return
+    try {
+      const res = await api.get(`/api/${bizId()}/users`)
+      users.value = res.data || []
+    } catch { users.value = [] }
+  }
+
+  /** Tarifa efectiva de un empleado: la suya si existe, si no la general. */
+  function ratesFor(employeeId) {
+    return employeeRates.value[employeeId] || rates.value
+  }
+
+  /** Fija (o quita con clear:true) la tarifa propia de un empleado. */
+  async function saveEmployeeRate(payload) {
+    const res = await api.put(`/api/${bizId()}/payroll/employee-rate`, payload)
+    employeeRates.value = res.data || {}
+    return res.data
   }
 
   async function fetchRates() {
@@ -75,8 +99,8 @@ export const usePayrollStore = defineStore('payroll', () => {
   }
 
   return {
-    entries, rates, loading, pendingCount,
-    fetch, fetchRates, saveRates,
+    entries, rates, employeeRates, users, loading, pendingCount,
+    fetch, fetchRates, saveRates, fetchUsers, ratesFor, saveEmployeeRate,
     createEntry, updateEntry, deleteEntry, approve, pay
   }
 })
