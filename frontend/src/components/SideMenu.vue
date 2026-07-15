@@ -63,7 +63,7 @@ import { useMenu } from '../composables/useMenu.js'
 import {
   LayoutDashboard, UtensilsCrossed, Package, BookOpen,
   ShoppingCart, Truck, BarChart3, Receipt, Settings, Building2,
-  ChevronLeft, ChevronRight, Clock, Wallet, PiggyBank, History
+  ChevronLeft, ChevronRight, Clock, Wallet, PiggyBank, History, CalendarClock
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -83,6 +83,7 @@ const menuItems = [
   { path: '/suppliers',        label: 'Directorio de pagos', icon: Truck,        roles: ['superadmin','admin'] },
   { path: '/reports',          label: 'Reportes',        icon: BarChart3,        roles: ['superadmin','admin'] },
   { path: '/finance',          label: 'Finanzas',        icon: PiggyBank,        roles: ['superadmin','admin'] },
+  { path: '/payroll',          label: 'Nómina',          icon: CalendarClock,    roles: ['superadmin','admin','cajero'] },
   { path: '/shifts',           label: 'Turnos de Caja',  icon: Clock,            roles: ['superadmin','admin','cajero'] },
   { path: '/debtors',          label: 'Deudas',          icon: Wallet,           roles: ['superadmin','admin','cajero'] },
   { path: '/invoices',         label: 'Facturas',        icon: Receipt,          roles: ['superadmin','admin','cajero'] },

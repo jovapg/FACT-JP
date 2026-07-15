@@ -37,6 +37,14 @@ const purchasesPath = (id) => path.join(getBusinessPath(id), 'purchases.json');
 const suppliersPath = (id) => path.join(getBusinessPath(id), 'suppliers.json');
 const salesPath     = (id) => path.join(getBusinessPath(id), 'sales.json');
 const debtorsPath   = (id) => path.join(getBusinessPath(id), 'debtors.json');
+const payrollPath   = (id) => path.join(getBusinessPath(id), 'payroll.json');
+
+/** Días de nómina ya pagados (payroll.json puede ser {entries} o array viejo). */
+async function paidPayrollEntries(id) {
+  const data = await readJSON(payrollPath(id));
+  const entries = Array.isArray(data) ? data : (data?.entries || []);
+  return entries.filter(e => e.status === 'pagado' && e.paymentId);
+}
 
 /** Bucket de Finanzas según forma de pago: 💵 efectivo o 🏦 banco */
 function bucketOfMethod(m) {
@@ -157,6 +165,30 @@ async function buildMovements(id) {
       bucket: m.bucket || 'efectivo', amount: m.amount || 0, from: m.from, to: m.to,
       label: m.description || 'Movimiento manual',
       kind: m.type === 'traslado' ? 'traslado' : 'manual', source: 'manual', locked: false
+    });
+  }
+
+  // 5. Nómina pagada — cada lote de pago genera 2 egresos (Bar y Restaurante),
+  // según a qué bolsillo pertenece cada día trabajado. El bolsillo de dinero
+  // (efectivo/banco) es el método con que se le pagó al trabajador.
+  const paid = await paidPayrollEntries(id);
+  const batches = {};
+  for (const e of paid) {
+    const b = batches[e.paymentId] || (batches[e.paymentId] = {
+      bar: 0, rest: 0, date: e.paidAt, method: e.payMethod, name: e.employeeName
+    });
+    b.bar += e.amountBar || 0;
+    b.rest += e.amountRest || 0;
+  }
+  for (const [pid, b] of Object.entries(batches)) {
+    const bucket = bucketOfMethod(b.method);
+    if (b.bar > 0) moves.push({
+      id: `nom-${pid}-bar`, date: b.date, type: 'egreso', area: 'bar',
+      bucket, amount: b.bar, label: `Nómina: ${b.name}`, kind: 'nomina', source: 'payroll', locked: true
+    });
+    if (b.rest > 0) moves.push({
+      id: `nom-${pid}-rest`, date: b.date, type: 'egreso', area: 'restaurante',
+      bucket, amount: b.rest, label: `Nómina: ${b.name}`, kind: 'nomina', source: 'payroll', locked: true
     });
   }
 
@@ -412,6 +444,14 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
         const k = sup.tipo === 'empleado' ? 'nomina' : sup.tipo === 'credito' ? 'credito' : 'proveedor';
         salidas[k] += amt;
       }
+    }
+    // Nómina pagada del día (payroll.json)
+    for (const e of await paidPayrollEntries(id)) {
+      if (!inDay(e.paidAt)) continue;
+      const amt = e.amount || 0;
+      salidas.total += amt;
+      salidas[bucketOfMethod(e.payMethod)] += amt;
+      salidas.nomina += amt;
     }
 
     // Saldos actuales (lo que debería tener) — saldo inicial + movimientos desde openingDate
