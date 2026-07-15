@@ -17,6 +17,42 @@ const path = require('path');
 const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
 
 /**
+ * Resuelve, para un ítem vendido, DE DÓNDE sale (o vuelve) el stock.
+ *
+ * Es la única fuente de verdad de la regla de "match por nombre": un producto
+ * puede venderse de tres formas y esta función las unifica para que el POS
+ * (sellableItems), el bloqueo por agotado (findOutOfStockItems) y el
+ * descuento/devolución (deductFromSale/restoreFromSale) coincidan siempre.
+ *
+ * @returns
+ *   - { type: 'direct', item }              → descontar qty unidades de ese ítem
+ *       (ítem de inventario vendido directo, O receta que en realidad es un
+ *        producto de inventario y coincide por nombre — ahí vive el stock)
+ *   - { type: 'ingredients', list, name }   → descontar cada insumo × qty
+ *   - null                                  → no hay stock que rastrear
+ */
+function resolveStockTarget(saleItem, recipes, invById, invByName) {
+  // Ítem de inventario vendido directamente (sin receta)
+  if (saleItem.inventoryId && !saleItem.recipeId) {
+    const item = invById.get(saleItem.inventoryId);
+    return item ? { type: 'direct', item } : null;
+  }
+
+  if (saleItem.recipeId) {
+    const recipe = recipes.find(r => r.id === saleItem.recipeId);
+    // Receta que en realidad es un producto de inventario (match por nombre):
+    // el stock vive en el ítem de inventario, no en ingredientes.
+    const byName = invByName.get((saleItem.name || recipe?.name || '').toLowerCase().trim());
+    if (byName) return { type: 'direct', item: byName };
+    // Receta con ingredientes: descontar cada insumo
+    if (recipe?.ingredients?.length) {
+      return { type: 'ingredients', list: recipe.ingredients, name: recipe.name };
+    }
+  }
+  return null;
+}
+
+/**
  * Descuenta los ingredientes del inventario al crear una venta.
  *
  * Para cada ítem vendido, busca su receta y descuenta de inventario
@@ -34,42 +70,34 @@ async function deductFromSale(businessId, saleItems) {
   const inventory = await readJSON(inventoryPath) || [];
   const recipes = await readJSON(recipesPath) || [];
 
+  // Índices por id y por nombre (referencian los mismos objetos del array)
+  const invById = new Map(inventory.map(i => [i.id, i]));
+  const invByName = new Map(inventory.map(i => [i.name.toLowerCase().trim(), i]));
+
   const alerts = [];
+  const pushAlertIfLow = (inv) => {
+    if (inv.stock <= (inv.minStock || 0)) {
+      alerts.push({ id: inv.id, name: inv.name, stock: inv.stock, minStock: inv.minStock });
+    }
+  };
 
   for (const saleItem of saleItems) {
-    // Item de inventario vendido directamente (sin receta): descontar 1 unidad × qty
-    if (saleItem.inventoryId && !saleItem.recipeId) {
-      const invIdx = inventory.findIndex(i => i.id === saleItem.inventoryId);
-      if (invIdx !== -1) {
-        inventory[invIdx].stock = Math.max(0, (inventory[invIdx].stock || 0) - (saleItem.qty || 1));
-        if (inventory[invIdx].stock <= (inventory[invIdx].minStock || 0)) {
-          alerts.push({ id: inventory[invIdx].id, name: inventory[invIdx].name,
-            stock: inventory[invIdx].stock, minStock: inventory[invIdx].minStock });
-        }
-      }
-      continue;
-    }
+    const qty = saleItem.qty || 1;
+    const target = resolveStockTarget(saleItem, recipes, invById, invByName);
+    if (!target) continue; // Sin stock que rastrear (receta sin ingredientes ni match)
 
-    // Buscar la receta correspondiente al ítem vendido
-    const recipe = recipes.find(r => r.id === saleItem.recipeId);
-    if (!recipe || !recipe.ingredients) continue; // Si no tiene receta, no descontar
-
-    for (const ingredient of recipe.ingredients) {
-      const invIdx = inventory.findIndex(i => i.id === ingredient.inventoryId);
-      if (invIdx === -1) continue; // Si el ingrediente no está en inventario, omitir
-
-      // Descontar: cantidad del ingrediente × cantidad vendida del ítem
-      const deductQty = ingredient.quantity * saleItem.qty;
-      inventory[invIdx].stock = Math.max(0, (inventory[invIdx].stock || 0) - deductQty);
-
-      // Si el stock resultante es menor o igual al mínimo, generar alerta
-      if (inventory[invIdx].stock <= (inventory[invIdx].minStock || 0)) {
-        alerts.push({
-          id: inventory[invIdx].id,
-          name: inventory[invIdx].name,
-          stock: inventory[invIdx].stock,
-          minStock: inventory[invIdx].minStock
-        });
+    if (target.type === 'direct') {
+      // Producto de inventario (directo o receta que coincide por nombre): −qty unidades
+      const inv = target.item;
+      inv.stock = Math.max(0, (inv.stock || 0) - qty);
+      pushAlertIfLow(inv);
+    } else {
+      // Receta con ingredientes: descontar cada insumo × cantidad vendida
+      for (const ingredient of target.list) {
+        const inv = invById.get(ingredient.inventoryId);
+        if (!inv) continue; // Si el ingrediente no está en inventario, omitir
+        inv.stock = Math.max(0, (inv.stock || 0) - ingredient.quantity * qty);
+        pushAlertIfLow(inv);
       }
     }
   }
@@ -95,24 +123,24 @@ async function restoreFromSale(businessId, saleItems) {
   const inventory = await readJSON(inventoryPath) || [];
   const recipes = await readJSON(recipesPath) || [];
 
+  const invById = new Map(inventory.map(i => [i.id, i]));
+  const invByName = new Map(inventory.map(i => [i.name.toLowerCase().trim(), i]));
+
   for (const saleItem of saleItems) {
-    // Item de inventario vendido directamente: devolver qty unidades
-    if (saleItem.inventoryId && !saleItem.recipeId) {
-      const invIdx = inventory.findIndex(i => i.id === saleItem.inventoryId);
-      if (invIdx !== -1) {
-        inventory[invIdx].stock = (inventory[invIdx].stock || 0) + (saleItem.qty || 1);
+    const qty = saleItem.qty || 1;
+    const target = resolveStockTarget(saleItem, recipes, invById, invByName);
+    if (!target) continue;
+
+    if (target.type === 'direct') {
+      // Producto de inventario (directo o receta que coincide por nombre): +qty unidades
+      target.item.stock = (target.item.stock || 0) + qty;
+    } else {
+      // Receta con ingredientes: devolver cada insumo × cantidad vendida
+      for (const ingredient of target.list) {
+        const inv = invById.get(ingredient.inventoryId);
+        if (!inv) continue;
+        inv.stock = (inv.stock || 0) + ingredient.quantity * qty;
       }
-      continue;
-    }
-
-    // Item con receta: devolver los ingredientes × cantidad
-    const recipe = recipes.find(r => r.id === saleItem.recipeId);
-    if (!recipe || !recipe.ingredients) continue;
-
-    for (const ingredient of recipe.ingredients) {
-      const invIdx = inventory.findIndex(i => i.id === ingredient.inventoryId);
-      if (invIdx === -1) continue;
-      inventory[invIdx].stock = (inventory[invIdx].stock || 0) + (ingredient.quantity * saleItem.qty);
     }
   }
 
@@ -145,24 +173,17 @@ async function findOutOfStockItems(businessId, items) {
 
   const out = [];
   for (const item of items || []) {
-    // Item de inventario directo
-    if (item.inventoryId && !item.recipeId) {
-      const inv = invById.get(item.inventoryId);
-      if (inv && (inv.stock || 0) <= 0) out.push(inv.name);
-      continue;
-    }
+    const target = resolveStockTarget(item, recipes, invById, invByName);
+    if (!target) continue;
 
-    if (item.recipeId) {
-      const recipe = recipes.find(r => r.id === item.recipeId);
-      // Receta que en realidad es un producto de inventario (match por nombre)
-      const byName = invByName.get((item.name || recipe?.name || '').toLowerCase().trim());
-      if (byName && (byName.stock || 0) <= 0) { out.push(byName.name); continue; }
+    if (target.type === 'direct') {
+      // Producto de inventario (directo o receta que coincide por nombre)
+      if ((target.item.stock || 0) <= 0) out.push(target.item.name);
+    } else {
       // Receta con ingredientes: agotada si falta alguno
-      if (recipe?.ingredients?.length) {
-        for (const ing of recipe.ingredients) {
-          const inv = invById.get(ing.inventoryId);
-          if (inv && (inv.stock || 0) <= 0) { out.push(recipe.name); break; }
-        }
+      for (const ing of target.list) {
+        const inv = invById.get(ing.inventoryId);
+        if (inv && (inv.stock || 0) <= 0) { out.push(target.name); break; }
       }
     }
   }
