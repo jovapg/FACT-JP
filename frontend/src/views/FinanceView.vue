@@ -105,30 +105,36 @@
             <thead>
               <tr>
                 <th>Tipo</th>
-                <th class="r">🍺 Bar</th>
-                <th class="r">🍽️ Restaurante</th>
-                <th class="r" v-if="showGeneralCol">General</th>
-                <th class="r">Total</th>
+                <template v-if="showAreaCols">
+                  <th class="r">🍺 Bar</th>
+                  <th class="r">🍽️ Restaurante</th>
+                  <th class="r" v-if="showGeneralCol">General</th>
+                </template>
+                <th class="r">{{ showAreaCols ? 'Total' : totalColLabel }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in salidasSummary" :key="row.kind">
                 <td>{{ row.label }}</td>
-                <td class="r">{{ formatCOP(row.bar) }}</td>
-                <td class="r">{{ formatCOP(row.restaurante) }}</td>
-                <td class="r" v-if="showGeneralCol">{{ formatCOP(row.general) }}</td>
+                <template v-if="showAreaCols">
+                  <td class="r">{{ formatCOP(row.bar) }}</td>
+                  <td class="r">{{ formatCOP(row.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol">{{ formatCOP(row.general) }}</td>
+                </template>
                 <td class="r strong">{{ formatCOP(row.total) }}</td>
               </tr>
               <tr v-if="salidasSummary.length === 0">
-                <td :colspan="showGeneralCol ? 5 : 4" class="sum-empty">Sin salidas en el periodo</td>
+                <td :colspan="salidasColCount" class="sum-empty">Sin salidas en el periodo</td>
               </tr>
             </tbody>
             <tfoot v-if="salidasSummary.length">
               <tr>
                 <td>Total</td>
-                <td class="r">{{ formatCOP(salidasTotals.bar) }}</td>
-                <td class="r">{{ formatCOP(salidasTotals.restaurante) }}</td>
-                <td class="r" v-if="showGeneralCol">{{ formatCOP(salidasTotals.general) }}</td>
+                <template v-if="showAreaCols">
+                  <td class="r">{{ formatCOP(salidasTotals.bar) }}</td>
+                  <td class="r">{{ formatCOP(salidasTotals.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol">{{ formatCOP(salidasTotals.general) }}</td>
+                </template>
                 <td class="r strong">{{ formatCOP(salidasTotals.total) }}</td>
               </tr>
             </tfoot>
@@ -399,7 +405,8 @@ const KIND_ORDER = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'cred
 
 const salidasSummary = computed(() => {
   const rows = {}
-  for (const m of movsAll.value) {
+  // Respeta el filtro de área de arriba: 'movs' ya viene filtrado por Bar/Rest/Total
+  for (const m of movs.value) {
     if (m.type !== 'egreso') continue // los traslados no son salida real
     const k = m.kind || 'manual'
     const r = rows[k] || (rows[k] = { kind: k, label: KIND_LABELS[k] || k, bar: 0, restaurante: 0, general: 0, total: 0 })
@@ -416,7 +423,12 @@ const salidasTotals = computed(() => {
   for (const r of salidasSummary.value) { t.bar += r.bar; t.restaurante += r.restaurante; t.general += r.general; t.total += r.total }
   return t
 })
-const showGeneralCol = computed(() => salidasTotals.value.general > 0)
+// Solo en modo "Total" se abren las columnas Bar/Restaurante; al filtrar por un
+// área se muestra una sola columna con lo de esa área.
+const showAreaCols = computed(() => area.value === 'total')
+const showGeneralCol = computed(() => showAreaCols.value && salidasTotals.value.general > 0)
+const totalColLabel = computed(() => area.value === 'bar' ? '🍺 Bar' : area.value === 'restaurante' ? '🍽️ Restaurante' : 'Total')
+const salidasColCount = computed(() => 1 + (showAreaCols.value ? (2 + (showGeneralCol.value ? 1 : 0)) : 0) + 1)
 
 // ── Análisis de costo (food cost) del periodo + área seleccionada ──
 const areaLabel = computed(() => area.value === 'bar' ? 'Bar' : area.value === 'restaurante' ? 'Restaurante' : 'Total')
