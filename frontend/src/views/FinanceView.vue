@@ -94,11 +94,11 @@
         </div>
       </div>
 
-      <!-- Resumen de salidas por tipo -->
+      <!-- Resumen de ingresos y salidas por tipo -->
       <div class="card sum-card mb-3">
         <div class="sum-head">
-          <span>📉 Salidas por tipo <em>(en el periodo seleccionado)</em></span>
-          <span class="sum-total-badge">Total salidas: {{ formatCOP(salidasTotals.total) }}</span>
+          <span>📊 Ingresos y salidas por tipo <em>(en el periodo seleccionado)</em></span>
+          <span class="sum-total-badge" :class="netoRow.total >= 0 ? 'pos' : 'neg'">Neto: {{ formatCOP(netoRow.total) }}</span>
         </div>
         <div class="sum-table-wrap">
           <table class="sum-table">
@@ -114,28 +114,63 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in salidasSummary" :key="row.kind">
+              <!-- ↑ Ingresos -->
+              <tr class="sum-section in"><td :colspan="colCount">↑ Ingresos</td></tr>
+              <tr v-for="row in ingresosSummary" :key="'in-' + row.kind">
                 <td>{{ row.label }}</td>
                 <template v-if="showAreaCols">
                   <td class="r">{{ formatCOP(row.bar) }}</td>
                   <td class="r">{{ formatCOP(row.restaurante) }}</td>
                   <td class="r" v-if="showGeneralCol">{{ formatCOP(row.general) }}</td>
                 </template>
-                <td class="r strong">{{ formatCOP(row.total) }}</td>
+                <td class="r strong pos">{{ formatCOP(row.total) }}</td>
+              </tr>
+              <tr v-if="ingresosSummary.length === 0">
+                <td :colspan="colCount" class="sum-empty">Sin ingresos en el periodo</td>
+              </tr>
+              <tr v-if="ingresosSummary.length" class="sum-subtotal">
+                <td>Subtotal ingresos</td>
+                <template v-if="showAreaCols">
+                  <td class="r">{{ formatCOP(ingresosTotals.bar) }}</td>
+                  <td class="r">{{ formatCOP(ingresosTotals.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol">{{ formatCOP(ingresosTotals.general) }}</td>
+                </template>
+                <td class="r strong pos">{{ formatCOP(ingresosTotals.total) }}</td>
+              </tr>
+
+              <!-- ↓ Salidas -->
+              <tr class="sum-section out"><td :colspan="colCount">↓ Salidas</td></tr>
+              <tr v-for="row in salidasSummary" :key="'out-' + row.kind">
+                <td>{{ row.label }}</td>
+                <template v-if="showAreaCols">
+                  <td class="r">{{ formatCOP(row.bar) }}</td>
+                  <td class="r">{{ formatCOP(row.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol">{{ formatCOP(row.general) }}</td>
+                </template>
+                <td class="r strong neg">{{ formatCOP(row.total) }}</td>
               </tr>
               <tr v-if="salidasSummary.length === 0">
-                <td :colspan="salidasColCount" class="sum-empty">Sin salidas en el periodo</td>
+                <td :colspan="colCount" class="sum-empty">Sin salidas en el periodo</td>
               </tr>
-            </tbody>
-            <tfoot v-if="salidasSummary.length">
-              <tr>
-                <td>Total</td>
+              <tr v-if="salidasSummary.length" class="sum-subtotal">
+                <td>Subtotal salidas</td>
                 <template v-if="showAreaCols">
                   <td class="r">{{ formatCOP(salidasTotals.bar) }}</td>
                   <td class="r">{{ formatCOP(salidasTotals.restaurante) }}</td>
                   <td class="r" v-if="showGeneralCol">{{ formatCOP(salidasTotals.general) }}</td>
                 </template>
-                <td class="r strong">{{ formatCOP(salidasTotals.total) }}</td>
+                <td class="r strong neg">{{ formatCOP(salidasTotals.total) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="sum-net">
+                <td>Neto (ingresos − salidas)</td>
+                <template v-if="showAreaCols">
+                  <td class="r" :class="netoRow.bar >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.bar) }}</td>
+                  <td class="r" :class="netoRow.restaurante >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol" :class="netoRow.general >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.general) }}</td>
+                </template>
+                <td class="r strong" :class="netoRow.total >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.total) }}</td>
               </tr>
             </tfoot>
           </table>
@@ -423,12 +458,46 @@ const salidasTotals = computed(() => {
   for (const r of salidasSummary.value) { t.bar += r.bar; t.restaurante += r.restaurante; t.general += r.general; t.total += r.total }
   return t
 })
+// ── Resumen de INGRESOS por tipo (mismo formato que salidas) ──
+const IN_KIND_LABELS = {
+  shift: '🧾 Ventas (cierre de turno)',
+  manual: '➕ Otros ingresos (manual)'
+}
+const IN_KIND_ORDER = ['shift', 'manual']
+const ingresosSummary = computed(() => {
+  const rows = {}
+  for (const m of movs.value) {
+    if (m.type !== 'ingreso') continue
+    const k = m.kind || 'manual'
+    const r = rows[k] || (rows[k] = { kind: k, label: IN_KIND_LABELS[k] || k, bar: 0, restaurante: 0, general: 0, total: 0 })
+    const a = ['bar', 'restaurante', 'general'].includes(m.area) ? m.area : 'general'
+    r[a] += m.amount
+    r.total += m.amount
+  }
+  const ordered = IN_KIND_ORDER.filter(k => rows[k]).map(k => rows[k])
+  for (const k in rows) if (!IN_KIND_ORDER.includes(k)) ordered.push(rows[k])
+  return ordered
+})
+const ingresosTotals = computed(() => {
+  const t = { bar: 0, restaurante: 0, general: 0, total: 0 }
+  for (const r of ingresosSummary.value) { t.bar += r.bar; t.restaurante += r.restaurante; t.general += r.general; t.total += r.total }
+  return t
+})
+
+// Neto (ingresos − salidas) por área, para la fila final
+const netoRow = computed(() => ({
+  bar: ingresosTotals.value.bar - salidasTotals.value.bar,
+  restaurante: ingresosTotals.value.restaurante - salidasTotals.value.restaurante,
+  general: ingresosTotals.value.general - salidasTotals.value.general,
+  total: ingresosTotals.value.total - salidasTotals.value.total
+}))
+
 // Solo en modo "Total" se abren las columnas Bar/Restaurante; al filtrar por un
 // área se muestra una sola columna con lo de esa área.
 const showAreaCols = computed(() => area.value === 'total')
-const showGeneralCol = computed(() => showAreaCols.value && salidasTotals.value.general > 0)
+const showGeneralCol = computed(() => showAreaCols.value && (salidasTotals.value.general > 0 || ingresosTotals.value.general > 0))
 const totalColLabel = computed(() => area.value === 'bar' ? '🍺 Bar' : area.value === 'restaurante' ? '🍽️ Restaurante' : 'Total')
-const salidasColCount = computed(() => 1 + (showAreaCols.value ? (2 + (showGeneralCol.value ? 1 : 0)) : 0) + 1)
+const colCount = computed(() => 1 + (showAreaCols.value ? (2 + (showGeneralCol.value ? 1 : 0)) : 0) + 1)
 
 // ── Análisis de costo (food cost) del periodo + área seleccionada ──
 const areaLabel = computed(() => area.value === 'bar' ? 'Bar' : area.value === 'restaurante' ? 'Restaurante' : 'Total')
@@ -700,15 +769,25 @@ onMounted(load)
 .sum-card { padding: 0; }
 .sum-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; }
 .sum-head em { font-weight: 500; font-style: normal; font-size: 12px; color: var(--text-light); }
-.sum-total-badge { font-size: 12.5px; font-weight: 800; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 3px 10px; }
+.sum-total-badge { font-size: 12.5px; font-weight: 800; border-radius: 8px; padding: 3px 10px; }
+.sum-total-badge.pos { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.sum-total-badge.neg { color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; }
 .sum-table-wrap { overflow-x: auto; }
 .sum-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .sum-table th { text-align: left; font-size: 11.5px; color: var(--text-light); font-weight: 600; padding: 8px 16px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.03em; }
 .sum-table td { padding: 9px 16px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
-.sum-table tbody tr:last-child td { border-bottom: none; }
 .sum-table .r { text-align: right; white-space: nowrap; }
-.sum-table .strong { font-weight: 800; color: var(--text); }
-.sum-table tfoot td { border-top: 2px solid var(--border); font-weight: 800; color: var(--text); background: var(--bg); }
+.sum-table .strong { font-weight: 800; }
+.sum-table .pos { color: #16a34a; }
+.sum-table .neg { color: var(--danger); }
+/* Encabezados de sección (Ingresos / Salidas) */
+.sum-section td { font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 16px; }
+.sum-section.in td { background: #f0fdf4; color: #15803d; }
+.sum-section.out td { background: #fef2f2; color: #dc2626; }
+/* Subtotales por bloque */
+.sum-subtotal td { font-weight: 700; color: var(--text); background: var(--bg); }
+/* Fila de neto */
+.sum-table tfoot .sum-net td { border-top: 2px solid var(--border); font-weight: 800; background: var(--surface-2); font-size: 14px; }
 .sum-empty { text-align: center; color: var(--text-light); padding: 20px; }
 
 .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: center; }
