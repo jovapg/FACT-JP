@@ -94,6 +94,48 @@
         </div>
       </div>
 
+      <!-- Resumen de salidas por tipo -->
+      <div class="card sum-card mb-3">
+        <div class="sum-head">
+          <span>📉 Salidas por tipo <em>(en el periodo seleccionado)</em></span>
+          <span class="sum-total-badge">Total salidas: {{ formatCOP(salidasTotals.total) }}</span>
+        </div>
+        <div class="sum-table-wrap">
+          <table class="sum-table">
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th class="r">🍺 Bar</th>
+                <th class="r">🍽️ Restaurante</th>
+                <th class="r" v-if="showGeneralCol">General</th>
+                <th class="r">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in salidasSummary" :key="row.kind">
+                <td>{{ row.label }}</td>
+                <td class="r">{{ formatCOP(row.bar) }}</td>
+                <td class="r">{{ formatCOP(row.restaurante) }}</td>
+                <td class="r" v-if="showGeneralCol">{{ formatCOP(row.general) }}</td>
+                <td class="r strong">{{ formatCOP(row.total) }}</td>
+              </tr>
+              <tr v-if="salidasSummary.length === 0">
+                <td :colspan="showGeneralCol ? 5 : 4" class="sum-empty">Sin salidas en el periodo</td>
+              </tr>
+            </tbody>
+            <tfoot v-if="salidasSummary.length">
+              <tr>
+                <td>Total</td>
+                <td class="r">{{ formatCOP(salidasTotals.bar) }}</td>
+                <td class="r">{{ formatCOP(salidasTotals.restaurante) }}</td>
+                <td class="r" v-if="showGeneralCol">{{ formatCOP(salidasTotals.general) }}</td>
+                <td class="r strong">{{ formatCOP(salidasTotals.total) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Listas Entradas / Salidas -->
       <div class="ledger-grid">
         <div class="card ledger-col">
@@ -338,6 +380,43 @@ const salidas = computed(() => movs.value.filter(m => m.type === 'egreso' || m.t
 const periodIngresos = computed(() => entradas.value.reduce((s, m) => s + m.amount, 0))
 const periodEgresos = computed(() => movs.value.filter(m => m.type === 'egreso').reduce((s, m) => s + m.amount, 0))
 const neto = computed(() => periodIngresos.value - periodEgresos.value)
+
+// ── Resumen de salidas por tipo (nómina, arriendo, crédito, compras…) ──
+// Se arma con TODAS las salidas del periodo (no depende del filtro de área),
+// para poder comparar y validar Bar vs Restaurante de un vistazo.
+const KIND_LABELS = {
+  reponer: '🛒 Compras / mercancía',
+  gasto: '💸 Gastos',
+  proveedor: '🚚 Proveedores',
+  nomina: '👥 Nómina',
+  arriendo: '🏠 Arriendo',
+  credito: '💳 Crédito',
+  retiro: '🏧 Retiros de caja',
+  cajamenor: '🧾 Caja menor',
+  manual: '✏️ Otros (manual)'
+}
+const KIND_ORDER = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'credito', 'retiro', 'cajamenor', 'manual']
+
+const salidasSummary = computed(() => {
+  const rows = {}
+  for (const m of movsAll.value) {
+    if (m.type !== 'egreso') continue // los traslados no son salida real
+    const k = m.kind || 'manual'
+    const r = rows[k] || (rows[k] = { kind: k, label: KIND_LABELS[k] || k, bar: 0, restaurante: 0, general: 0, total: 0 })
+    const a = ['bar', 'restaurante', 'general'].includes(m.area) ? m.area : 'general'
+    r[a] += m.amount
+    r.total += m.amount
+  }
+  const ordered = KIND_ORDER.filter(k => rows[k]).map(k => rows[k])
+  for (const k in rows) if (!KIND_ORDER.includes(k)) ordered.push(rows[k]) // tipos no previstos al final
+  return ordered
+})
+const salidasTotals = computed(() => {
+  const t = { bar: 0, restaurante: 0, general: 0, total: 0 }
+  for (const r of salidasSummary.value) { t.bar += r.bar; t.restaurante += r.restaurante; t.general += r.general; t.total += r.total }
+  return t
+})
+const showGeneralCol = computed(() => salidasTotals.value.general > 0)
 
 // ── Análisis de costo (food cost) del periodo + área seleccionada ──
 const areaLabel = computed(() => area.value === 'bar' ? 'Bar' : area.value === 'restaurante' ? 'Restaurante' : 'Total')
@@ -604,6 +683,21 @@ onMounted(load)
 .cost-tip.warn { color: #b45309; }
 .cost-tip.bad  { color: #dc2626; }
 .cost-empty { padding: 16px; text-align: center; color: var(--text-light); font-size: 13px; }
+
+/* Resumen de salidas por tipo */
+.sum-card { padding: 0; }
+.sum-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; font-weight: 700; }
+.sum-head em { font-weight: 500; font-style: normal; font-size: 12px; color: var(--text-light); }
+.sum-total-badge { font-size: 12.5px; font-weight: 800; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 3px 10px; }
+.sum-table-wrap { overflow-x: auto; }
+.sum-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.sum-table th { text-align: left; font-size: 11.5px; color: var(--text-light); font-weight: 600; padding: 8px 16px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.03em; }
+.sum-table td { padding: 9px 16px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+.sum-table tbody tr:last-child td { border-bottom: none; }
+.sum-table .r { text-align: right; white-space: nowrap; }
+.sum-table .strong { font-weight: 800; color: var(--text); }
+.sum-table tfoot td { border-top: 2px solid var(--border); font-weight: 800; color: var(--text); background: var(--bg); }
+.sum-empty { text-align: center; color: var(--text-light); padding: 20px; }
 
 .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: center; }
 .config-grid .ch { font-size: 12px; font-weight: 700; text-align: center; color: var(--text-light); }
