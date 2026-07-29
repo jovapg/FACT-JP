@@ -66,8 +66,9 @@
         </div>
       </div>
 
-      <!-- Análisis de costo (food cost) -->
-      <div class="card cost-card mb-3">
+      <!-- Análisis de costo (food cost) — DESACTIVADO temporalmente (v-if="false").
+           Para reactivarlo, quitar el v-if. -->
+      <div class="card cost-card mb-3" v-if="false">
         <div class="cost-head">
           <span>📊 Análisis de costo y ganancia — <strong>{{ areaLabel }}</strong></span>
           <button class="cost-meta-target" @click="openTarget" title="Editar meta">
@@ -164,13 +165,22 @@
             </tbody>
             <tfoot>
               <tr class="sum-net">
-                <td>Neto (ingresos − salidas)</td>
+                <td>💰 Total ganancia (ingresos − salidas)</td>
                 <template v-if="showAreaCols">
                   <td class="r" :class="netoRow.bar >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.bar) }}</td>
                   <td class="r" :class="netoRow.restaurante >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.restaurante) }}</td>
                   <td class="r" v-if="showGeneralCol" :class="netoRow.general >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.general) }}</td>
                 </template>
                 <td class="r strong" :class="netoRow.total >= 0 ? 'pos' : 'neg'">{{ formatCOP(netoRow.total) }}</td>
+              </tr>
+              <tr class="sum-pct">
+                <td>📈 % de ganancia <em>(sobre ingresos)</em></td>
+                <template v-if="showAreaCols">
+                  <td class="r">{{ fmtPct(netoRow.bar, ingresosTotals.bar) }}</td>
+                  <td class="r">{{ fmtPct(netoRow.restaurante, ingresosTotals.restaurante) }}</td>
+                  <td class="r" v-if="showGeneralCol">{{ fmtPct(netoRow.general, ingresosTotals.general) }}</td>
+                </template>
+                <td class="r strong">{{ fmtPct(netoRow.total, ingresosTotals.total) }}</td>
               </tr>
             </tfoot>
           </table>
@@ -529,6 +539,8 @@ const refSel = computed(() => {
 })
 
 function formatCOP(v) { return '$' + Number(v || 0).toLocaleString('es-CO') }
+/** % de ganancia = ganancia ÷ ingresos. '—' si no hubo ingresos. */
+function fmtPct(ganancia, ingresos) { return ingresos > 0 ? Math.round(ganancia / ingresos * 100) + '%' : '—' }
 function formatDate(iso) { return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }) }
 function areaTag(a) { return a === 'restaurante' ? '🍽️ Rest.' : a === 'bar' ? '🍺 Bar' : 'General' }
 function bucketIcon(b) { return b === 'banco' ? '🏦 Banco' : '💵 Efectivo' }
@@ -786,8 +798,11 @@ onMounted(load)
 .sum-section.out td { background: #fef2f2; color: #dc2626; }
 /* Subtotales por bloque */
 .sum-subtotal td { font-weight: 700; color: var(--text); background: var(--bg); }
-/* Fila de neto */
+/* Fila de ganancia (neto) y % */
 .sum-table tfoot .sum-net td { border-top: 2px solid var(--border); font-weight: 800; background: var(--surface-2); font-size: 14px; }
+.sum-table tfoot .sum-pct td { font-weight: 700; background: var(--surface-2); color: var(--text-secondary); }
+.sum-table tfoot .sum-pct em { font-style: normal; font-weight: 500; font-size: 11.5px; color: var(--text-light); }
+.sum-table tfoot .sum-pct .strong { color: var(--text); }
 .sum-empty { text-align: center; color: var(--text-light); padding: 20px; }
 
 .config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: center; }
