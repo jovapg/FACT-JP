@@ -299,6 +299,20 @@
             </div>
           </div>
 
+          <!-- Categoría de la salida: cae en la fila correcta del resumen -->
+          <div class="form-group" v-if="manualForm.type === 'egreso'">
+            <label class="form-label">Categoría de la salida</label>
+            <select v-model="manualForm.category" class="form-control">
+              <option value="reponer">🛒 Compra / mercancía</option>
+              <option value="gasto">💸 Gasto</option>
+              <option value="proveedor">🚚 Proveedor</option>
+              <option value="nomina">👥 Nómina</option>
+              <option value="arriendo">🏠 Arriendo</option>
+              <option value="credito">💳 Crédito</option>
+              <option value="manual">✏️ Otro</option>
+            </select>
+          </div>
+
           <div class="grid grid-2">
             <div class="form-group">
               <label class="form-label">Área</label>
@@ -610,9 +624,9 @@ async function saveRef() {
 }
 
 // ── Movimiento manual ──
-const manualForm = ref({ type: 'egreso', area: 'bar', bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: '' })
+const manualForm = ref({ type: 'egreso', category: 'reponer', area: 'bar', bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: '' })
 function openManual() {
-  manualForm.value = { type: 'egreso', area: area.value === 'total' ? 'bar' : area.value, bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: new Date().toISOString().slice(0, 10) }
+  manualForm.value = { type: 'egreso', category: 'reponer', area: area.value === 'total' ? 'bar' : area.value, bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: new Date().toISOString().slice(0, 10) }
   showManual.value = true
 }
 async function saveManual() {

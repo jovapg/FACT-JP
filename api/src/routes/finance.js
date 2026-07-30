@@ -160,11 +160,15 @@ async function buildMovements(id) {
   // 4. Movimientos manuales
   const cfg = await loadConfig(id);
   for (const m of cfg.manual) {
+    // Un egreso manual con categoría cae en esa fila del resumen (compra, gasto…);
+    // sin categoría o ingreso → 'manual'. Los traslados no son ingreso/egreso.
+    const kind = m.type === 'traslado' ? 'traslado'
+      : (m.type === 'egreso' && m.category ? m.category : 'manual');
     moves.push({
       id: m.id, date: m.date, type: m.type, area: m.area || 'general',
       bucket: m.bucket || 'efectivo', amount: m.amount || 0, from: m.from, to: m.to,
-      label: m.description || 'Movimiento manual',
-      kind: m.type === 'traslado' ? 'traslado' : 'manual', source: 'manual', locked: false
+      label: m.description || (m.type === 'egreso' && KIND_LABEL[m.category]) || 'Movimiento manual',
+      kind, source: 'manual', locked: false
     });
   }
 
@@ -341,6 +345,12 @@ router.post('/finance/manual', authenticate, adminOnly, async (req, res) => {
       date: (date && !isNaN(new Date(date).getTime())) ? new Date(date).toISOString() : new Date().toISOString(),
       registeredBy: req.user.name || req.user.username
     };
+    // Categoría de la salida (compra, gasto, arriendo, etc.) para que caiga en la
+    // fila correcta del resumen. Solo aplica a egresos; ingreso/traslado quedan sin ella.
+    const CATS = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'credito', 'manual'];
+    if (type === 'egreso') {
+      mov.category = CATS.includes(req.body.category) ? req.body.category : 'manual';
+    }
     if (type === 'traslado') {
       mov.from = from === 'banco' ? 'banco' : 'efectivo';
       mov.to = mov.from === 'banco' ? 'efectivo' : 'banco';
