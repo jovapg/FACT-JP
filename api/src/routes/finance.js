@@ -244,12 +244,13 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
       banco: balances.bar.banco + balances.restaurante.banco + balances.general.banco
     };
 
-    // Movimientos a mostrar: dentro del periodo [from, to] y nunca antes de la
-    // fecha de inicio (lo anterior ya está dentro del saldo inicial).
+    // Movimientos a mostrar: dentro del periodo [from, to]. No se recortan por la
+    // fecha de inicio para que SIEMPRE se puedan ver meses pasados (el manejo es
+    // mensual y arranca de cero; el saldo inicial acumulado ya no aplica aquí).
     const { from, to } = req.query;
     const fromTime = from ? cotStart(from) : -Infinity;
     const toTime = to ? cotStart(to) + 86400000 - 1 : Infinity; // incluye todo el día 'to' (COT)
-    const lowerBound = Math.max(openingTime, fromTime);
+    const lowerBound = fromTime;
     const movements = all
       .filter(m => {
         const t = new Date(m.date).getTime();

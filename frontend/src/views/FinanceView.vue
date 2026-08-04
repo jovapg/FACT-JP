@@ -53,9 +53,9 @@
           </div>
         </div>
         <div class="fcard total">
-          <p class="fcard-label">💰 Dinero que debería tener</p>
+          <p class="fcard-label">💰 Dinero del mes</p>
           <p class="fcard-value">{{ formatCOP(sel.efectivo + sel.banco) }}</p>
-          <div class="fcard-sub"><span>Efectivo + banco (salidas ya restadas)</span></div>
+          <div class="fcard-sub"><span>Ingresos − salidas del periodo (inicia en $0)</span></div>
         </div>
       </div>
 
@@ -448,14 +448,28 @@ const periods = [
 ]
 
 const emptyArea = () => ({ efectivo: 0, banco: 0 })
-const bal = computed(() => finance.data?.balances || { bar: emptyArea(), restaurante: emptyArea(), general: emptyArea() })
-const sel = computed(() => {
-  if (!finance.data) return emptyArea()
-  return area.value === 'total' ? finance.data.totals : bal.value[area.value]
-})
 
 const movsAll = computed(() => finance.data?.movements || [])
 const movs = computed(() => area.value === 'total' ? movsAll.value : movsAll.value.filter(m => m.area === area.value))
+
+// Saldos del PERIODO seleccionado, empezando en CERO. Cada mes arranca de cero
+// (lo que sobra el dueño lo pasa al ahorro), así que la plata del mes = los
+// movimientos del mes: ingresos suman, salidas restan, traslados mueven bucket.
+const bal = computed(() => {
+  const b = { bar: emptyArea(), restaurante: emptyArea(), general: emptyArea() }
+  for (const m of movsAll.value) {
+    const ar = b[m.area] ? m.area : 'general'
+    if (m.type === 'ingreso') b[ar][m.bucket] += m.amount
+    else if (m.type === 'egreso') b[ar][m.bucket] -= m.amount
+    else if (m.type === 'traslado') { const f = m.from || 'efectivo', t = m.to || 'banco'; b[ar][f] -= m.amount; b[ar][t] += m.amount }
+  }
+  return b
+})
+const totals = computed(() => ({
+  efectivo: bal.value.bar.efectivo + bal.value.restaurante.efectivo + bal.value.general.efectivo,
+  banco: bal.value.bar.banco + bal.value.restaurante.banco + bal.value.general.banco
+}))
+const sel = computed(() => area.value === 'total' ? totals.value : bal.value[area.value])
 const entradas = computed(() => movs.value.filter(m => m.type === 'ingreso'))
 const salidas = computed(() => movs.value.filter(m => m.type === 'egreso' || m.type === 'traslado'))
 const periodIngresos = computed(() => entradas.value.reduce((s, m) => s + m.amount, 0))
