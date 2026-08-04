@@ -23,6 +23,12 @@
       <div class="seg">
         <button v-for="p in periods" :key="p.value" :class="['seg-btn', { active: period === p.value }]" @click="setPeriod(p.value)">{{ p.label }}</button>
       </div>
+      <!-- Navegador de mes: solo visible cuando el periodo es "Mes" -->
+      <div class="month-nav" v-if="period === 'mes'">
+        <button class="mn-btn" @click="shiftMonth(-1)" title="Mes anterior">◀</button>
+        <span class="mn-label">{{ monthLabel }}</span>
+        <button class="mn-btn" @click="shiftMonth(1)" :disabled="isCurrentMonth" title="Mes siguiente">▶</button>
+      </div>
     </div>
 
     <div v-if="finance.loading && !finance.data" class="loading"><div class="spinner"></div></div>
@@ -412,6 +418,16 @@ const reporting = ref(false)
 
 const area = ref('total')
 const period = ref('mes')
+// Mes que se está viendo (YYYY-MM). Por defecto el mes actual; el navegador ◀▶
+// permite ir a meses pasados (julio, junio…) para leer su balance.
+function currentYm() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}` }
+const monthCursor = ref(currentYm())
+const isCurrentMonth = computed(() => monthCursor.value >= currentYm())
+const monthLabel = computed(() => {
+  const [y, m] = monthCursor.value.split('-').map(Number)
+  const s = new Date(y, m - 1, 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+})
 const saving = ref(false)
 const showConfig = ref(false)
 const showManual = ref(false)
@@ -560,12 +576,18 @@ function areaTag(a) { return a === 'restaurante' ? '🍽️ Rest.' : a === 'bar'
 function bucketIcon(b) { return b === 'banco' ? '🏦 Banco' : '💵 Efectivo' }
 
 /** Calcula el rango de fechas según el preset de periodo */
+/** Rango [from, to] del mes que apunta el cursor (YYYY-MM). */
+function monthRange(ym) {
+  const [y, m] = ym.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate() // último día del mes
+  return { from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, '0')}` }
+}
 function rangeFor(p) {
   const now = new Date()
   const iso = (d) => d.toISOString().slice(0, 10)
   if (p === 'hoy') return { from: iso(now), to: iso(now) }
   if (p === 'semana') { const f = new Date(now); f.setDate(f.getDate() - 6); return { from: iso(f), to: iso(now) } }
-  if (p === 'mes') return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) }
+  if (p === 'mes') return monthRange(monthCursor.value)
   return {} // 'todo'
 }
 
@@ -573,7 +595,23 @@ async function load() {
   try { await finance.fetchFinance(rangeFor(period.value)) }
   catch (err) { toast(err.response?.data?.error || 'Error al cargar finanzas', 'error') }
 }
-function setPeriod(p) { period.value = p; load() }
+function setPeriod(p) {
+  period.value = p
+  if (p === 'mes') monthCursor.value = currentYm() // al pulsar "Mes" vuelve al mes actual
+  load()
+}
+/** Mueve el navegador de mes (no permite ir al futuro). */
+function shiftMonth(delta) {
+  let [y, m] = monthCursor.value.split('-').map(Number)
+  m += delta
+  while (m < 1) { m += 12; y-- }
+  while (m > 12) { m -= 12; y++ }
+  const target = `${y}-${String(m).padStart(2, '0')}`
+  if (target > currentYm()) return // no navegar al futuro
+  monthCursor.value = target
+  period.value = 'mes'
+  load()
+}
 
 // ── Saldo inicial ──
 const configForm = ref({ openingDate: '', bar: emptyArea(), restaurante: emptyArea() })
@@ -722,6 +760,11 @@ onMounted(load)
 .seg { display: inline-flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 3px; flex-wrap: wrap; }
 .seg-btn { border: none; background: none; padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
 .seg-btn.active { background: var(--accent); color: #1a0a00; }
+.month-nav { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 3px 6px; }
+.mn-btn { border: none; background: var(--surface); color: var(--text); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.mn-btn:hover:not(:disabled) { background: var(--accent); color: #1a0a00; }
+.mn-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.mn-label { font-size: 13px; font-weight: 700; min-width: 120px; text-align: center; }
 
 .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .fcard { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; background: var(--surface); }
