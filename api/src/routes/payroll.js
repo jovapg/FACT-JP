@@ -40,21 +40,47 @@ const DEFAULT_RATES = { dia: 50000, medio: 25000, hora: 6250 };
 
 const isAdmin = (req) => req.user.role === 'superadmin' || req.user.role === 'admin';
 
-/** Carga payroll.json normalizado: { rates, employeeRates, entries }. */
+/** Carga payroll.json normalizado: { rates, employeeRates, entries, payments }. */
 async function loadPayroll(id) {
   const data = await readJSON(payrollPath(id));
   if (!data || Array.isArray(data)) {
     // Formato viejo (array suelto) o inexistente → normalizar
-    return { rates: { ...DEFAULT_RATES }, employeeRates: {}, entries: Array.isArray(data) ? data : [] };
+    return { rates: { ...DEFAULT_RATES }, employeeRates: {}, entries: Array.isArray(data) ? data : [], payments: [] };
   }
   return {
     rates: { ...DEFAULT_RATES, ...(data.rates || {}) },
     employeeRates: (data.employeeRates && typeof data.employeeRates === 'object') ? data.employeeRates : {},
-    entries: Array.isArray(data.entries) ? data.entries : []
+    entries: Array.isArray(data.entries) ? data.entries : [],
+    payments: Array.isArray(data.payments) ? data.payments : []
   };
 }
 
 async function savePayroll(id, data) { await writeJSON(payrollPath(id), data); }
+
+/**
+ * Saldo de un empleado por bolsillo: lo que se le debe (días APROBADOS) menos lo
+ * que ya se le abonó (payments). Los días viejos con status 'pagado' (modelo
+ * anterior) ya están saldados y no cuentan aquí.
+ * @returns { owedBar, owedRest, paidBar, paidRest, balanceBar, balanceRest }
+ */
+function employeeBalance(data, employeeId) {
+  let owedBar = 0, owedRest = 0, paidBar = 0, paidRest = 0;
+  for (const e of data.entries) {
+    if (e.employeeId !== employeeId || e.status !== 'aprobado') continue;
+    owedBar += e.amountBar || 0;
+    owedRest += e.amountRest || 0;
+  }
+  for (const p of data.payments) {
+    if (p.employeeId !== employeeId) continue;
+    paidBar += p.amountBar || 0;
+    paidRest += p.amountRest || 0;
+  }
+  return {
+    owedBar, owedRest, paidBar, paidRest,
+    balanceBar: owedBar - paidBar,
+    balanceRest: owedRest - paidRest
+  };
+}
 
 /** Tarifa efectiva de un empleado: su tarifa propia si existe, si no la general. */
 function ratesFor(data, employeeId) {
@@ -127,12 +153,15 @@ router.get('/payroll', authenticate, async (req, res) => {
     if (to) list = list.filter(e => e.date <= to);
     list = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
+    // Pagos (abonos): admin ve todos; cajero solo los suyos
+    const payments = isAdmin(req) ? data.payments : data.payments.filter(p => p.employeeId === req.user.id);
+
     if (isAdmin(req)) {
       // El admin recibe la tarifa general + el mapa de tarifas por persona
-      res.json({ entries: list, rates: data.rates, employeeRates: data.employeeRates });
+      res.json({ entries: list, payments, rates: data.rates, employeeRates: data.employeeRates });
     } else {
       // El cajero solo recibe SU tarifa efectiva (para la vista previa), sin ver las demás
-      res.json({ entries: list, rates: ratesFor(data, req.user.id), employeeRates: {} });
+      res.json({ entries: list, payments, rates: ratesFor(data, req.user.id), employeeRates: {} });
     }
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
@@ -317,45 +346,55 @@ router.post('/payroll/approve', authenticate, async (req, res) => {
 });
 
 /**
- * POST /payroll/pay — generar el pago (admin).
- * Body: { employeeId, ids: [...], method: 'efectivo'|'banco', date? }
- * Marca los días como pagados con un mismo paymentId. Los egresos (Bar y
- * Restaurante) se derivan en Finanzas desde estos días pagados.
+ * POST /payroll/pay — registrar un abono/pago al empleado (admin).
+ * Body: { employeeId, employeeName?, amountBar, amountRest, method, date?, note? }
+ *
+ * Es un abono por MONTOS (parcial permitido): se digita cuánto se paga de Bar y
+ * cuánto de Restaurante. No puede pasar del saldo que se le debe en cada bolsillo.
+ * Baja el saldo del empleado; los egresos en Finanzas se derivan de estos pagos.
  */
 router.post('/payroll/pay', authenticate, async (req, res) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
     const { employeeId, method } = req.body;
-    const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
-    if (!employeeId || !ids.length) return res.status(400).json({ error: 'Faltan datos del pago' });
+    if (!employeeId) return res.status(400).json({ error: 'Falta el empleado' });
+
+    const amountBar = Math.max(0, Math.round(Number(req.body.amountBar) || 0));
+    const amountRest = Math.max(0, Math.round(Number(req.body.amountRest) || 0));
+    if (amountBar + amountRest <= 0) return res.status(400).json({ error: 'El pago debe ser mayor a 0' });
 
     const data = await loadPayroll(req.params.businessId);
-    // Solo días aprobados, no pagados, del empleado indicado
-    const toPay = data.entries.filter(e =>
-      ids.includes(e.id) && e.employeeId === employeeId && e.status === 'aprobado'
-    );
-    if (!toPay.length) return res.status(400).json({ error: 'No hay días aprobados por pagar para este empleado.' });
+    const bal = employeeBalance(data, employeeId);
 
-    const paymentId = uuidv4();
+    // Tope: no se puede pagar más de lo que se le debe en cada bolsillo
+    if (amountBar > bal.balanceBar) {
+      return res.status(400).json({ error: `El abono de Bar (${amountBar}) supera lo que se debe (${bal.balanceBar}).` });
+    }
+    if (amountRest > bal.balanceRest) {
+      return res.status(400).json({ error: `El abono de Restaurante (${amountRest}) supera lo que se debe (${bal.balanceRest}).` });
+    }
+
     const paidAt = (req.body.date && !isNaN(new Date(req.body.date).getTime()))
       ? new Date(req.body.date).toISOString() : new Date().toISOString();
-    const payMethod = method === 'banco' ? 'banco' : 'efectivo';
 
-    let totalBar = 0, totalRest = 0;
-    for (const e of toPay) {
-      e.status = 'pagado';
-      e.paymentId = paymentId;
-      e.paidAt = paidAt;
-      e.payMethod = payMethod;
-      e.paidBy = req.user.name || req.user.username;
-      totalBar += e.amountBar || 0;
-      totalRest += e.amountRest || 0;
-    }
+    const payment = {
+      id: uuidv4(),
+      employeeId,
+      employeeName: req.body.employeeName || '',
+      amountBar, amountRest,
+      method: method === 'banco' ? 'banco' : 'efectivo',
+      date: paidAt,
+      note: req.body.note || '',
+      paidBy: req.user.name || req.user.username
+    };
+    data.payments.push(payment);
     await savePayroll(req.params.businessId, data);
 
+    const after = employeeBalance(data, employeeId);
     res.json({
-      success: true, paymentId, method: payMethod, paidAt,
-      totalBar, totalRest, total: totalBar + totalRest, days: toPay.length
+      success: true, payment,
+      total: amountBar + amountRest,
+      balanceBar: after.balanceBar, balanceRest: after.balanceRest
     });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });

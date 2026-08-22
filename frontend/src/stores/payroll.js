@@ -17,6 +17,7 @@ import { useAuthStore } from './auth.js'
 export const usePayrollStore = defineStore('payroll', () => {
   const auth = useAuthStore()
   const entries = ref([])
+  const payments = ref([])        // abonos/pagos hechos (modelo por montos)
   const rates = ref({ dia: 50000, medio: 25000, hora: 6250 })
   const employeeRates = ref({})   // { [employeeId]: { dia, medio, hora } } — solo admin
   const users = ref([])           // usuarios del negocio (para asignar tarifas)
@@ -34,6 +35,7 @@ export const usePayrollStore = defineStore('payroll', () => {
     try {
       const res = await api.get(`/api/${bizId()}/payroll`, { params })
       entries.value = res.data.entries || []
+      payments.value = res.data.payments || []
       if (res.data.rates) rates.value = res.data.rates
       employeeRates.value = res.data.employeeRates || {}
     } finally {
@@ -93,13 +95,14 @@ export const usePayrollStore = defineStore('payroll', () => {
     return res.data
   }
 
-  async function pay({ employeeId, ids, method, date }) {
-    const res = await api.post(`/api/${bizId()}/payroll/pay`, { employeeId, ids, method, date })
+  /** Abono/pago por montos: { employeeId, employeeName, amountBar, amountRest, method, date } */
+  async function pay(payload) {
+    const res = await api.post(`/api/${bizId()}/payroll/pay`, payload)
     return res.data
   }
 
   return {
-    entries, rates, employeeRates, users, loading, pendingCount,
+    entries, payments, rates, employeeRates, users, loading, pendingCount,
     fetch, fetchRates, saveRates, fetchUsers, ratesFor, saveEmployeeRate,
     createEntry, updateEntry, deleteEntry, approve, pay
   }

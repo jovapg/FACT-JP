@@ -39,11 +39,17 @@ const salesPath     = (id) => path.join(getBusinessPath(id), 'sales.json');
 const debtorsPath   = (id) => path.join(getBusinessPath(id), 'debtors.json');
 const payrollPath   = (id) => path.join(getBusinessPath(id), 'payroll.json');
 
-/** Días de nómina ya pagados (payroll.json puede ser {entries} o array viejo). */
+/** Días de nómina ya pagados con el modelo VIEJO (entries con status 'pagado'). */
 async function paidPayrollEntries(id) {
   const data = await readJSON(payrollPath(id));
   const entries = Array.isArray(data) ? data : (data?.entries || []);
   return entries.filter(e => e.status === 'pagado' && e.paymentId);
+}
+
+/** Pagos/abonos de nómina del modelo NUEVO (payroll.json .payments). */
+async function payrollPayments(id) {
+  const data = await readJSON(payrollPath(id));
+  return (data && !Array.isArray(data) && Array.isArray(data.payments)) ? data.payments : [];
 }
 
 /** Bucket de Finanzas según forma de pago: 💵 efectivo o 🏦 banco */
@@ -193,6 +199,20 @@ async function buildMovements(id) {
     if (b.rest > 0) moves.push({
       id: `nom-${pid}-rest`, date: b.date, type: 'egreso', area: 'restaurante',
       bucket, amount: b.rest, label: `Nómina: ${b.name}`, kind: 'nomina', source: 'payroll', locked: true
+    });
+  }
+
+  // 5b. Nómina (modelo nuevo): cada abono/pago genera egresos Bar y Restaurante
+  // por el monto pagado en cada bolsillo, con su forma de pago (efectivo/banco).
+  for (const p of await payrollPayments(id)) {
+    const bucket = bucketOfMethod(p.method);
+    if ((p.amountBar || 0) > 0) moves.push({
+      id: `nom-pay-${p.id}-bar`, date: p.date, type: 'egreso', area: 'bar',
+      bucket, amount: p.amountBar, label: `Nómina: ${p.employeeName || ''}`.trim(), kind: 'nomina', source: 'payroll', locked: true
+    });
+    if ((p.amountRest || 0) > 0) moves.push({
+      id: `nom-pay-${p.id}-rest`, date: p.date, type: 'egreso', area: 'restaurante',
+      bucket, amount: p.amountRest, label: `Nómina: ${p.employeeName || ''}`.trim(), kind: 'nomina', source: 'payroll', locked: true
     });
   }
 
@@ -456,12 +476,20 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
         salidas[k] += amt;
       }
     }
-    // Nómina pagada del día (payroll.json)
+    // Nómina pagada del día — modelo viejo (entries pagados)
     for (const e of await paidPayrollEntries(id)) {
       if (!inDay(e.paidAt)) continue;
       const amt = e.amount || 0;
       salidas.total += amt;
       salidas[bucketOfMethod(e.payMethod)] += amt;
+      salidas.nomina += amt;
+    }
+    // Nómina pagada del día — modelo nuevo (abonos por montos)
+    for (const p of await payrollPayments(id)) {
+      if (!inDay(p.date)) continue;
+      const amt = (p.amountBar || 0) + (p.amountRest || 0);
+      salidas.total += amt;
+      salidas[bucketOfMethod(p.method)] += amt;
       salidas.nomina += amt;
     }
 

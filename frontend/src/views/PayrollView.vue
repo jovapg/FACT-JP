@@ -76,16 +76,18 @@
           </div>
           <div class="emp-totals">
             <div class="emp-total">
-              <span class="et-label">🍺 Bar por pagar</span>
-              <span class="et-val">{{ fmtCOP(emp.unpaidBar) }}</span>
+              <span class="et-label">🍺 Bar — le debes</span>
+              <span class="et-val">{{ fmtCOP(emp.balanceBar) }}</span>
+              <span class="et-sub">pagado {{ fmtCOP(emp.paidBar) }} de {{ fmtCOP(emp.owedBar) }}</span>
             </div>
             <div class="emp-total">
-              <span class="et-label">🍽️ Rest. por pagar</span>
-              <span class="et-val">{{ fmtCOP(emp.unpaidRest) }}</span>
+              <span class="et-label">🍽️ Rest. — le debes</span>
+              <span class="et-val">{{ fmtCOP(emp.balanceRest) }}</span>
+              <span class="et-sub">pagado {{ fmtCOP(emp.paidRest) }} de {{ fmtCOP(emp.owedRest) }}</span>
             </div>
             <div class="emp-total strong">
-              <span class="et-label">Total aprobado</span>
-              <span class="et-val">{{ fmtCOP(emp.approvedUnpaid) }}</span>
+              <span class="et-label">Saldo total</span>
+              <span class="et-val">{{ fmtCOP(emp.balanceTotal) }}</span>
             </div>
           </div>
         </div>
@@ -94,8 +96,8 @@
           <button v-if="emp.pendingCount" class="btn btn-sm btn-outline" @click="approveAll(emp)">
             ✓ Aprobar todos los pendientes
           </button>
-          <button v-if="emp.approvedCount" class="btn btn-sm btn-primary" @click="openPay(emp)">
-            💵 Generar pago ({{ fmtCOP(emp.approvedUnpaid) }})
+          <button v-if="emp.balanceTotal > 0" class="btn btn-sm btn-primary" @click="openPay(emp)">
+            💵 Pagar / abonar ({{ fmtCOP(emp.balanceTotal) }})
           </button>
         </div>
 
@@ -206,11 +208,23 @@
           <button class="btn-close" @click="payModal = null">×</button>
         </div>
         <div class="modal-body">
-          <p class="pay-info">{{ payModal.ids.length }} día(s) aprobado(s) por pagar.</p>
+          <p class="pay-info">Digita cuánto le vas a pagar de cada bolsillo. Puedes abonar parcial; no puedes pasar del saldo.</p>
+
+          <div class="pay-inputs">
+            <div class="pay-in">
+              <label class="form-label">🍺 Bar <span class="saldo-tag">saldo {{ fmtCOP(payModal.balanceBar) }}</span></label>
+              <input v-model.number="payForm.bar" type="number" min="0" :max="payModal.balanceBar" class="form-control" />
+              <button class="link-mini" @click="payForm.bar = payModal.balanceBar">Todo</button>
+            </div>
+            <div class="pay-in">
+              <label class="form-label">🍽️ Restaurante <span class="saldo-tag">saldo {{ fmtCOP(payModal.balanceRest) }}</span></label>
+              <input v-model.number="payForm.rest" type="number" min="0" :max="payModal.balanceRest" class="form-control" />
+              <button class="link-mini" @click="payForm.rest = payModal.balanceRest">Todo</button>
+            </div>
+          </div>
+
           <div class="pay-breakdown">
-            <div class="pb-row"><span>🍺 Bar</span><strong>{{ fmtCOP(payModal.bar) }}</strong></div>
-            <div class="pb-row"><span>🍽️ Restaurante</span><strong>{{ fmtCOP(payModal.rest) }}</strong></div>
-            <div class="pb-row total"><span>Total</span><strong>{{ fmtCOP(payModal.bar + payModal.rest) }}</strong></div>
+            <div class="pb-row total"><span>Total a pagar ahora</span><strong>{{ fmtCOP((payForm.bar || 0) + (payForm.rest || 0)) }}</strong></div>
           </div>
 
           <div class="form-group">
@@ -224,7 +238,7 @@
             <label class="form-label">Fecha del pago</label>
             <input v-model="payDate" type="date" class="form-control" />
           </div>
-          <p class="hint">Se crearán 2 salidas en Finanzas (Bar y Restaurante) que se descontarán del {{ payMethod }}.</p>
+          <p class="hint">Se crearán las salidas en Finanzas (Bar y/o Restaurante) que se descontarán del {{ payMethod }}.</p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="payModal = null">Cancelar</button>
@@ -341,7 +355,8 @@ const form = reactive({ date: todayCOT(), type: 'completo', area: 'ambos', from:
 const who = ref('')          // admin: para quién es el día (id o '__new__')
 const newName = ref('')      // admin: nombre de un trabajador ocasional
 
-const payModal = ref(null)   // { name, employeeId, ids, bar, rest }
+const payModal = ref(null)   // { name, employeeId, balanceBar, balanceRest }
+const payForm = reactive({ bar: 0, rest: 0 })
 const payMethod = ref('efectivo')
 const payDate = ref(todayCOT())
 const paying = ref(false)
@@ -411,22 +426,36 @@ const myStats = computed(() => {
   return { total, paid, pending, count }
 })
 
-// ── Agrupación por empleado (admin) ──────────────────────
+// ── Agrupación por empleado (admin): días + saldo (le debo − pagado) ──
 const byEmployee = computed(() => {
   const map = {}
+  const g = (id, name) => map[id] || (map[id] = {
+    id, name: name || 'Empleado', items: [],
+    pendingCount: 0, approvedCount: 0,
+    owedBar: 0, owedRest: 0, paidBar: 0, paidRest: 0
+  })
+  // Días reportados
   for (const e of store.entries) {
-    const g = map[e.employeeId] || (map[e.employeeId] = {
-      id: e.employeeId, name: e.employeeName || 'Empleado', items: [],
-      pendingCount: 0, approvedCount: 0, unpaidBar: 0, unpaidRest: 0, approvedUnpaid: 0
-    })
-    g.items.push(e)
-    if (e.status === 'pendiente') g.pendingCount++
+    const emp = g(e.employeeId, e.employeeName)
+    emp.items.push(e)
+    if (e.status === 'pendiente') emp.pendingCount++
     if (e.status === 'aprobado') {
-      g.approvedCount++
-      g.unpaidBar += e.amountBar || 0
-      g.unpaidRest += e.amountRest || 0
-      g.approvedUnpaid += e.amount || 0
+      emp.approvedCount++
+      emp.owedBar += e.amountBar || 0
+      emp.owedRest += e.amountRest || 0
     }
+  }
+  // Abonos/pagos ya hechos
+  for (const p of store.payments) {
+    const emp = g(p.employeeId, p.employeeName)
+    emp.paidBar += p.amountBar || 0
+    emp.paidRest += p.amountRest || 0
+  }
+  // Saldos
+  for (const emp of Object.values(map)) {
+    emp.balanceBar = emp.owedBar - emp.paidBar
+    emp.balanceRest = emp.owedRest - emp.paidRest
+    emp.balanceTotal = emp.balanceBar + emp.balanceRest
   }
   return Object.values(map)
 })
@@ -532,26 +561,31 @@ async function approveAll(emp) {
   catch (err) { toast(err.response?.data?.error || 'Error', 'error') }
 }
 function openPay(emp) {
-  const approved = emp.items.filter(e => e.status === 'aprobado')
   payModal.value = {
     name: emp.name, employeeId: emp.id,
-    ids: approved.map(e => e.id),
-    bar: approved.reduce((s, e) => s + (e.amountBar || 0), 0),
-    rest: approved.reduce((s, e) => s + (e.amountRest || 0), 0)
+    balanceBar: emp.balanceBar, balanceRest: emp.balanceRest
   }
+  payForm.bar = emp.balanceBar   // sugerido: todo el saldo (editable)
+  payForm.rest = emp.balanceRest
   payMethod.value = 'efectivo'
   payDate.value = todayCOT()
 }
 async function confirmPay() {
+  const bar = Math.max(0, Number(payForm.bar) || 0)
+  const rest = Math.max(0, Number(payForm.rest) || 0)
+  if (bar + rest <= 0) return toast('Digita cuánto vas a pagar.', 'error')
+  if (bar > payModal.value.balanceBar) return toast('El abono de Bar supera el saldo.', 'error')
+  if (rest > payModal.value.balanceRest) return toast('El abono de Restaurante supera el saldo.', 'error')
   paying.value = true
   try {
     const r = await store.pay({
       employeeId: payModal.value.employeeId,
-      ids: payModal.value.ids,
+      employeeName: payModal.value.name,
+      amountBar: bar, amountRest: rest,
       method: payMethod.value,
       date: payDate.value
     })
-    toast(`Pago registrado: ${fmtCOP(r.total)} (${r.days} días)`, 'success')
+    toast(`Pago registrado: ${fmtCOP(r.total)}`, 'success')
     payModal.value = null
     await store.fetch()
   } catch (err) {
@@ -662,6 +696,7 @@ onMounted(() => store.fetch())
 .emp-total { display:flex; flex-direction:column; align-items:flex-end; }
 .et-label { font-size:11px; color:var(--text-light); }
 .et-val { font-size:15px; font-weight:700; }
+.et-sub { font-size:10.5px; color:var(--text-light); margin-top:1px; }
 .emp-total.strong .et-val { color:var(--success); font-size:17px; font-weight:800; }
 .emp-actions { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
 
@@ -698,6 +733,10 @@ onMounted(() => store.fetch())
 .amount-preview strong { font-size:20px; color:var(--success); }
 
 .pay-info { font-size:13px; color:var(--text-secondary); margin-bottom:10px; }
+.pay-inputs { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.pay-in { flex:1; min-width:160px; position:relative; }
+.saldo-tag { font-weight:500; font-size:11px; color:var(--text-light); margin-left:4px; }
+.link-mini { background:none; border:none; color:var(--accent); font-size:11px; font-weight:700; cursor:pointer; padding:2px 0 0; text-decoration:underline; }
 .pay-breakdown { background:var(--bg); border-radius:10px; padding:10px 14px; margin-bottom:16px; }
 .pb-row { display:flex; justify-content:space-between; padding:5px 0; font-size:14px; }
 .pb-row.total { border-top:1px solid var(--border); margin-top:4px; padding-top:8px; font-weight:800; }
