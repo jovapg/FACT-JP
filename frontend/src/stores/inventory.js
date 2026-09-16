@@ -101,6 +101,13 @@ export const useInventoryStore = defineStore('inventory', () => {
     return res.data
   }
 
+  /** Pone el stock mínimo en 0 a TODOS los ítems. Refresca el estado. */
+  async function zeroMinStock() {
+    const res = await api.post(`/api/${bizId()}/inventory/min-stock-zero`)
+    await fetchInventory()
+    return res.data
+  }
+
   /** Crea una nueva receta/ítem de menú */
   async function createRecipe(data) {
     const res = await api.post(`/api/${bizId()}/recipes`, data)
@@ -126,7 +133,7 @@ export const useInventoryStore = defineStore('inventory', () => {
     items, recipes, loading,
     lowStockItems, categories, recipeCategories,
     fetchInventory, fetchRecipes,
-    createItem, updateItem, deleteItem, adjustStock, countInventory,
+    createItem, updateItem, deleteItem, adjustStock, countInventory, zeroMinStock,
     createRecipe, updateRecipe, deleteRecipe
   }
 })

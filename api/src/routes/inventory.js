@@ -89,6 +89,23 @@ router.put('/inventory/:id', authenticate, async (req, res) => {
   }
 });
 
+/** POST /inventory/min-stock-zero — Pone el stock mínimo en 0 a TODOS los ítems (admin). */
+router.post('/inventory/min-stock-zero', authenticate, async (req, res) => {
+  try {
+    if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
+    const items = await readJSON(inventoryPath(req.params.businessId)) || [];
+    let changed = 0;
+    for (const it of items) {
+      if ((it.minStock || 0) !== 0) changed++;
+      it.minStock = 0;
+    }
+    await writeJSON(inventoryPath(req.params.businessId), items);
+    res.json({ success: true, total: items.length, changed });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /** DELETE — Elimina un ítem de inventario por ID */
 router.delete('/inventory/:id', authenticate, async (req, res) => {
   try {

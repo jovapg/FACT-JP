@@ -24,6 +24,35 @@ if (!fs.existsSync(dataPath)) {
 }
 console.log(`[DATA] Ruta de datos: ${path.resolve(dataPath)}`);
 
+/**
+ * Migración única (pedido del dueño): poner el stock mínimo en 0 a TODOS los
+ * productos de cada negocio. Se ejecuta al arrancar el servidor y se marca en
+ * profile.minStockZeroed para no repetirse (así el dueño puede volver a fijar
+ * mínimos después si quiere, sin que se reseteen en cada despliegue).
+ */
+(async () => {
+  try {
+    const { readJSON, writeJSON, getBusinessPath, getDataPath } = require('./src/services/fileStorage');
+    const businesses = await readJSON(path.join(getDataPath(), 'businesses.json')) || [];
+    for (const b of businesses) {
+      const profilePath = path.join(getBusinessPath(b.id), 'profile.json');
+      const profile = await readJSON(profilePath) || {};
+      if (profile.minStockZeroed) continue; // ya migrado
+      const invPath = path.join(getBusinessPath(b.id), 'inventory.json');
+      const inventory = await readJSON(invPath);
+      if (Array.isArray(inventory)) {
+        for (const it of inventory) it.minStock = 0;
+        await writeJSON(invPath, inventory);
+      }
+      profile.minStockZeroed = true;
+      await writeJSON(profilePath, profile);
+      console.log(`[migración] stock mínimo = 0 aplicado a ${b.id} (${Array.isArray(inventory) ? inventory.length : 0} productos)`);
+    }
+  } catch (e) {
+    console.error('[migración minStock] error:', e);
+  }
+})();
+
 // Multer: saves logo to data/<businessId>/logo.<ext>, one file at a time
 const logoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
