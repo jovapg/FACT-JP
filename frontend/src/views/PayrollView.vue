@@ -60,48 +60,83 @@
 
     <!-- ══════════ PANEL ADMIN ══════════ -->
     <template v-else>
+      <!-- Tira de indicadores (vistazo rápido) -->
+      <div class="ov-grid" v-if="byEmployee.length">
+        <div class="ov-card accent">
+          <span class="ov-val">{{ fmtCOP(overview.balance) }}</span>
+          <span class="ov-label">💰 Total por pagar</span>
+        </div>
+        <div class="ov-card">
+          <span class="ov-val">{{ overview.peopleWithBalance }}</span>
+          <span class="ov-label">👥 Con saldo pendiente</span>
+        </div>
+        <div class="ov-card warn">
+          <span class="ov-val">{{ overview.pending }}</span>
+          <span class="ov-label">🟡 Días por aprobar</span>
+        </div>
+        <div class="ov-card ok">
+          <span class="ov-val">{{ fmtCOP(overview.paid) }}</span>
+          <span class="ov-label">✅ Ya pagado</span>
+        </div>
+      </div>
+
       <div v-if="byEmployee.length === 0" class="empty-state">
         <div class="empty-state-icon">👥</div>
         <p class="empty-state-text">Nadie ha reportado días todavía.</p>
       </div>
 
-      <div v-for="emp in byEmployee" :key="emp.id" class="card emp-card">
-        <div class="emp-head">
-          <div>
-            <h3 class="emp-name">{{ emp.name }}</h3>
-            <div class="emp-badges">
-              <span v-if="emp.pendingCount" class="mini-badge yellow">{{ emp.pendingCount }} pendiente(s)</span>
-              <span v-if="emp.approvedCount" class="mini-badge blue">{{ emp.approvedCount }} aprobado(s)</span>
+      <!-- Tarjeta "recibo" por persona -->
+      <div v-for="emp in byEmployee" :key="emp.id" class="recibo" :class="{ settled: emp.balanceTotal === 0 && !emp.pendingCount }">
+        <div class="recibo-head">
+          <div class="rh-left">
+            <div class="avatar">{{ initials(emp.name) }}</div>
+            <div class="rh-info">
+              <h3 class="rh-name">{{ emp.name }}</h3>
+              <div class="rh-badges">
+                <span v-if="emp.pendingCount" class="mini-badge yellow">🟡 {{ emp.pendingCount }} pendiente(s)</span>
+                <span v-if="emp.approvedCount" class="mini-badge blue">🔵 {{ emp.approvedCount }} aprobado(s)</span>
+                <span v-if="emp.balanceTotal === 0 && !emp.pendingCount" class="mini-badge green">✓ al día</span>
+              </div>
             </div>
           </div>
-          <div class="emp-totals">
-            <div class="emp-total">
-              <span class="et-label">🍺 Bar — le debes</span>
-              <span class="et-val">{{ fmtCOP(emp.balanceBar) }}</span>
-              <span class="et-sub">pagado {{ fmtCOP(emp.paidBar) }} de {{ fmtCOP(emp.owedBar) }}</span>
-            </div>
-            <div class="emp-total">
-              <span class="et-label">🍽️ Rest. — le debes</span>
-              <span class="et-val">{{ fmtCOP(emp.balanceRest) }}</span>
-              <span class="et-sub">pagado {{ fmtCOP(emp.paidRest) }} de {{ fmtCOP(emp.owedRest) }}</span>
-            </div>
-            <div class="emp-total strong">
-              <span class="et-label">Saldo total</span>
-              <span class="et-val">{{ fmtCOP(emp.balanceTotal) }}</span>
-            </div>
+          <div class="rh-saldo">
+            <span class="rh-saldo-label">Saldo total</span>
+            <span class="rh-saldo-val">{{ fmtCOP(emp.balanceTotal) }}</span>
           </div>
         </div>
 
-        <div class="emp-actions">
+        <div class="recibo-body">
+          <div class="pocket bar">
+            <div class="pk-top">
+              <span class="pk-name">🍺 Bar</span>
+              <span class="pk-debe">{{ fmtCOP(emp.balanceBar) }}</span>
+            </div>
+            <div class="pk-track"><span class="pk-fill bar" :style="{ width: pctOf(emp.paidBar, emp.owedBar) + '%' }"></span></div>
+            <span class="pk-sub">pagado {{ fmtCOP(emp.paidBar) }} de {{ fmtCOP(emp.owedBar) }}</span>
+          </div>
+          <div class="pocket rest">
+            <div class="pk-top">
+              <span class="pk-name">🍽️ Restaurante</span>
+              <span class="pk-debe">{{ fmtCOP(emp.balanceRest) }}</span>
+            </div>
+            <div class="pk-track"><span class="pk-fill rest" :style="{ width: pctOf(emp.paidRest, emp.owedRest) + '%' }"></span></div>
+            <span class="pk-sub">pagado {{ fmtCOP(emp.paidRest) }} de {{ fmtCOP(emp.owedRest) }}</span>
+          </div>
+        </div>
+
+        <div class="recibo-actions">
           <button v-if="emp.pendingCount" class="btn btn-sm btn-outline" @click="approveAll(emp)">
-            ✓ Aprobar todos los pendientes
+            ✓ Aprobar {{ emp.pendingCount }} pendiente(s)
           </button>
           <button v-if="emp.balanceTotal > 0" class="btn btn-sm btn-primary" @click="openPay(emp)">
-            💵 Pagar / abonar ({{ fmtCOP(emp.balanceTotal) }})
+            💵 Pagar / abonar
+          </button>
+          <button class="btn-ghost" @click="toggle(emp.id)">
+            {{ isOpen(emp.id) ? '▾ ocultar días' : `▸ ver ${emp.items.length} día(s)` }}
           </button>
         </div>
 
-        <div class="table-wrap">
+        <div v-if="isOpen(emp.id)" class="table-wrap recibo-days">
           <table class="days-table">
             <thead>
               <tr><th>Fecha</th><th>Tipo</th><th>Bolsillo</th><th class="right">Monto</th><th>Estado</th><th></th></tr>
@@ -457,8 +492,39 @@ const byEmployee = computed(() => {
     emp.balanceRest = emp.owedRest - emp.paidRest
     emp.balanceTotal = emp.balanceBar + emp.balanceRest
   }
-  return Object.values(map)
+  // Orden: primero quienes tienen saldo por pagar, luego pendientes, luego al día
+  return Object.values(map).sort((a, b) =>
+    (b.balanceTotal - a.balanceTotal) || (b.pendingCount - a.pendingCount)
+  )
 })
+
+// Totales para la tira de indicadores del admin
+const overview = computed(() => {
+  let owed = 0, paid = 0, pending = 0, peopleWithBalance = 0
+  for (const e of byEmployee.value) {
+    owed += e.owedBar + e.owedRest
+    paid += e.paidBar + e.paidRest
+    pending += e.pendingCount
+    if (e.balanceTotal > 0) peopleWithBalance++
+  }
+  return { balance: owed - paid, paid, pending, peopleWithBalance }
+})
+
+// Expandir/colapsar los días de cada persona
+const expanded = reactive(new Set())
+function toggle(id) { expanded.has(id) ? expanded.delete(id) : expanded.add(id) }
+function isOpen(id) { return expanded.has(id) }
+
+/** Iniciales para el avatar (hasta 2). */
+function initials(name) {
+  const parts = (name || '').trim().split(/\s+/).slice(0, 2)
+  return parts.map(p => p.charAt(0).toUpperCase()).join('') || '?'
+}
+/** % pagado sobre lo adeudado (para la barra de progreso). */
+function pctOf(paid, owed) {
+  if (owed <= 0) return paid > 0 ? 100 : 0
+  return Math.min(100, Math.round((paid / owed) * 100))
+}
 
 /** Personas a las que se les puede fijar tarifa: usuarios + trabajadores ocasionales. */
 const peopleForRates = computed(() => {
@@ -684,21 +750,55 @@ onMounted(() => store.fetch())
 .icon-btn:hover { background:var(--bg); border-color:var(--accent); }
 .icon-btn.danger:hover { border-color:var(--danger); }
 
-/* Admin — tarjetas por empleado */
-.emp-card { padding:16px; }
-.emp-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:12px; }
-.emp-name { font-size:16px; font-weight:800; }
-.emp-badges { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
-.mini-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; }
-.mini-badge.yellow { background:#fef3c7; color:#b45309; }
-.mini-badge.blue { background:#dbeafe; color:#1d4ed8; }
-.emp-totals { display:flex; gap:16px; flex-wrap:wrap; }
-.emp-total { display:flex; flex-direction:column; align-items:flex-end; }
-.et-label { font-size:11px; color:var(--text-light); }
-.et-val { font-size:15px; font-weight:700; }
-.et-sub { font-size:10.5px; color:var(--text-light); margin-top:1px; }
-.emp-total.strong .et-val { color:var(--success); font-size:17px; font-weight:800; }
-.emp-actions { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+/* Admin — tira de indicadores */
+.ov-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+.ov-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; display:flex; flex-direction:column; gap:3px; }
+.ov-val { font-size:22px; font-weight:800; color:var(--text); letter-spacing:-0.02em; }
+.ov-label { font-size:11.5px; color:var(--text-light); font-weight:600; }
+.ov-card.accent { border-left:4px solid var(--accent); }
+.ov-card.warn { border-left:4px solid #f59e0b; }
+.ov-card.ok { border-left:4px solid #10b981; }
+
+/* Admin — tarjeta "recibo" por persona */
+.recibo { background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; transition:box-shadow .2s; }
+.recibo:hover { box-shadow:0 6px 22px rgba(0,0,0,0.09); }
+.recibo.settled { opacity:0.9; }
+
+.recibo-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:15px 18px; background:linear-gradient(135deg,#fbbf24 0%,#f97316 100%); color:#3a1a00; }
+.rh-left { display:flex; align-items:center; gap:12px; min-width:0; }
+.avatar { width:46px; height:46px; border-radius:50%; background:rgba(255,255,255,0.92); color:#c2410c; font-weight:800; font-size:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.15); }
+.rh-info { min-width:0; }
+.rh-name { font-size:16.5px; font-weight:800; color:#3a1a00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rh-badges { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
+.rh-saldo { text-align:right; flex-shrink:0; }
+.rh-saldo-label { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; }
+.rh-saldo-val { font-size:22px; font-weight:900; letter-spacing:-0.02em; }
+
+.mini-badge { font-size:11px; font-weight:700; padding:2px 9px; border-radius:20px; background:rgba(255,255,255,0.88); }
+.mini-badge.yellow { color:#b45309; }
+.mini-badge.blue { color:#1d4ed8; }
+.mini-badge.green { color:#047857; }
+
+.recibo-body { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:14px 18px; }
+.pocket { background:var(--bg); border-radius:12px; padding:12px 14px; border-left:3px solid var(--border); }
+.pocket.bar { border-left-color:#f59e0b; }
+.pocket.rest { border-left-color:#10b981; }
+.pk-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; gap:8px; }
+.pk-name { font-size:12.5px; font-weight:700; color:var(--text-secondary); }
+.pk-debe { font-size:16px; font-weight:800; color:var(--text); white-space:nowrap; }
+.pk-track { height:7px; background:rgba(120,120,120,0.18); border-radius:6px; overflow:hidden; }
+.pk-fill { display:block; height:100%; border-radius:6px; transition:width .3s; }
+.pk-fill.bar { background:linear-gradient(90deg,#fbbf24,#f59e0b); }
+.pk-fill.rest { background:linear-gradient(90deg,#34d399,#10b981); }
+.pk-sub { display:block; font-size:10.5px; color:var(--text-light); margin-top:5px; }
+
+.recibo-actions { display:flex; align-items:center; gap:8px; padding:0 18px 14px; flex-wrap:wrap; }
+.btn-ghost { background:none; border:none; color:var(--text-secondary); font-size:12.5px; font-weight:700; cursor:pointer; padding:6px 4px; margin-left:auto; }
+.btn-ghost:hover { color:var(--accent); }
+.recibo-days { border-top:1px solid var(--border); padding:4px 10px 8px; }
+
+@media(max-width:720px){ .ov-grid { grid-template-columns:1fr 1fr; } }
+@media(max-width:520px){ .recibo-body { grid-template-columns:1fr; } }
 
 .table-wrap { overflow-x:auto; }
 .days-table { width:100%; border-collapse:collapse; font-size:13px; }
