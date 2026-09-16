@@ -75,8 +75,11 @@
           <span class="ov-label">🟡 Días por aprobar</span>
         </div>
         <div class="ov-card ok">
-          <span class="ov-val">{{ fmtCOP(overview.paid) }}</span>
-          <span class="ov-label">✅ Ya pagado</span>
+          <span class="ov-val">{{ fmtCOP(paidInMonth) }}</span>
+          <div class="ov-foot">
+            <span class="ov-label">✅ Pagado</span>
+            <input type="month" v-model="paidMonth" :max="maxMonth" class="ov-month" title="Filtrar por mes" />
+          </div>
         </div>
       </div>
 
@@ -510,6 +513,15 @@ const overview = computed(() => {
   return { balance: owed - paid, paid, pending, peopleWithBalance }
 })
 
+// "Ya pagado" filtrable por mes (suma de abonos con fecha en el mes elegido)
+const paidMonth = ref(todayCOT().slice(0, 7))
+const maxMonth = todayCOT().slice(0, 7)
+const paidInMonth = computed(() =>
+  store.payments
+    .filter(p => (p.date || '').slice(0, 7) === paidMonth.value)
+    .reduce((s, p) => s + (p.amountBar || 0) + (p.amountRest || 0), 0)
+)
+
 // Expandir/colapsar los días de cada persona
 const expanded = reactive(new Set())
 function toggle(id) { expanded.has(id) ? expanded.delete(id) : expanded.add(id) }
@@ -758,17 +770,19 @@ onMounted(() => store.fetch())
 .ov-card.accent { border-left:4px solid var(--accent); }
 .ov-card.warn { border-left:4px solid #f59e0b; }
 .ov-card.ok { border-left:4px solid #10b981; }
+.ov-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ov-month { font-size:11px; border:1px solid var(--border); border-radius:6px; padding:2px 5px; color:var(--text-secondary); background:var(--surface); max-width:118px; }
 
 /* Admin — tarjeta "recibo" por persona */
 .recibo { background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; margin-bottom:16px; transition:box-shadow .2s; }
 .recibo:hover { box-shadow:0 6px 22px rgba(0,0,0,0.09); }
 .recibo.settled { opacity:0.9; }
 
-.recibo-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:15px 18px; background:linear-gradient(135deg,#fbbf24 0%,#f97316 100%); color:#3a1a00; }
+.recibo-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:15px 18px; background:linear-gradient(135deg,#3b82f6 0%,#1e3a8a 100%); color:#fff; }
 .rh-left { display:flex; align-items:center; gap:12px; min-width:0; }
-.avatar { width:46px; height:46px; border-radius:50%; background:rgba(255,255,255,0.92); color:#c2410c; font-weight:800; font-size:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.15); }
+.avatar { width:46px; height:46px; border-radius:50%; background:#fff; color:#1e40af; font-weight:800; font-size:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.18); }
 .rh-info { min-width:0; }
-.rh-name { font-size:16.5px; font-weight:800; color:#3a1a00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rh-name { font-size:16.5px; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rh-badges { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
 .rh-saldo { text-align:right; flex-shrink:0; }
 .rh-saldo-label { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; }
