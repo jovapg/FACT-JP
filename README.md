@@ -10,6 +10,8 @@
 
 Aplicación web **full stack** para administrar la operación diaria de bares y restaurantes: ventas por mesa, facturación, inventario, recetas, nómina, cartera y reportes financieros. Soporta **múltiples negocios y franquicias** desde una sola instalación y funciona como **PWA** instalable en celular o tablet.
 
+🌐 **Demo en vivo:** [fact-jp-production.up.railway.app](https://fact-jp-production.up.railway.app)
+
 > 📸 *Agrega aquí 2 o 3 capturas: dashboard, mesas y facturación.*
 <img width="959" height="519" alt="FACT-JP  mesas" src="https://github.com/user-attachments/assets/18f351bc-8245-4d2a-9027-b0e283a1011c" />
 <img width="958" height="512" alt="fac-jp dashboard" src="https://github.com/user-attachments/assets/b0ec3326-222a-466c-8a64-ce672413ac2d" />
