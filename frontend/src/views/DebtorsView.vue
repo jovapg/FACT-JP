@@ -782,8 +782,8 @@ async function printStatement(d) {
   const biz = businessStore.profile || {}
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
-  // El descuento se muestra como una línea propia que resta del saldo:
-  // el fiado se lista a valor bruto y el descuento aparece justo debajo.
+  // El fiado se lista a valor bruto; el descuento aparece como línea al final
+  // del detalle (debajo de la nota) y el saldo ya lo trae restado.
   let running = 0, totalCharges = 0, totalDiscounts = 0, totalPayments = 0
   const rows = txs.map(t => {
     const isCharge = t.type === 'charge'
@@ -804,7 +804,7 @@ async function printStatement(d) {
     const discItems = (t.items || []).filter(i => (Number(i.discount) || 0) > 0)
     const discount = discItems.reduce((s, i) => s + (Number(i.discount) || 0), 0)
     const gross = net + discount
-    running += gross; totalCharges += gross
+    running += net; totalCharges += gross; totalDiscounts += discount
 
     let detail = ''
     if (t.items?.length) {
@@ -816,27 +816,17 @@ async function printStatement(d) {
     } else {
       detail = esc(t.description || 'Fiado')
     }
+    if (discount > 0) {
+      detail += `<ul class="items disc"><li><span>Descuento</span><span>− ${formatCOP(discount)}</span></li></ul>`
+    }
 
-    let out = `<tr class="charge">
+    return `<tr class="charge">
       <td>${date}</td>
       <td><strong>Fiado</strong><div>${detail}</div></td>
       <td class="num">${formatCOP(gross)}</td>
       <td class="num"></td>
       <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
     </tr>`
-
-    if (discount > 0) {
-      running -= discount; totalDiscounts += discount
-      out += `<tr class="discount">
-      <td>${date}</td>
-      <td><strong>Descuento</strong><ul class="items">${discItems.map(i =>
-        `<li><span>${i.qty || 1} x ${esc(i.name)}</span><span>− ${formatCOP(i.discount)}</span></li>`).join('')}</ul></td>
-      <td class="num"></td>
-      <td class="num">${formatCOP(discount)}</td>
-      <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
-    </tr>`
-    }
-    return out
   }).join('')
 
   const balance = Math.max(0, totalCharges - totalDiscounts - totalPayments)
@@ -859,7 +849,8 @@ async function printStatement(d) {
   .num { text-align: right; white-space: nowrap; }
   th.num { text-align: right; }
   tr.payment td { background: #f3faf5; }
-  tr.discount td { background: #fff8e6; }
+  .items.disc { margin-top: 6px; border-top: 1px dashed #bbb; padding-top: 4px; }
+  .items.disc li { color: #b45309; font-weight: bold; }
   .items { list-style: none; margin: 4px 0 0; padding: 0; }
   .items li { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; padding: 1px 0; }
   .items em { color: #777; font-style: normal; }
@@ -884,7 +875,7 @@ async function printStatement(d) {
     ${debtor.phone ? ` &nbsp;·&nbsp; Tel: ${esc(debtor.phone)}` : ''}
   </div>
   <table>
-    <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Fiado</th><th class="num">Abono / Desc.</th><th class="num">Saldo</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Fiado</th><th class="num">Abono</th><th class="num">Saldo</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <div class="totals">
