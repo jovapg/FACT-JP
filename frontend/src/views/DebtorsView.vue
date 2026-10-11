@@ -782,38 +782,64 @@ async function printStatement(d) {
   const biz = businessStore.profile || {}
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
-  let running = 0, totalCharges = 0, totalPayments = 0
+  // El descuento se muestra como una línea propia que resta del saldo:
+  // el fiado se lista a valor bruto y el descuento aparece justo debajo.
+  let running = 0, totalCharges = 0, totalDiscounts = 0, totalPayments = 0
   const rows = txs.map(t => {
     const isCharge = t.type === 'charge'
-    const amount = t.amount || 0
-    if (isCharge) { running += amount; totalCharges += amount } else { running -= amount; totalPayments += amount }
+    const net = t.amount || 0
+    const date = esc(formatDateTime(t.date))
+
+    if (!isCharge) {
+      running -= net; totalPayments += net
+      return `<tr class="payment">
+      <td>${date}</td>
+      <td><strong>Abono</strong><div>${esc(t.description || '')}<div class="note">${t.paidWith === 'banco' ? 'Pago por banco' : 'Pago en efectivo'}</div></div></td>
+      <td class="num"></td>
+      <td class="num">${formatCOP(net)}</td>
+      <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
+    </tr>`
+    }
+
+    const discItems = (t.items || []).filter(i => (Number(i.discount) || 0) > 0)
+    const discount = discItems.reduce((s, i) => s + (Number(i.discount) || 0), 0)
+    const gross = net + discount
+    running += gross; totalCharges += gross
 
     let detail = ''
-    if (isCharge && t.items?.length) {
-      detail = '<ul class="items">' + t.items.map(i => {
-        const gross = (Number(i.price) || 0) * (i.qty || 1)
-        const disc = Number(i.discount) || 0
-        return `<li><span>${i.qty || 1} x ${esc(i.name)} <em>(${formatCOP(i.price)} c/u)</em>${disc > 0 ? ` <em>− desc. ${formatCOP(disc)}</em>` : ''}</span><span>${formatCOP(Math.max(0, gross - disc))}</span></li>`
-      }).join('') + '</ul>'
+    if (t.items?.length) {
+      detail = '<ul class="items">' + t.items.map(i =>
+        `<li><span>${i.qty || 1} x ${esc(i.name)} <em>(${formatCOP(i.price)} c/u)</em></span><span>${formatCOP((Number(i.price) || 0) * (i.qty || 1))}</span></li>`
+      ).join('') + '</ul>'
       const dashIdx = (t.description || '').indexOf(' — ')
       if (dashIdx !== -1) detail += `<div class="note">Nota: ${esc(t.description.slice(dashIdx + 3))}</div>`
     } else {
-      detail = esc(t.description || (isCharge ? 'Fiado' : 'Abono'))
-    }
-    if (!isCharge) {
-      detail += `<div class="note">${t.paidWith === 'banco' ? 'Pago por banco' : 'Pago en efectivo'}</div>`
+      detail = esc(t.description || 'Fiado')
     }
 
-    return `<tr class="${isCharge ? 'charge' : 'payment'}">
-      <td>${esc(formatDateTime(t.date))}</td>
-      <td><strong>${isCharge ? 'Fiado' : 'Abono'}</strong>${detail ? '<div>' + detail + '</div>' : ''}</td>
-      <td class="num">${isCharge ? formatCOP(amount) : ''}</td>
-      <td class="num">${isCharge ? '' : formatCOP(amount)}</td>
+    let out = `<tr class="charge">
+      <td>${date}</td>
+      <td><strong>Fiado</strong><div>${detail}</div></td>
+      <td class="num">${formatCOP(gross)}</td>
+      <td class="num"></td>
       <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
     </tr>`
+
+    if (discount > 0) {
+      running -= discount; totalDiscounts += discount
+      out += `<tr class="discount">
+      <td>${date}</td>
+      <td><strong>Descuento</strong><ul class="items">${discItems.map(i =>
+        `<li><span>${i.qty || 1} x ${esc(i.name)}</span><span>− ${formatCOP(i.discount)}</span></li>`).join('')}</ul></td>
+      <td class="num"></td>
+      <td class="num">${formatCOP(discount)}</td>
+      <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
+    </tr>`
+    }
+    return out
   }).join('')
 
-  const balance = Math.max(0, totalCharges - totalPayments)
+  const balance = Math.max(0, totalCharges - totalDiscounts - totalPayments)
   const today = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <title>Estado de cuenta - ${esc(debtor.name)}</title>
@@ -833,6 +859,7 @@ async function printStatement(d) {
   .num { text-align: right; white-space: nowrap; }
   th.num { text-align: right; }
   tr.payment td { background: #f3faf5; }
+  tr.discount td { background: #fff8e6; }
   .items { list-style: none; margin: 4px 0 0; padding: 0; }
   .items li { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; padding: 1px 0; }
   .items em { color: #777; font-style: normal; }
@@ -857,11 +884,12 @@ async function printStatement(d) {
     ${debtor.phone ? ` &nbsp;·&nbsp; Tel: ${esc(debtor.phone)}` : ''}
   </div>
   <table>
-    <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Fiado</th><th class="num">Abono</th><th class="num">Saldo</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Fiado</th><th class="num">Abono / Desc.</th><th class="num">Saldo</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <div class="totals">
     <div><span>Total fiado</span><span>${formatCOP(totalCharges)}</span></div>
+    ${totalDiscounts > 0 ? `<div><span>Descuentos</span><span>− ${formatCOP(totalDiscounts)}</span></div>` : ''}
     <div><span>Total abonado</span><span>− ${formatCOP(totalPayments)}</span></div>
     <div class="final"><span>Saldo pendiente</span><span>${formatCOP(balance)}</span></div>
   </div>
