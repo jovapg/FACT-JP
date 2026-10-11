@@ -83,6 +83,7 @@
                   <button class="btn btn-sm btn-success-outline" @click="openPayment(d)" title="Registrar abono" :disabled="d.balance <= 0">
                     <Minus :size="12" /> Abono
                   </button>
+                  <button class="btn btn-sm btn-outline" @click="printStatement(d)" title="Estado de cuenta" :disabled="!d.transactions?.length">📄</button>
                   <button v-if="canManage" class="btn btn-sm btn-outline" @click="openEdit(d)" title="Editar">✏️</button>
                   <button v-if="canManage" class="btn btn-sm btn-danger" @click="confirmDel(d)" title="Eliminar">🗑️</button>
                 </div>
@@ -415,6 +416,9 @@
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="detailDebtor = null">Cerrar</button>
+          <button class="btn btn-outline" @click="printStatement(detailDebtor)" :disabled="!detailDebtor.transactions?.length">
+            <FileText :size="13" /> Estado de cuenta
+          </button>
           <button class="btn btn-danger-outline" @click="openCharge(detailDebtor); detailDebtor = null">
             <Plus :size="13" /> Fiado
           </button>
@@ -466,13 +470,15 @@ import { ref, computed, onMounted, inject } from 'vue'
 import { useDebtorsStore } from '../stores/debtors.js'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useAuthStore } from '../stores/auth.js'
+import { useBusinessStore } from '../stores/business.js'
 import PageLayout from '../components/PageLayout.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
-import { UserPlus, Wallet, X, Plus, Minus } from 'lucide-vue-next'
+import { UserPlus, Wallet, X, Plus, Minus, FileText } from 'lucide-vue-next'
 
 const debtorsStore = useDebtorsStore()
 const inventoryStore = useInventoryStore()
 const auth = useAuthStore()
+const businessStore = useBusinessStore()
 const toast = inject('toast')
 
 const canManage = computed(() => auth.user?.role !== 'cajero')
@@ -759,6 +765,115 @@ async function handlePayment() {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * Estado de cuenta del cliente: fiados con su detalle de productos contra los
+ * abonos, con saldo acumulado. Se abre en una ventana lista para imprimir o
+ * guardar como PDF.
+ */
+async function printStatement(d) {
+  const debtor = debtorsStore.debtors.find(x => x.id === d.id) || d
+  const txs = [...(debtor.transactions || [])].sort((a, b) => new Date(a.date) - new Date(b.date))
+  if (!txs.length) return
+  if (!businessStore.profile) {
+    try { await businessStore.fetchProfile() } catch { /* se imprime sin datos del negocio */ }
+  }
+  const biz = businessStore.profile || {}
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+  let running = 0, totalCharges = 0, totalPayments = 0
+  const rows = txs.map(t => {
+    const isCharge = t.type === 'charge'
+    const amount = t.amount || 0
+    if (isCharge) { running += amount; totalCharges += amount } else { running -= amount; totalPayments += amount }
+
+    let detail = ''
+    if (isCharge && t.items?.length) {
+      detail = '<ul class="items">' + t.items.map(i => {
+        const gross = (Number(i.price) || 0) * (i.qty || 1)
+        const disc = Number(i.discount) || 0
+        return `<li><span>${i.qty || 1} x ${esc(i.name)} <em>(${formatCOP(i.price)} c/u)</em>${disc > 0 ? ` <em>− desc. ${formatCOP(disc)}</em>` : ''}</span><span>${formatCOP(Math.max(0, gross - disc))}</span></li>`
+      }).join('') + '</ul>'
+      const dashIdx = (t.description || '').indexOf(' — ')
+      if (dashIdx !== -1) detail += `<div class="note">Nota: ${esc(t.description.slice(dashIdx + 3))}</div>`
+    } else {
+      detail = esc(t.description || (isCharge ? 'Fiado' : 'Abono'))
+    }
+    if (!isCharge) {
+      detail += `<div class="note">${t.paidWith === 'banco' ? 'Pago por banco' : 'Pago en efectivo'}</div>`
+    }
+
+    return `<tr class="${isCharge ? 'charge' : 'payment'}">
+      <td>${esc(formatDateTime(t.date))}</td>
+      <td><strong>${isCharge ? 'Fiado' : 'Abono'}</strong>${detail ? '<div>' + detail + '</div>' : ''}</td>
+      <td class="num">${isCharge ? formatCOP(amount) : ''}</td>
+      <td class="num">${isCharge ? '' : formatCOP(amount)}</td>
+      <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
+    </tr>`
+  }).join('')
+
+  const balance = Math.max(0, totalCharges - totalPayments)
+  const today = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Estado de cuenta - ${esc(debtor.name)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 28px; font-size: 13px; }
+  .head { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 16px; }
+  .biz strong { font-size: 18px; display: block; margin-bottom: 2px; }
+  .biz span { display: block; color: #444; font-size: 12px; }
+  .doc { text-align: right; }
+  .doc h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: .02em; }
+  .client { margin-bottom: 16px; padding: 10px 12px; background: #f4f4f4; border-radius: 6px; }
+  .client strong { font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid #111; padding: 6px 8px; }
+  td { padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  .num { text-align: right; white-space: nowrap; }
+  th.num { text-align: right; }
+  tr.payment td { background: #f3faf5; }
+  .items { list-style: none; margin: 4px 0 0; padding: 0; }
+  .items li { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; padding: 1px 0; }
+  .items em { color: #777; font-style: normal; }
+  .note { font-size: 11.5px; color: #555; margin-top: 3px; }
+  .totals { margin: 18px 0 0 auto; width: 320px; }
+  .totals div { display: flex; justify-content: space-between; padding: 5px 0; }
+  .totals .final { border-top: 2px solid #111; margin-top: 4px; padding-top: 8px; font-size: 17px; font-weight: bold; }
+  .foot { margin-top: 28px; font-size: 11px; color: #777; text-align: center; }
+  @media print { body { padding: 0; } tr { page-break-inside: avoid; } }
+</style></head><body>
+  <div class="head">
+    <div class="biz">
+      <strong>${esc(biz.name || 'Mi Negocio')}</strong>
+      ${biz.nit ? `<span>NIT: ${esc(biz.nit)}</span>` : ''}
+      ${biz.address ? `<span>${esc(biz.address)}${biz.city ? ' - ' + esc(biz.city) : ''}</span>` : ''}
+      ${biz.phone ? `<span>Tel: ${esc(biz.phone)}</span>` : ''}
+    </div>
+    <div class="doc"><h1>ESTADO DE CUENTA</h1><span>${esc(today)}</span></div>
+  </div>
+  <div class="client">
+    Cliente: <strong>${esc(debtor.name)}</strong>
+    ${debtor.phone ? ` &nbsp;·&nbsp; Tel: ${esc(debtor.phone)}` : ''}
+  </div>
+  <table>
+    <thead><tr><th>Fecha</th><th>Detalle</th><th class="num">Fiado</th><th class="num">Abono</th><th class="num">Saldo</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="totals">
+    <div><span>Total fiado</span><span>${formatCOP(totalCharges)}</span></div>
+    <div><span>Total abonado</span><span>− ${formatCOP(totalPayments)}</span></div>
+    <div class="final"><span>Saldo pendiente</span><span>${formatCOP(balance)}</span></div>
+  </div>
+  <div class="foot">Documento informativo - no constituye factura de venta</div>
+  <script>window.onload = () => setTimeout(() => window.print(), 250)<\/script>
+</body></html>`
+
+  const w = window.open('', '_blank')
+  if (!w) { toast('Permite las ventanas emergentes para ver el estado de cuenta', 'error'); return }
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
 }
 
 /** Borra todo el historial de movimientos. Solo admin/superadmin. */
