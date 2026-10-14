@@ -153,11 +153,8 @@
                 <div class="detail-divider"></div>
                 <div class="detail-row"><span class="detail-label">Efectivo inicial</span><span class="fw-700">{{ formatCOP(selectedShift.openingCash) }}</span></div>
                 <div class="detail-divider"></div>
-                <!-- Ventas por área (lo que se sube a Finanzas) -->
-                <div class="detail-row"><span class="detail-label fw-700">🍺 Bar</span><span class="fw-700">{{ formatCOP(areaTotal(selectedShift,'bar')) }}</span></div>
-                <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(ibVal(selectedShift,'bar','efectivo')) }} / {{ formatCOP(ibVal(selectedShift,'bar','banco')) }}</span></div>
-                <div class="detail-row"><span class="detail-label fw-700">🍽️ Restaurante</span><span class="fw-700">{{ formatCOP(areaTotal(selectedShift,'restaurante')) }}</span></div>
-                <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(ibVal(selectedShift,'restaurante','efectivo')) }} / {{ formatCOP(ibVal(selectedShift,'restaurante','banco')) }}</span></div>
+                <!-- Ventas del turno (lo que se sube a Finanzas) -->
+                <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(cashBucket(selectedShift,'efectivo')) }} / {{ formatCOP(cashBucket(selectedShift,'banco')) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Total ventas</span><span class="success fw-700">{{ formatCOP(selectedShift.totalSales) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Retiros</span><span class="danger">-{{ formatCOP(selectedShift.totalWithdrawals) }}</span></div>
                 <div class="detail-row" v-if="selectedShift.totalExpenses"><span class="detail-label">Gastos caja menor</span><span class="danger">-{{ formatCOP(selectedShift.totalExpenses) }}</span></div>
@@ -359,17 +356,8 @@
                 <p class="resumen-section-title">💰 Ventas del turno ({{ resumenShift?.salesCount || 0 }} ventas)</p>
 
                 <div class="resumen-area">
-                  <div class="resumen-area-head">🍺 Bar</div>
-                  <div class="resumen-row indent"><span>💵 Efectivo</span><span>{{ formatCOP(ibVal(resumenShift,'bar','efectivo')) }}</span></div>
-                  <div class="resumen-row indent"><span>🏦 Banco</span><span>{{ formatCOP(ibVal(resumenShift,'bar','banco')) }}</span></div>
-                  <div class="resumen-row indent area-total"><span>Total Bar</span><span class="fw-700">{{ formatCOP(areaTotal(resumenShift,'bar')) }}</span></div>
-                </div>
-
-                <div class="resumen-area">
-                  <div class="resumen-area-head">🍽️ Restaurante</div>
-                  <div class="resumen-row indent"><span>💵 Efectivo</span><span>{{ formatCOP(ibVal(resumenShift,'restaurante','efectivo')) }}</span></div>
-                  <div class="resumen-row indent"><span>🏦 Banco</span><span>{{ formatCOP(ibVal(resumenShift,'restaurante','banco')) }}</span></div>
-                  <div class="resumen-row indent area-total"><span>Total Restaurante</span><span class="fw-700">{{ formatCOP(areaTotal(resumenShift,'restaurante')) }}</span></div>
+                  <div class="resumen-row indent"><span>💵 Efectivo</span><span>{{ formatCOP(cashBucket(resumenShift,'efectivo')) }}</span></div>
+                  <div class="resumen-row indent"><span>🏦 Banco</span><span>{{ formatCOP(cashBucket(resumenShift,'banco')) }}</span></div>
                 </div>
 
                 <div class="resumen-row resumen-grandtotal">
@@ -626,6 +614,10 @@ function ibVal(s, area, bucket) {
 function areaTotal(s, area) {
   return ibVal(s, area, 'efectivo') + ibVal(s, area, 'banco')
 }
+/** Efectivo o banco de todo el turno (suma de todas las áreas: se maneja una sola cuenta) */
+function cashBucket(s, bucket) {
+  return ibVal(s, 'bar', bucket) + ibVal(s, 'restaurante', bucket)
+}
 function ventasTotal(s) {
   return areaTotal(s, 'bar') + areaTotal(s, 'restaurante')
 }
@@ -645,15 +637,8 @@ function buildShiftText(s) {
   L.push(`👤 Cajero: ${s.cashierName}`)
   L.push(`🕒 ${formatDateTime(s.openedAt)} → ${formatDateTime(s.closedAt)}`)
   L.push('')
-  L.push('🍺 *BAR*')
-  L.push(`   💵 Efectivo: ${f(ibVal(s, 'bar', 'efectivo'))}`)
-  L.push(`   🏦 Banco: ${f(ibVal(s, 'bar', 'banco'))}`)
-  L.push(`   Total Bar: ${f(areaTotal(s, 'bar'))}`)
-  L.push('')
-  L.push('🍽️ *RESTAURANTE*')
-  L.push(`   💵 Efectivo: ${f(ibVal(s, 'restaurante', 'efectivo'))}`)
-  L.push(`   🏦 Banco: ${f(ibVal(s, 'restaurante', 'banco'))}`)
-  L.push(`   Total Restaurante: ${f(areaTotal(s, 'restaurante'))}`)
+  L.push(`💵 Efectivo: ${f(cashBucket(s, 'efectivo'))}`)
+  L.push(`🏦 Banco: ${f(cashBucket(s, 'banco'))}`)
   L.push('')
   L.push(`💰 *TOTAL VENTAS: ${f(ventasTotal(s))}*`)
   if ((s.fiadoAbonos || 0) > 0) L.push(`   (incluye ${f(s.fiadoAbonos)} de abonos de fiado)`)

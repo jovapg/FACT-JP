@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Finanzas</h1>
-        <p class="page-subtitle">Cuánto tienes en efectivo y banco, por Bar y Restaurante</p>
+        <p class="page-subtitle">Cuánto tienes en efectivo y banco</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-whatsapp" @click="sendDailyReport" :disabled="reporting">
@@ -17,10 +17,7 @@
 
     <!-- Selector de área + periodo -->
     <div class="card filters-bar mb-3">
-      <div class="seg">
-        <button v-for="a in areas" :key="a.value" :class="['seg-btn', { active: area === a.value }]" @click="area = a.value">{{ a.label }}</button>
-      </div>
-      <div class="seg">
+            <div class="seg">
         <button v-for="p in periods" :key="p.value" :class="['seg-btn', { active: period === p.value }]" @click="setPeriod(p.value)">{{ p.label }}</button>
       </div>
       <!-- Navegador de mes: solo visible cuando el periodo es "Mes" -->
@@ -39,18 +36,10 @@
         <div class="fcard efectivo">
           <p class="fcard-label">💵 Efectivo</p>
           <p class="fcard-value">{{ formatCOP(sel.efectivo) }}</p>
-          <div v-if="area === 'total'" class="fcard-sub">
-            <span>🍺 {{ formatCOP(bal.bar.efectivo) }}</span>
-            <span>🍽️ {{ formatCOP(bal.restaurante.efectivo) }}</span>
-          </div>
         </div>
         <div class="fcard banco">
           <p class="fcard-label">🏦 Banco</p>
           <p class="fcard-value">{{ formatCOP(sel.banco) }}</p>
-          <div v-if="area === 'total'" class="fcard-sub">
-            <span>🍺 {{ formatCOP(bal.bar.banco) }}</span>
-            <span>🍽️ {{ formatCOP(bal.restaurante.banco) }}</span>
-          </div>
         </div>
         <div class="fcard total">
           <p class="fcard-label">💰 Dinero del mes</p>
@@ -201,7 +190,7 @@
           <div v-for="m in entradas" :key="m.id" class="mov">
             <div class="mov-info">
               <span class="mov-label">{{ m.label }}</span>
-              <span class="mov-meta">{{ formatDate(m.date) }} · {{ areaTag(m.area) }} · {{ bucketIcon(m.bucket) }}</span>
+              <span class="mov-meta">{{ formatDate(m.date) }} · {{ bucketIcon(m.bucket) }}</span>
             </div>
             <span class="mov-amount pos">+{{ formatCOP(m.amount) }}</span>
           </div>
@@ -213,7 +202,7 @@
           <div v-for="m in salidas" :key="m.id" class="mov">
             <div class="mov-info">
               <span class="mov-label">{{ m.label }}</span>
-              <span class="mov-meta">{{ formatDate(m.date) }} · {{ areaTag(m.area) }} · {{ bucketIcon(m.bucket) }}</span>
+              <span class="mov-meta">{{ formatDate(m.date) }} · {{ bucketIcon(m.bucket) }}</span>
             </div>
             <div class="mov-right">
               <span :class="['mov-amount', m.type === 'traslado' ? 'tras' : 'neg']">
@@ -244,12 +233,9 @@
           </div>
           <div class="config-grid">
             <div></div><div class="ch">💵 Efectivo</div><div class="ch">🏦 Banco</div>
-            <div class="rh">🍺 Bar</div>
+            <div class="rh">Saldo</div>
             <input v-model.number="configForm.bar.efectivo" type="number" min="0" class="form-control" />
             <input v-model.number="configForm.bar.banco" type="number" min="0" class="form-control" />
-            <div class="rh">🍽️ Restaurante</div>
-            <input v-model.number="configForm.restaurante.efectivo" type="number" min="0" class="form-control" />
-            <input v-model.number="configForm.restaurante.banco" type="number" min="0" class="form-control" />
           </div>
         </div>
         <div class="modal-footer">
@@ -273,12 +259,9 @@
           </p>
           <div class="config-grid">
             <div></div><div class="ch">Ventas</div><div class="ch">Salidas</div>
-            <div class="rh">🍺 Bar</div>
+            <div class="rh">Mes</div>
             <input v-model.number="refForm.bar.ventas" type="number" min="0" class="form-control" />
             <input v-model.number="refForm.bar.salidas" type="number" min="0" class="form-control" />
-            <div class="rh">🍽️ Restaurante</div>
-            <input v-model.number="refForm.restaurante.ventas" type="number" min="0" class="form-control" />
-            <input v-model.number="refForm.restaurante.salidas" type="number" min="0" class="form-control" />
           </div>
         </div>
         <div class="modal-footer">
@@ -320,14 +303,6 @@
           </div>
 
           <div class="grid grid-2">
-            <div class="form-group">
-              <label class="form-label">Área</label>
-              <select v-model="manualForm.area" class="form-control">
-                <option value="bar">🍺 Bar</option>
-                <option value="restaurante">🍽️ Restaurante</option>
-                <option value="general">General</option>
-              </select>
-            </div>
             <div class="form-group" v-if="manualForm.type !== 'traslado'">
               <label class="form-label">¿Dónde?</label>
               <select v-model="manualForm.bucket" class="form-control">
@@ -548,7 +523,7 @@ const netoRow = computed(() => ({
 
 // Solo en modo "Total" se abren las columnas Bar/Restaurante; al filtrar por un
 // área se muestra una sola columna con lo de esa área.
-const showAreaCols = computed(() => area.value === 'total')
+const showAreaCols = computed(() => false)
 const showGeneralCol = computed(() => showAreaCols.value && (salidasTotals.value.general > 0 || ingresosTotals.value.general > 0))
 const totalColLabel = computed(() => area.value === 'bar' ? '🍺 Bar' : area.value === 'restaurante' ? '🍽️ Restaurante' : 'Total')
 const colCount = computed(() => 1 + (showAreaCols.value ? (2 + (showGeneralCol.value ? 1 : 0)) : 0) + 1)
@@ -725,15 +700,12 @@ async function saveTarget() {
 function buildDailyText(r) {
   const f = (v) => '$' + Number(v || 0).toLocaleString('es-CO')
   const fecha = new Date(r.date + 'T12:00:00').toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
-  const barT = (r.ventas.bar.efectivo || 0) + (r.ventas.bar.banco || 0)
-  const restT = (r.ventas.restaurante.efectivo || 0) + (r.ventas.restaurante.banco || 0)
   const L = []
   L.push(`📊 *REPORTE DEL DÍA* — ${auth.currentBusiness?.name || 'Negocio'}`)
   L.push(`📅 ${fecha}`)
   L.push('')
   L.push(`💰 *VENTAS: ${f(r.ventas.total)}* (${r.ventas.count} ventas)`)
-  L.push(`🍺 Bar: ${f(barT)}  (💵 ${f(r.ventas.bar.efectivo)} · 🏦 ${f(r.ventas.bar.banco)})`)
-  L.push(`🍽️ Restaurante: ${f(restT)}  (💵 ${f(r.ventas.restaurante.efectivo)} · 🏦 ${f(r.ventas.restaurante.banco)})`)
+  L.push(`💵 Efectivo: ${f((r.ventas.bar.efectivo || 0) + (r.ventas.restaurante.efectivo || 0))} · 🏦 Banco: ${f((r.ventas.bar.banco || 0) + (r.ventas.restaurante.banco || 0))}`)
   if (r.fiados.abonos > 0) L.push(`   (incluye ${f(r.fiados.abonos)} de abonos de fiado)`)
   L.push('')
   if (r.fiados.nuevos > 0) {

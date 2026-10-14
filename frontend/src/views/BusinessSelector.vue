@@ -2,7 +2,7 @@
   <div class="selector-page">
     <div class="selector-card">
       <div class="selector-header">
-        <div class="logo-icon">🍺</div>
+        <div class="logo-icon">🏢</div>
         <h2>Selecciona un negocio</h2>
         <p>Bienvenido, {{ auth.user?.name || auth.user?.username }}</p>
       </div>

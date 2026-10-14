@@ -10,7 +10,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import api from '../services/api.js'
 import { useAuthStore } from './auth.js'
 
@@ -18,6 +18,8 @@ export const useBusinessStore = defineStore('business', () => {
   const auth = useAuthStore()
   const profile = ref(null)   // Datos del perfil del negocio activo
   const loading = ref(false)
+  // Si el negocio usa la pantalla de Recetas (lo define el superadmin en Franquicias). Por defecto sí.
+  const usesRecipes = computed(() => profile.value?.usesRecipes !== false)
 
   // Cuando cambia el negocio activo: limpiar el perfil anterior y cargar el nuevo.
   // Así el logo siempre corresponde al negocio seleccionado en ese momento.
@@ -81,7 +83,7 @@ export const useBusinessStore = defineStore('business', () => {
   }
 
   return {
-    profile, loading,
+    profile, loading, usesRecipes,
     fetchProfile, updateProfile,
     fetchUsers, createUser, updateUser, deleteUser
   }

@@ -23,22 +23,6 @@
             <button v-if="search" class="search-clear" @click="search = ''" title="Limpiar">×</button>
           </div>
 
-          <!-- Filtro por bolsillo (Bar / Restaurante) -->
-          <div class="avail-toggle">
-            <button
-              :class="['pill-sm', { active: areaFilter === 'todas' }]"
-              @click="areaFilter = 'todas'"
-            >Todos</button>
-            <button
-              :class="['pill-sm', { active: areaFilter === 'bar' }]"
-              @click="areaFilter = 'bar'"
-            >🍺 Bar</button>
-            <button
-              :class="['pill-sm', { active: areaFilter === 'restaurante' }]"
-              @click="areaFilter = 'restaurante'"
-            >🍽️ Restaurante</button>
-          </div>
-
           <!-- Filtro de disponibilidad -->
           <div class="avail-toggle">
             <button
@@ -99,9 +83,6 @@
             <div class="recipe-header">
               <div>
                 <h4 class="recipe-name">{{ recipe.name }}</h4>
-                <span :class="['badge', 'area-badge', (recipe.area || 'bar')]">
-                  {{ (recipe.area || 'bar') === 'restaurante' ? '🍽️ Restaurante' : '🍺 Bar' }}
-                </span>
                 <span class="badge badge-default">{{ recipe.category }}</span>
               </div>
               <div class="recipe-price">{{ formatCOP(recipe.price) }}</div>
@@ -157,23 +138,6 @@
               <button class="btn-close" @click="closeModal">×</button>
             </div>
             <div class="modal-body">
-              <!-- Bolsillo: a qué negocio pertenece la plata de este producto -->
-              <div class="form-group">
-                <label class="form-label">Bolsillo (¿de quién es la venta?) *</label>
-                <div class="area-picker">
-                  <button
-                    type="button"
-                    :class="['area-option', 'bar', { active: form.area === 'bar' }]"
-                    @click="form.area = 'bar'"
-                  >🍺 Bar</button>
-                  <button
-                    type="button"
-                    :class="['area-option', 'restaurante', { active: form.area === 'restaurante' }]"
-                    @click="form.area = 'restaurante'"
-                  >🍽️ Restaurante</button>
-                </div>
-              </div>
-
               <div class="grid grid-2">
                 <div class="form-group">
                   <label class="form-label">Nombre *</label>
@@ -354,8 +318,7 @@ function getIngredientName(id) {
 function openCreate() {
   editRecipe.value = null
   showAdvanced.value = false
-  // Por defecto el producto nuevo hereda el bolsillo del filtro activo (si hay uno)
-  const defaultArea = areaFilter.value === 'restaurante' ? 'restaurante' : 'bar'
+  const defaultArea = 'bar' // una sola cuenta
   Object.assign(form, { name: '', category: 'platos', price: 0, area: defaultArea, available: true, ingredients: [] })
   showModal.value = true
 }

@@ -111,19 +111,11 @@
         <div class="recibo-body">
           <div class="pocket bar">
             <div class="pk-top">
-              <span class="pk-name">🍺 Bar</span>
+              <span class="pk-name">Pendiente</span>
               <span class="pk-debe">{{ fmtCOP(emp.balanceBar) }}</span>
             </div>
             <div class="pk-track"><span class="pk-fill bar" :style="{ width: pctOf(emp.paidBar, emp.owedBar) + '%' }"></span></div>
             <span class="pk-sub">pagado {{ fmtCOP(emp.paidBar) }} de {{ fmtCOP(emp.owedBar) }}</span>
-          </div>
-          <div class="pocket rest">
-            <div class="pk-top">
-              <span class="pk-name">🍽️ Restaurante</span>
-              <span class="pk-debe">{{ fmtCOP(emp.balanceRest) }}</span>
-            </div>
-            <div class="pk-track"><span class="pk-fill rest" :style="{ width: pctOf(emp.paidRest, emp.owedRest) + '%' }"></span></div>
-            <span class="pk-sub">pagado {{ fmtCOP(emp.paidRest) }} de {{ fmtCOP(emp.owedRest) }}</span>
           </div>
         </div>
 
@@ -142,13 +134,12 @@
         <div v-if="isOpen(emp.id)" class="table-wrap recibo-days">
           <table class="days-table">
             <thead>
-              <tr><th>Fecha</th><th>Tipo</th><th>Bolsillo</th><th class="right">Monto</th><th>Estado</th><th></th></tr>
+              <tr><th>Fecha</th><th>Tipo</th><th class="right">Monto</th><th>Estado</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="e in emp.items" :key="e.id">
                 <td>{{ fmtDate(e.date) }}</td>
                 <td>{{ typeLabel(e) }}</td>
-                <td><span :class="['area-chip', e.area]">{{ areaLabel(e.area) }}</span></td>
                 <td class="right">{{ fmtCOP(e.amount) }}</td>
                 <td><span :class="['status-chip', e.status]">{{ statusLabel(e.status) }}</span></td>
                 <td class="right nowrap">
@@ -214,16 +205,6 @@
             <p class="hint" v-if="previewHours > 0">{{ previewHours }} h × {{ fmtCOP(activeRates.hora) }}</p>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">¿Dónde trabajaste? *</label>
-            <div class="area-picker">
-              <button type="button" :class="['area-option','bar',{active:form.area==='bar'}]" @click="form.area='bar'">🍺 Bar</button>
-              <button type="button" :class="['area-option','restaurante',{active:form.area==='restaurante'}]" @click="form.area='restaurante'">🍽️ Restaurante</button>
-              <button type="button" :class="['area-option','ambos',{active:form.area==='ambos'}]" @click="form.area='ambos'">⚖️ Ambos</button>
-            </div>
-            <p class="hint" v-if="form.area === 'ambos'">Se reparte 50% Bar y 50% Restaurante.</p>
-          </div>
-
           <div class="amount-preview">
             <span>Total del día</span>
             <strong>{{ fmtCOP(previewAmount) }}</strong>
@@ -246,18 +227,13 @@
           <button class="btn-close" @click="payModal = null">×</button>
         </div>
         <div class="modal-body">
-          <p class="pay-info">Digita cuánto le vas a pagar de cada bolsillo. Puedes abonar parcial; no puedes pasar del saldo.</p>
+          <p class="pay-info">Digita cuánto le vas a pagar. Puedes abonar parcial; no puedes pasar del saldo.</p>
 
           <div class="pay-inputs">
             <div class="pay-in">
-              <label class="form-label">🍺 Bar <span class="saldo-tag">saldo {{ fmtCOP(payModal.balanceBar) }}</span></label>
+              <label class="form-label">Monto a pagar <span class="saldo-tag">saldo {{ fmtCOP(payModal.balanceBar) }}</span></label>
               <input v-model.number="payForm.bar" type="number" min="0" :max="payModal.balanceBar" class="form-control" />
               <button class="link-mini" @click="payForm.bar = payModal.balanceBar">Todo</button>
-            </div>
-            <div class="pay-in">
-              <label class="form-label">🍽️ Restaurante <span class="saldo-tag">saldo {{ fmtCOP(payModal.balanceRest) }}</span></label>
-              <input v-model.number="payForm.rest" type="number" min="0" :max="payModal.balanceRest" class="form-control" />
-              <button class="link-mini" @click="payForm.rest = payModal.balanceRest">Todo</button>
             </div>
           </div>
 
@@ -276,7 +252,7 @@
             <label class="form-label">Fecha del pago</label>
             <input v-model="payDate" type="date" class="form-control" />
           </div>
-          <p class="hint">Se crearán las salidas en Finanzas (Bar y/o Restaurante) que se descontarán del {{ payMethod }}.</p>
+          <p class="hint">Se creará la salida en Finanzas que se descontará del {{ payMethod }}.</p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="payModal = null">Cancelar</button>
@@ -389,7 +365,7 @@ const isAdmin = computed(() => auth.isAdmin)
 const showForm = ref(false)
 const editing = ref(null)
 const saving = ref(false)
-const form = reactive({ date: todayCOT(), type: 'completo', area: 'ambos', from: '', to: '' })
+const form = reactive({ date: todayCOT(), type: 'completo', area: 'bar', from: '', to: '' })
 const who = ref('')          // admin: para quién es el día (id o '__new__')
 const newName = ref('')      // admin: nombre de un trabajador ocasional
 
@@ -570,7 +546,7 @@ const employeeOptions = computed(() => {
 // ── Acciones ─────────────────────────────────────────────
 function openCreate() {
   editing.value = null
-  Object.assign(form, { date: todayCOT(), type: 'completo', area: 'ambos', from: '', to: '' })
+  Object.assign(form, { date: todayCOT(), type: 'completo', area: 'bar', from: '', to: '' })
   who.value = auth.user?.id       // por defecto: yo
   newName.value = ''
   showForm.value = true

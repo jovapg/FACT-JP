@@ -40,7 +40,6 @@
               <div class="inv-item">
                 <span class="item-name">
                   {{ item.name }}
-                  <span :class="['area-tag', (item.area || 'bar')]">{{ (item.area || 'bar') === 'restaurante' ? '🍽️' : '🍺' }}</span>
                 </span>
                 <div class="item-qty-ctrl">
                   <button @click="decreaseQty(item)" class="qty-mini-btn">−</button>

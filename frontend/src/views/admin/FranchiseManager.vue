@@ -11,7 +11,9 @@
         <div class="franchises-grid">
           <div class="card franchise-card" v-for="biz in businesses" :key="biz.id">
             <div class="franchise-header">
-              <div class="franchise-icon">🏠</div>
+              <button class="franchise-icon" @click="iconTarget = biz" title="Cambiar ícono">
+                <component :is="businessIconFor(biz.icon)" :size="26" />
+              </button>
               <div>
                 <h4 class="franchise-name">{{ biz.name }}</h4>
                 <p class="franchise-slug">{{ biz.slug }}</p>
@@ -22,6 +24,9 @@
             </div>
             <div class="franchise-actions">
               <button class="btn btn-sm btn-outline" @click="goToSetup(biz)">⚙️ Configurar</button>
+              <button class="btn btn-sm btn-outline" @click="toggleRecipes(biz)" title="Activar o quitar la pantalla de Recetas">
+                🍳 Recetas: {{ biz.usesRecipes === false ? 'No' : 'Sí' }}
+              </button>
               <button class="btn btn-sm btn-outline" @click="toggleActive(biz)">
                 {{ biz.active ? '🔴 Desactivar' : '🟢 Activar' }}
               </button>
@@ -33,6 +38,25 @@
           <div v-if="businesses.length === 0" class="empty-state" style="grid-column:1/-1">
             <div class="empty-state-icon">🏢</div>
             <p class="empty-state-text">No hay franquicias creadas</p>
+          </div>
+        </div>
+
+        <!-- Cambiar ícono de una franquicia -->
+        <div class="modal-overlay" v-if="iconTarget" @click.self="iconTarget = null">
+          <div class="modal" style="max-width:460px">
+            <div class="modal-header">
+              <h3 class="modal-title">Ícono de {{ iconTarget.name }}</h3>
+              <button class="btn-close" @click="iconTarget = null">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="icon-grid">
+                    <button v-for="opt in BUSINESS_ICONS" :key="opt.key" type="button"
+                      :class="['icon-opt', { active: (iconTarget.icon || DEFAULT_BUSINESS_ICON) === opt.key }]" @click="changeIcon(opt.key)">
+                      <component :is="opt.icon" :size="22" />
+                      <span>{{ opt.label }}</span>
+                    </button>
+                  </div>
+            </div>
           </div>
         </div>
 
@@ -77,6 +101,22 @@
                   <label class="form-label">Número de mesas</label>
                   <input v-model.number="form.tablesCount" type="number" class="form-control" min="1" />
                 </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Tipo de negocio (ícono)</label>
+                  <div class="icon-grid">
+                    <button v-for="opt in BUSINESS_ICONS" :key="opt.key" type="button"
+                      :class="['icon-opt', { active: form.icon === opt.key }]" @click="form.icon = opt.key">
+                      <component :is="opt.icon" :size="22" />
+                      <span>{{ opt.label }}</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+                    <input type="checkbox" v-model="form.usesRecipes" />
+                    <span><strong>Usa recetas</strong> (platos con ingredientes). Desmárcalo para bares, tiendas y servicios: se vende directo del inventario.</span>
+                  </label>
+                </div>
               </div>
             </div>
             <div class="modal-footer">
@@ -96,6 +136,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
 import api from '../../services/api.js'
 import PageLayout from '../../components/PageLayout.vue'
+import { BUSINESS_ICONS, DEFAULT_BUSINESS_ICON, businessIconFor } from '../../utils/businessIcons.js'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -104,10 +145,11 @@ const toast = inject('toast')
 const businesses = ref([])
 const showModal = ref(false)
 const saving = ref(false)
+const iconTarget = ref(null)   // Franquicia a la que se le está cambiando el ícono
 
 const form = reactive({
   name: '', slug: '', nit: '', address: '',
-  city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10
+  city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON
 })
 
 async function loadBusinesses() {
@@ -116,7 +158,7 @@ async function loadBusinesses() {
 }
 
 function openCreate() {
-  Object.assign(form, { name: '', slug: '', nit: '', address: '', city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10 })
+  Object.assign(form, { name: '', slug: '', nit: '', address: '', city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON })
   showModal.value = true
 }
 
@@ -135,6 +177,31 @@ async function createFranchise() {
     toast(err.response?.data?.error || 'Error al crear', 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function changeIcon(key) {
+  const biz = iconTarget.value
+  try {
+    const res = await api.put(`/api/businesses/${biz.id}/settings`, { icon: key })
+    const idx = businesses.value.findIndex(b => b.id === biz.id)
+    if (idx !== -1) businesses.value[idx] = res.data
+    iconTarget.value = null
+    toast('Ícono actualizado', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al cambiar el ícono', 'error')
+  }
+}
+
+async function toggleRecipes(biz) {
+  const next = biz.usesRecipes === false
+  try {
+    const res = await api.put(`/api/businesses/${biz.id}/settings`, { usesRecipes: next })
+    const idx = businesses.value.findIndex(b => b.id === biz.id)
+    if (idx !== -1) businesses.value[idx] = res.data
+    toast(`Recetas ${next ? 'activadas' : 'desactivadas'} en "${biz.name}"`, 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al cambiar', 'error')
   }
 }
 
@@ -196,7 +263,22 @@ onMounted(loadBusinesses)
   gap: 12px;
   margin-bottom: 16px;
 }
-.franchise-icon { font-size: 32px; }
+.franchise-icon {
+  width: 46px; height: 46px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); cursor: pointer;
+}
+.franchise-icon:hover { border-color: var(--accent); }
+.icon-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.icon-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px; border: 1.5px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 11px;
+}
+.icon-opt:hover { border-color: var(--accent); }
+.icon-opt.active { border-color: var(--accent); background: rgba(245,158,11,0.12); font-weight: 700; }
+@media (max-width: 480px) { .icon-grid { grid-template-columns: repeat(3, 1fr); } }
 .franchise-name { font-weight: 700; font-size: 16px; }
 .franchise-slug { font-size: 12px; color: var(--text-light); }
 .franchise-actions { display: flex; gap: 8px; flex-wrap: wrap; }

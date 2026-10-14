@@ -231,11 +231,11 @@ const sellableItems = computed(() => {
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
       let outOfStock = false
-      if (inv) outOfStock = (inv.stock || 0) <= 0
+      if (inv) outOfStock = !inv.noStock && (inv.stock || 0) <= 0
       else if (r.ingredients?.length) {
         outOfStock = r.ingredients.some(ing => {
           const ii = invById.get(ing.inventoryId)
-          return ii && (ii.stock || 0) <= 0
+          return ii && !ii.noStock && (ii.stock || 0) <= 0
         })
       }
       return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: r.area || 'bar', outOfStock }
@@ -248,7 +248,7 @@ const sellableItems = computed(() => {
       result.push({
         id: i.id, _itemId: i.id, _invOnly: true,
         name: i.name, price: i.salePrice, category: i.category, available: true,
-        area: i.area || 'bar', outOfStock: (i.stock || 0) <= 0
+        area: i.area || 'bar', outOfStock: !i.noStock && (i.stock || 0) <= 0
       })
     }
   }

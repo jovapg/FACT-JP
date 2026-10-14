@@ -31,7 +31,7 @@ export const useInventoryStore = defineStore('inventory', () => {
   }
 
   /** Items cuyo stock está igual o por debajo del mínimo configurado */
-  const lowStockItems = computed(() => items.value.filter(i => i.stock <= (i.minStock || 0)))
+  const lowStockItems = computed(() => items.value.filter(i => !i.noStock && i.stock <= (i.minStock || 0)))
 
   /** Categorías únicas del inventario (para filtros y dropdowns) */
   const categories = computed(() => [...new Set(items.value.map(i => i.category).filter(Boolean))])

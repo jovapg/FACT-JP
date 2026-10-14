@@ -118,7 +118,7 @@
           <div class="cat-list" v-if="categories.length > 0">
             <div class="cat-row" v-for="(cat, idx) in categories" :key="idx">
               <span class="cat-name">{{ cat.name }}</span>
-              <label class="cat-check">
+              <label class="cat-check" v-if="businessStore.usesRecipes">
                 <input type="checkbox" v-model="cat.autoRecipe" />
                 <span>Crea receta automáticamente</span>
               </label>

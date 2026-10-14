@@ -4,7 +4,7 @@
       <div class="sidebar-logo">
         <img v-if="businessStore.profile?.logo" :src="businessStore.profile.logo" class="logo-img" alt="logo" />
         <div v-else class="logo-icon-wrap">
-          <UtensilsCrossed :size="20" color="#1a0a00" />
+          <component :is="businessIcon" :size="20" color="#1a0a00" />
         </div>
         <span class="logo-text" v-if="!isCollapsed">{{ businessStore.profile?.name || 'facJp' }}</span>
       </div>
@@ -61,6 +61,7 @@ import { useInventoryStore } from '../stores/inventory.js'
 import { usePayrollStore } from '../stores/payroll.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useMenu } from '../composables/useMenu.js'
+import { businessIconFor } from '../utils/businessIcons.js'
 import {
   LayoutDashboard, UtensilsCrossed, Package, BookOpen,
   ShoppingCart, Truck, BarChart3, Receipt, Settings, Building2,
@@ -69,6 +70,8 @@ import {
 
 const auth = useAuthStore()
 const businessStore = useBusinessStore()
+// Ícono del negocio (si no tiene logo): el que eligió el superadmin, neutro por defecto
+const businessIcon = computed(() => businessIconFor(businessStore.profile?.icon))
 const inventoryStore = useInventoryStore()
 const payrollStore = usePayrollStore()
 const route = useRoute()
@@ -96,7 +99,10 @@ const menuItems = [
 
 const visibleMenuItems = computed(() => {
   const role = auth.user?.role
-  return menuItems.filter(item => item.roles.includes(role)).map(item => ({
+  return menuItems
+    .filter(item => item.roles.includes(role))
+    .filter(item => item.path !== '/recipes' || businessStore.usesRecipes)
+    .map(item => ({
     ...item,
     badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length
       // Badge rojo en Nómina: días pendientes por aprobar (solo lo ve el admin)

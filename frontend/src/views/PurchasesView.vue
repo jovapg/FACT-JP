@@ -20,7 +20,6 @@
                 <tr>
                   <th>Fecha</th>
                   <th>Tipo</th>
-                  <th>Área</th>
                   <th>Pago</th>
                   <th>Detalle</th>
                   <th>Total</th>
@@ -32,11 +31,6 @@
                 <tr v-for="s in salidas" :key="s.id">
                   <td>{{ formatDate(s.date) }}</td>
                   <td><span class="kind-tag">{{ kindLabel(s.kind) }}</span></td>
-                  <td>
-                    <span :class="['badge', 'area-badge', (s.area || 'bar')]">
-                      {{ (s.area || 'bar') === 'restaurante' ? '🍽️ Rest.' : '🍺 Bar' }}
-                    </span>
-                  </td>
                   <td>{{ s.paidWith === 'banco' ? '🏦 Banco' : '💵 Efectivo' }}</td>
                   <td>{{ s.detail || '-' }}</td>
                   <td class="currency">{{ formatCOP(s.total) }}</td>
@@ -70,10 +64,6 @@
                 <div class="detail-meta-item">
                   <span class="meta-label">Fecha</span>
                   <span>{{ formatDate(selectedPurchase.date) }}</span>
-                </div>
-                <div class="detail-meta-item">
-                  <span class="meta-label">Bolsillo</span>
-                  <span>{{ (selectedPurchase.area || 'bar') === 'restaurante' ? '🍽️ Restaurante' : '🍺 Bar' }}</span>
                 </div>
                 <div class="detail-meta-item" v-if="selectedPurchase.type !== 'gasto'">
                   <span class="meta-label">Proveedor</span>
@@ -148,15 +138,6 @@
                   <button type="button" :class="['type-opt', { active: form.type === 'nomina' }]" @click="setType('nomina')">👤 Nómina<br><small>pago a empleado</small></button>
                   <button type="button" :class="['type-opt', { active: form.type === 'arriendo' }]" @click="setType('arriendo')">🏠 Arriendo<br><small>pago del local</small></button>
                   <button type="button" :class="['type-opt', { active: form.type === 'credito' }]" @click="setType('credito')">💳 Crédito<br><small>cuota / abono</small></button>
-                </div>
-              </div>
-
-              <!-- Área (Bar / Restaurante) -->
-              <div class="form-group">
-                <label class="form-label">Área (¿de quién es la salida?)</label>
-                <div class="type-picker">
-                  <button type="button" :class="['type-opt area-bar', { active: form.area === 'bar' }]" @click="form.area = 'bar'">🍺 Bar</button>
-                  <button type="button" :class="['type-opt area-rest', { active: form.area === 'restaurante' }]" @click="form.area = 'restaurante'">🍽️ Restaurante</button>
                 </div>
               </div>
 
@@ -460,9 +441,8 @@ const saveLabel = computed(() => ({
 /** Cambia el tipo de salida y ajusta el área por defecto según el caso típico */
 function setType(t) {
   form.type = t
-  // Por defecto: gasto/nómina suelen ser del Restaurante; compra del Bar
-  if (t === 'gasto' || t === 'nomina') form.area = 'restaurante'
-  else form.area = 'bar'
+  // Una sola cuenta: todo va al mismo bolsillo
+  form.area = 'bar'
 }
 
 // Clave única por negocio para evitar que borradores de distintos negocios se mezclen

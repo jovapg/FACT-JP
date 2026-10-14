@@ -6,7 +6,7 @@
             <p class="page-subtitle">{{ inventoryStore.items.length }} productos registrados</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap" v-if="auth.isAdmin">
-            <button class="btn btn-outline" @click="openSyncModal" v-if="pendingSync.length > 0">
+            <button class="btn btn-outline" @click="openSyncModal" v-if="businessStore.usesRecipes && pendingSync.length > 0">
               🍺 Sincronizar al menú ({{ pendingSync.length }})
             </button>
             <button class="btn btn-outline" @click="openCount">📋 Conteo físico</button>
@@ -63,8 +63,8 @@
                     </td>
                     <td><span class="badge badge-default">{{ item.category }}</span></td>
                     <td>
-                      <span :class="['badge', item.stock <= item.minStock ? 'badge-danger' : 'badge-success']">
-                        {{ item.stock }}
+                      <span :class="['badge', item.noStock ? 'badge-default' : item.stock <= item.minStock ? 'badge-danger' : 'badge-success']">
+                        {{ item.noStock ? 'Sin control' : item.stock }}
                       </span>
                     </td>
                     <td>{{ item.minStock }}</td>
@@ -188,13 +188,6 @@
                   </div>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Bolsillo *</label>
-                  <div class="inv-area-picker">
-                    <button type="button" :class="['inv-area-opt', 'bar', { active: form.area === 'bar' }]" @click="form.area = 'bar'">🍺 Bar</button>
-                    <button type="button" :class="['inv-area-opt', 'rest', { active: form.area === 'restaurante' }]" @click="form.area = 'restaurante'">🍽️ Restaurante</button>
-                  </div>
-                </div>
-                <div class="form-group">
                   <label class="form-label">Stock actual</label>
                   <input v-model.number="form.stock" type="number" class="form-control" min="0" />
                 </div>
@@ -209,6 +202,12 @@
                 <div class="form-group" v-if="!form.esIngrediente">
                   <label class="form-label">Precio de venta (COP)</label>
                   <input v-model.number="form.salePrice" type="number" class="form-control" min="0" placeholder="Ej: 8000" />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+                    <input type="checkbox" v-model="form.noStock" />
+                    <span><strong>No controla stock</strong> (servicios, alquileres, cosas que nunca se agotan)</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -547,7 +546,7 @@ const filteredItems = computed(() => {
   }
   if (showLowStock.value) {
     // Stock bajo: stock actual <= stock mínimo configurado
-    items = items.filter(i => i.stock <= (i.minStock || 0))
+    items = items.filter(i => !i.noStock && i.stock <= (i.minStock || 0))
   }
   return items
 })
@@ -561,7 +560,7 @@ function formatCOP(v) {
 function openCreate() {
   editItem.value = null
   submitted.value = false
-  Object.assign(form, { name: '', category: '', unit: 'unidad', area: 'bar', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false, imageUrl: '' })
+  Object.assign(form, { name: '', category: '', unit: 'unidad', area: 'bar', stock: 0, minStock: 0, cost: 0, salePrice: 0, supplierId: '', esIngrediente: false, imageUrl: '', noStock: false })
   showModal.value = true
 }
 
@@ -573,7 +572,7 @@ function openCreate() {
 function openEdit(item) {
   editItem.value = item
   submitted.value = false
-  Object.assign(form, { supplierId: '', esIngrediente: false, imageUrl: '', ...item })
+  Object.assign(form, { supplierId: '', esIngrediente: false, imageUrl: '', noStock: false, ...item })
   showModal.value = true
 }
 
@@ -641,7 +640,7 @@ async function saveItem() {
     if (editItem.value) {
       await inventoryStore.updateItem(editItem.value.id, itemData)
       // Si es vendible y ya existe receta vinculada, ofrecer actualizar precio
-      if (!form.esIngrediente && form.salePrice > 0) {
+      if (businessStore.usesRecipes && !form.esIngrediente && form.salePrice > 0) {
         const linked = inventoryStore.recipes.find(r => r.name.toLowerCase() === form.name.toLowerCase())
         if (linked) {
           updateRecipeModal.value = { recipe: linked, newSalePrice: form.salePrice }
@@ -651,7 +650,7 @@ async function saveItem() {
     } else {
       const newItem = await inventoryStore.createItem(itemData)
       // Si es producto de venta con precio: crear receta automáticamente para que aparezca en POS
-      if (!form.esIngrediente && form.salePrice > 0) {
+      if (businessStore.usesRecipes && !form.esIngrediente && form.salePrice > 0) {
         await inventoryStore.createRecipe({
           name: form.name,
           price: form.salePrice,
@@ -662,7 +661,7 @@ async function saveItem() {
         })
         toast(`"${form.name}" creado y agregado al menú de venta`, 'success')
       } else {
-        toast('Ingrediente creado', 'success')
+        toast(form.esIngrediente ? 'Ingrediente creado' : `"${form.name}" creado`, 'success')
       }
     }
     closeModal()

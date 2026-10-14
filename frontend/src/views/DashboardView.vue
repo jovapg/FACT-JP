@@ -63,31 +63,20 @@
           </template>
         </div>
 
-        <!-- Estado del día por bolsillo (Bar / Restaurante) -->
+        <!-- Estado del día (una sola cuenta) -->
         <div class="card bolsillos-card mb-4" v-if="!loadingData && cierre">
           <div class="chart-header">
             <div>
-              <h3 class="section-title">💰 Estado del día por bolsillo</h3>
-              <p class="section-sub">Cuánto le pertenece hoy a cada negocio · {{ cierre.salesCount }} ventas</p>
+              <h3 class="section-title">💰 Estado del día</h3>
+              <p class="section-sub">Ventas y gastos de hoy · {{ cierre.salesCount }} ventas</p>
             </div>
           </div>
-          <div class="bolsillos-grid">
+          <div class="bolsillos-grid" style="grid-template-columns:1fr">
             <div class="bolsillo bar">
-              <div class="bolsillo-head">🍺 Bar</div>
-              <div class="bolsillo-row"><span>Ventas</span><span>{{ formatCOP(cierre.bar.ventas) }}</span></div>
-              <div class="bolsillo-row"><span>Compras / gastos</span><span class="neg">− {{ formatCOP(cierre.bar.compras) }}</span></div>
-              <div class="bolsillo-net"><span>Le pertenece</span><span>{{ formatCOP(cierre.bar.neto) }}</span></div>
+              <div class="bolsillo-row"><span>Ventas</span><span>{{ formatCOP(cierre.total.ventas) }}</span></div>
+              <div class="bolsillo-row"><span>Compras / gastos</span><span class="neg">− {{ formatCOP((cierre.bar.compras || 0) + (cierre.restaurante.compras || 0)) }}</span></div>
+              <div class="bolsillo-net"><span>Neto del día</span><span>{{ formatCOP(cierre.total.neto) }}</span></div>
             </div>
-            <div class="bolsillo restaurante">
-              <div class="bolsillo-head">🍽️ Restaurante</div>
-              <div class="bolsillo-row"><span>Ventas</span><span>{{ formatCOP(cierre.restaurante.ventas) }}</span></div>
-              <div class="bolsillo-row"><span>Compras / gastos</span><span class="neg">− {{ formatCOP(cierre.restaurante.compras) }}</span></div>
-              <div class="bolsillo-net"><span>Le pertenece</span><span>{{ formatCOP(cierre.restaurante.neto) }}</span></div>
-            </div>
-          </div>
-          <div class="bolsillo-total">
-            Total del día: <strong>{{ formatCOP(cierre.total.ventas) }}</strong> en ventas ·
-            <strong>{{ formatCOP(cierre.total.neto) }}</strong> neto
           </div>
         </div>
 

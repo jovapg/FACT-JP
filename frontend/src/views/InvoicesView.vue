@@ -262,11 +262,11 @@ const sellableItems = computed(() => {
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
       let outOfStock = false
-      if (inv) outOfStock = (inv.stock || 0) <= 0
+      if (inv) outOfStock = !inv.noStock && (inv.stock || 0) <= 0
       else if (r.ingredients?.length) {
         outOfStock = r.ingredients.some(ing => {
           const ii = invById.get(ing.inventoryId)
-          return ii && (ii.stock || 0) <= 0
+          return ii && !ii.noStock && (ii.stock || 0) <= 0
         })
       }
       return { _itemId: r.id, recipeId: r.id, inventoryId: undefined, name: r.name, price: inv ? inv.salePrice : r.price, category: r.category, area: r.area || 'bar', outOfStock }
@@ -274,7 +274,7 @@ const sellableItems = computed(() => {
   const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
   for (const i of inventoryStore.items) {
     if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
-      result.push({ _itemId: i.id, recipeId: undefined, inventoryId: i.id, name: i.name, price: i.salePrice, category: i.category, area: i.area || 'bar', outOfStock: (i.stock || 0) <= 0 })
+      result.push({ _itemId: i.id, recipeId: undefined, inventoryId: i.id, name: i.name, price: i.salePrice, category: i.category, area: i.area || 'bar', outOfStock: !i.noStock && (i.stock || 0) <= 0 })
     }
   }
   return result

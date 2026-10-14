@@ -302,7 +302,6 @@
               <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'efectivo' }]" @click="paymentForm.paidWith = 'efectivo'">💵 Efectivo</button>
               <button type="button" :class="['seg-opt', { active: paymentForm.paidWith === 'banco' }]" @click="paymentForm.paidWith = 'banco'">🏦 Banco</button>
             </div>
-            <span class="field-hint">El área (Bar/Restaurante) se reparte automático según lo que debe el cliente.</span>
           </div>
           <div class="form-group">
             <label class="form-label">Notas (opcional)</label>
@@ -546,11 +545,11 @@ const chargeSellableItems = computed(() => {
     .map(r => {
       const inv = invByName.get(r.name.toLowerCase().trim())
       let outOfStock = false
-      if (inv) outOfStock = (inv.stock || 0) <= 0
+      if (inv) outOfStock = !inv.noStock && (inv.stock || 0) <= 0
       else if (r.ingredients?.length) {
         outOfStock = r.ingredients.some(ing => {
           const ii = invById.get(ing.inventoryId)
-          return ii && (ii.stock || 0) <= 0
+          return ii && !ii.noStock && (ii.stock || 0) <= 0
         })
       }
       return { ...r, _itemId: r.id, price: inv ? inv.salePrice : r.price, area: (inv?.area) || r.area || 'bar', outOfStock }
@@ -558,7 +557,7 @@ const chargeSellableItems = computed(() => {
   const usedNames = new Set(result.map(r => r.name.toLowerCase().trim()))
   for (const i of inventoryStore.items) {
     if ((i.salePrice || 0) > 0 && !usedNames.has(i.name.toLowerCase().trim())) {
-      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, area: i.area || 'bar', available: true, outOfStock: (i.stock || 0) <= 0 })
+      result.push({ id: i.id, _itemId: i.id, _invOnly: true, name: i.name, price: i.salePrice, category: i.category, area: i.area || 'bar', available: true, outOfStock: !i.noStock && (i.stock || 0) <= 0 })
     }
   }
   return result
