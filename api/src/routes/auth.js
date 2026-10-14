@@ -6,7 +6,9 @@
  * porque no tiene :businessId en la URL.
  *
  * Al arrancar el servidor, auto-crea el superadmin si no existe
- * (usuario: superadmin / contraseña: Admin2026!).
+ * (usuario: superadmin). Su contraseña inicial sale de la variable de entorno
+ * SUPERADMIN_PASSWORD; si no existe, se genera una aleatoria y se imprime UNA vez
+ * en el log del servidor. No hay contraseña fija en el código.
  *
  * Rutas:
  *   POST /api/auth/login           → login con usuario y contraseña
@@ -26,13 +28,17 @@ const { signToken, authenticate } = require('../middleware/auth');
 /**
  * Crea el usuario superadmin con contraseña hasheada si no existe.
  * Se ejecuta una sola vez al importar el módulo.
- * Credenciales iniciales: superadmin / Admin2026!
  */
 async function initSuperAdmin() {
   const superadminPath = path.join(getDataPath(), 'superadmin.json');
   const existing = await readJSON(superadminPath);
   if (!existing) {
-    const hashed = await bcrypt.hash('Admin2026!', 10);
+    let initial = process.env.SUPERADMIN_PASSWORD;
+    if (!initial) {
+      initial = require('crypto').randomBytes(9).toString('base64url');
+      console.log(`[AUTH] Superadmin creado. Usuario: superadmin · Contraseña inicial (guárdala y cámbiala): ${initial}`);
+    }
+    const hashed = await bcrypt.hash(initial, 10);
     await writeJSON(superadminPath, {
       id: uuidv4(),
       username: 'superadmin',

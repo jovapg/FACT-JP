@@ -2,9 +2,8 @@
  * routes/reports.js — Reportes de ventas y rentabilidad
  *
  * Provee los datos agregados para los módulos de análisis del negocio.
- * Las rutas de exportación Excel requieren el token como ?token= query param
- * (usando el middleware tokenFromQuery) para que el navegador pueda
- * iniciar la descarga directamente desde un enlace <a>.
+ * Las rutas de exportación Excel se piden con el header Authorization (el frontend
+ * las descarga como blob); el token ya no se acepta por la URL.
  *
  * Rutas:
  *   GET /api/:businessId/reports/sales                → resumen de ventas (con filtros)
@@ -117,15 +116,8 @@ router.get('/reports/sales', authenticate, async (req, res) => {
   }
 });
 
-function tokenFromQuery(req, res, next) {
-  if (req.query.token && !req.headers['authorization']) {
-    req.headers['authorization'] = `Bearer ${req.query.token}`;
-  }
-  next();
-}
-
 // GET /api/:businessId/reports/export/excel
-router.get('/reports/export/excel', tokenFromQuery, authenticate, async (req, res) => {
+router.get('/reports/export/excel', authenticate, async (req, res) => {
   try {
     let sales = await readJSON(salesPath(req.params.businessId)) || [];
     const { from, to } = req.query;
@@ -247,7 +239,7 @@ router.get('/reports/rentabilidad', authenticate, async (req, res) => {
 });
 
 // GET /api/:businessId/reports/rentabilidad/excel
-router.get('/reports/rentabilidad/excel', tokenFromQuery, authenticate, async (req, res) => {
+router.get('/reports/rentabilidad/excel', authenticate, async (req, res) => {
   try {
     const { period, from, to } = req.query;
     const now = new Date();

@@ -255,8 +255,8 @@
             📤 Compartir
           </button>
           <a
-            :href="`/api/${bizId}/invoices/${confirmedSale.id}/pdf?token=${token}`"
-            target="_blank"
+            href="#"
+            @click.prevent="openProtected(`/api/${bizId}/invoices/${confirmedSale.id}/pdf`).catch(() => toast('No se pudo abrir el PDF', 'error'))"
             class="btn btn-primary"
           >
             📄 PDF
@@ -311,6 +311,7 @@ import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
 import api from '../services/api.js'
 import { paymentLabel } from '../utils/payment.js'
+import { openProtected } from '../utils/download.js'
 
 const props = defineProps({
   table: { type: Object, required: true },
@@ -441,9 +442,11 @@ function buildWaText(sale, pdfUrl) {
   lines.push(`Acabas de realizar una compra en *${bizName}*.`)
   lines.push(`Tu factura *#${sale.invoiceNumber}* por *${formatCOP(sale.total)}* ya está lista.`)
   lines.push('')
-  lines.push(`📄 Descarga tu factura en PDF aquí:`)
-  lines.push(pdfUrl)
-  lines.push('')
+  if (pdfUrl) {
+    lines.push(`📄 Descarga tu factura en PDF aquí:`)
+    lines.push(pdfUrl)
+    lines.push('')
+  }
   lines.push(`_Gracias por tu visita, te esperamos pronto!_ 🙌`)
   return lines.join('\n')
 }
@@ -451,8 +454,8 @@ function buildWaText(sale, pdfUrl) {
 // Sincrónico — la URL ya fue pre-generada en confirmSale, así window.open
 // se llama directamente desde el gesto del usuario (funciona en móvil).
 function sendWhatsApp() {
-  const pdfUrl = shortlinkUrl.value ||
-    `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+  // Solo el enlace corto público: nunca una URL con el token de la sesión (se la verían los clientes)
+  const pdfUrl = shortlinkUrl.value || ''
   const text = encodeURIComponent(buildWaText(confirmedSale.value, pdfUrl))
   const digits = waPhone.value.replace(/\D/g, '')
   const number = digits ? `57${digits}` : ''
@@ -463,8 +466,8 @@ function sendWhatsApp() {
 }
 
 async function sharePdf() {
-  const url = shortlinkUrl.value ||
-    `${window.location.origin}/api/${bizId.value}/invoices/${confirmedSale.value.id}/pdf?token=${token.value}`
+  const url = shortlinkUrl.value
+  if (!url) return // sin enlace corto no se comparte (la URL con token es privada)
   try {
     await navigator.share({ title: `Factura ${confirmedSale.value.invoiceNumber}`, url })
   } catch {

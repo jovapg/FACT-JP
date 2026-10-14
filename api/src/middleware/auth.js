@@ -8,8 +8,8 @@
  *   - signToken:         genera un nuevo token JWT con los datos del usuario
  *
  * El token se espera en el header: Authorization: Bearer <token>
- * Para rutas de descarga directa (PDF, Excel), los routers inyectan
- * el token desde ?token= query param ANTES de llamar a authenticate.
+ * El token NO se acepta por la URL (?token=): el frontend descarga PDF y Excel
+ * con axios (header Authorization) y los muestra como blob.
  */
 
 const jwt = require('jsonwebtoken');
@@ -18,7 +18,7 @@ const crypto = require('crypto');
 
 // Carga o genera el JWT_SECRET de forma persistente.
 // Prioridad: 1) variable de entorno, 2) archivo en volumen /storage,
-// 3) clave por defecto insegura (solo desarrollo local).
+// 3) clave aleatoria temporal (las sesiones no sobreviven a un reinicio).
 function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   const secretFile = '/storage/.jwt_secret';
@@ -33,8 +33,10 @@ function loadJwtSecret() {
     console.log('[AUTH] JWT_SECRET generado y guardado en /storage/.jwt_secret');
     return newSecret;
   } catch {
-    console.warn('[ADVERTENCIA] JWT_SECRET no configurado y no se pudo acceder al volumen. Usando clave por defecto — inseguro en producción.');
-    return 'facjp-secret-key-change-in-production';
+    // Sin variable de entorno ni volumen: clave aleatoria solo para este arranque.
+    // Las sesiones se cierran al reiniciar, pero nadie puede forjar un token con una clave pública.
+    console.warn('[ADVERTENCIA] JWT_SECRET no configurado y no se pudo acceder al volumen. Usando una clave aleatoria temporal: las sesiones se cerrarán al reiniciar. Configura JWT_SECRET.');
+    return crypto.randomBytes(32).toString('hex');
   }
 }
 
@@ -48,8 +50,8 @@ const JWT_SECRET = loadJwtSecret();
  */
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
-  // Acepta token del header Authorization o del query param ?token= (para links de PDF en navegador)
-  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
+  // Solo el header Authorization: un token en la URL queda en historiales y logs
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });

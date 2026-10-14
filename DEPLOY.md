@@ -141,7 +141,9 @@ pm2 logs           # muestra los logs en tiempo real
 Abre en el navegador: `http://TU_IP_DEL_VPS:3001`
 
 Usuario: `superadmin`  
-Contraseña: `Admin2026!`  
+Contraseña: la que definiste en la variable `SUPERADMIN_PASSWORD`. Si no la definiste,
+el servidor generó una aleatoria y la imprimió **una sola vez** en el log al arrancar
+(`pm2 logs`, busca "Superadmin creado").  
 **¡Cámbiala inmediatamente después del primer login!**
 
 ---

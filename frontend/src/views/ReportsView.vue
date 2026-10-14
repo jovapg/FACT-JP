@@ -237,7 +237,7 @@
                     <td class="currency" style="color:var(--danger)">{{ sale.discount > 0 ? '- ' + formatCOP(sale.discount) : '-' }}</td>
                     <td class="currency">{{ formatCOP(sale.total) }}</td>
                     <td>
-                      <a :href="`/api/${bizId}/invoices/${sale.id}/pdf?token=${token}`" target="_blank" class="btn btn-sm btn-outline">
+                      <a href="#" @click.prevent="openProtected(`/api/${bizId}/invoices/${sale.id}/pdf`).catch(() => toast('No se pudo abrir el PDF', 'error'))" class="btn btn-sm btn-outline">
                         PDF
                       </a>
                     </td>
@@ -289,6 +289,7 @@ import { useAuthStore } from '../stores/auth.js'
 import api from '../services/api.js'
 import PageLayout from '../components/PageLayout.vue'
 import { paymentLabel, paymentBadge } from '../utils/payment.js'
+import { openProtected, downloadProtected } from '../utils/download.js'
 
 // Registrar los tipos de gráfica usados en esta vista: dona (Doughnut) y barras (Bar)
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
@@ -508,18 +509,14 @@ async function loadRentabilidad() {
 
 /**
  * Descarga el reporte de rentabilidad como Excel.
- * Usa un enlace <a> temporal para forzar la descarga sin pasar por axios
- * (ya que el token se pasa como query param para autenticar).
+ * Se pide con el header Authorization (el token no va en la URL) y se descarga como blob.
  */
 async function exportRentabilidad() {
   exporting.value = true
   try {
     const params = buildParams()
     const qs = new URLSearchParams(params).toString()
-    const link = document.createElement('a')
-    link.href = `/api/${bizId.value}/reports/rentabilidad/excel?${qs}&token=${token.value}`
-    link.download = 'rentabilidad.xlsx'
-    link.click()
+    await downloadProtected(`/api/${bizId.value}/reports/rentabilidad/excel?${qs}`, 'rentabilidad.xlsx')
     toast('Descargando Excel...', 'success')
   } catch {
     toast('Error al exportar', 'error')

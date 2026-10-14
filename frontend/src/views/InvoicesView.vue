@@ -51,8 +51,8 @@
                         @click="openEditInvoice(inv)"
                       >✏️ Editar</button>
                       <a
-                        :href="`/api/${bizId}/invoices/${inv.id}/pdf?token=${token}`"
-                        target="_blank"
+                        href="#"
+                        @click.prevent="openProtected(`/api/${bizId}/invoices/${inv.id}/pdf`).catch(() => toast('No se pudo abrir el PDF', 'error'))"
                         class="btn btn-sm btn-primary"
                       >
                         PDF
@@ -110,7 +110,7 @@
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="selectedInvoice = null">Cerrar</button>
-              <a :href="`/api/${bizId}/invoices/${selectedInvoice.id}/pdf?token=${token}`" target="_blank" class="btn btn-primary">
+              <a href="#" @click.prevent="openProtected(`/api/${bizId}/invoices/${selectedInvoice.id}/pdf`).catch(() => toast('No se pudo abrir el PDF', 'error'))" class="btn btn-primary">
                 Descargar PDF
               </a>
             </div>
@@ -210,7 +210,7 @@
  *   - Ver el detalle de una factura en un modal
  *   - Abrir/descargar el PDF de cada factura
  *
- * El PDF requiere autenticación: el token se pasa como query param (?token=)
+ * El PDF requiere autenticación: se pide con el header Authorization y se abre como blob
  * para que el enlace pueda abrirse directamente en el navegador.
  */
 import { ref, computed, onMounted, inject } from 'vue'
@@ -220,6 +220,7 @@ import { useBusinessStore } from '../stores/business.js'
 import { useInventoryStore } from '../stores/inventory.js'
 import PageLayout from '../components/PageLayout.vue'
 import { paymentLabel, paymentBadge } from '../utils/payment.js'
+import { openProtected } from '../utils/download.js'
 
 const salesStore = useSalesStore()
 const auth = useAuthStore()

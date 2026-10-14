@@ -53,6 +53,18 @@ console.log(`[DATA] Ruta de datos: ${path.resolve(dataPath)}`);
   }
 })();
 
+// Subidas de imágenes: solo estos tipos, y la extensión se decide por el tipo MIME
+// (no por el nombre del archivo). Así un SVG/HTML disfrazado de imagen no puede
+// guardarse con una extensión que el navegador ejecute.
+const IMAGE_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
+const imageFileFilter = (req, file, cb) => {
+  if (IMAGE_TYPES[file.mimetype]) cb(null, true);
+  else cb(new Error('Solo se permiten imágenes JPG, PNG, WEBP o GIF'));
+};
+const safeExt = (file) => IMAGE_TYPES[file.mimetype] || '.png';
+// Deja el id solo con letras, números y guiones (evita ../ en el nombre del archivo)
+const safeId = (v) => String(v || '').replace(/[^a-zA-Z0-9-]/g, '');
+
 // Multer: saves logo to data/<businessId>/logo.<ext>, one file at a time
 const logoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -61,17 +73,14 @@ const logoStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    const ext = safeExt(file);
     cb(null, `logo${ext}`);
   }
 });
 const uploadLogo = multer({
   storage: logoStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Solo se permiten imágenes'));
-  }
+  fileFilter: imageFileFilter
 });
 
 // Multer: saves payment QR to data/<businessId>/payment-qr.<ext>
@@ -82,17 +91,14 @@ const paymentQrStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    const ext = safeExt(file);
     cb(null, `payment-qr${ext}`);
   }
 });
 const uploadPaymentQr = multer({
   storage: paymentQrStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Solo se permiten imágenes'));
-  }
+  fileFilter: imageFileFilter
 });
 
 // Multer: saves product images to data/<businessId>/inv_<id>.<ext>
@@ -103,17 +109,14 @@ const productImgStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    cb(null, `inv_${req.params.businessId}_${req.params.id}${ext}`);
+    const ext = safeExt(file);
+    cb(null, `inv_${safeId(req.params.businessId)}_${safeId(req.params.id)}${ext}`);
   }
 });
 const uploadProductImg = multer({
   storage: productImgStorage,
   limits: { fileSize: 2 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Solo se permiten imágenes'));
-  }
+  fileFilter: imageFileFilter
 });
 
 // Helmet: cabeceras de seguridad HTTP (HSTS, XSS protection, no-sniff, etc.)
@@ -136,26 +139,22 @@ const loginLimiter = rateLimit({
 app.use('/api/auth/login', loginLimiter);
 
 // Middleware
-app.use(cors({
-  origin: (origin, callback) => {
-    // Permitir: sin origen (curl/Postman), localhost, redes locales,
-    // Railway (.up.railway.app) y el dominio configurado en FRONTEND_URL
-    if (
-      !origin ||
-      origin.startsWith('http://localhost') ||
-      origin.startsWith('http://127.') ||
-      origin.startsWith('http://192.168.') ||
-      origin.startsWith('http://10.') ||
-      origin.startsWith('http://172.') ||
-      origin.endsWith('.railway.app') ||
-      origin === FRONTEND_URL
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+// Permitido: sin origen (curl/Postman), el mismo sitio (la app se sirve desde este
+// mismo servidor), localhost y redes locales (desarrollo) y FRONTEND_URL.
+// Ya NO se acepta cualquier subdominio .railway.app (cualquiera puede crear uno).
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  const sameSite = origin && origin.replace(/^https?:\/\//, '') === req.headers.host;
+  const allowed =
+    !origin ||
+    sameSite ||
+    origin.startsWith('http://localhost') ||
+    origin.startsWith('http://127.') ||
+    origin.startsWith('http://192.168.') ||
+    origin.startsWith('http://10.') ||
+    origin.startsWith('http://172.') ||
+    origin === FRONTEND_URL;
+  callback(allowed ? null : new Error('Not allowed by CORS'), { origin: allowed, credentials: true });
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -164,7 +163,7 @@ app.use(express.urlencoded({ extended: true }));
 // con solo abrir /uploads/<businessId>/sales.json en el navegador.
 app.use('/uploads', (req, res, next) => {
   const ext = path.extname(req.path).toLowerCase();
-  const tiposPermitidos = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'];
+  const tiposPermitidos = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.ico']; // sin .svg: un SVG puede ejecutar scripts
   if (tiposPermitidos.includes(ext)) return next();
   // Cualquier otro tipo de archivo (JSON, txt, etc.) → acceso denegado
   return res.status(403).end();

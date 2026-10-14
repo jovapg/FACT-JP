@@ -78,15 +78,6 @@ export const useSalesStore = defineStore('sales', () => {
   }
 
   /**
-   * Construye la URL del PDF de una factura.
-   * Incluye el token JWT como query param para que el navegador
-   * pueda abrirlo directamente sin header de Authorization.
-   */
-  function getPdfUrl(saleId) {
-    return `/api/${bizId()}/invoices/${saleId}/pdf?token=${auth.token}`
-  }
-
-  /**
    * Descarga el reporte de ventas como archivo Excel.
    * Usa responseType 'blob' para manejar el archivo binario
    * y crea un enlace temporal para disparar la descarga.
@@ -122,6 +113,6 @@ export const useSalesStore = defineStore('sales', () => {
   return {
     sales, loading,
     fetchSales, createSale, updateInvoice, getSale,
-    fetchInvoices, getPdfUrl, exportExcel, fetchReports
+    fetchInvoices, exportExcel, fetchReports
   }
 })

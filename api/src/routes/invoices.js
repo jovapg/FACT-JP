@@ -7,9 +7,8 @@
  *   - Generación del PDF de una factura específica
  *
  * El PDF se genera con PDFKit en formato de impresora térmica de 80mm
- * (226px de ancho). El endpoint de PDF acepta el token JWT tanto en
- * el header Authorization como en el query param ?token=, lo que
- * permite abrirlo directamente desde una pestaña del navegador.
+ * (226px de ancho). El endpoint de PDF requiere el token JWT en el header
+ * Authorization (el frontend lo pide con axios y lo abre como blob).
  *
  * Rutas:
  *   GET /api/:businessId/invoices               → listar todas las facturas
@@ -39,24 +38,13 @@ router.get('/invoices', authenticate, async (req, res) => {
 /**
  * GET /invoices/:id/pdf — Genera y devuelve el PDF de una factura.
  *
- * Acepta el token JWT de dos formas:
- *   1. Header: Authorization: Bearer <token>  (llamada programática desde axios)
- *   2. Query:  ?token=<token>                 (enlace directo en el navegador)
- *
- * El middleware intermedio convierte el query param a header antes de
- * que `authenticate` lo verifique, manteniendo la seguridad.
+ * Requiere el token JWT en el header Authorization (llamada desde axios).
+ * Ya no se acepta por la URL (?token=).
  *
  * El PDF es generado por pdfGenerator.js con el diseño de ticket
  * térmico 80mm e incluye datos del negocio, ítems, descuento y total.
  */
 router.get('/invoices/:id/pdf',
-  // Middleware: convierte ?token= a header Authorization si no viene en el header
-  (req, res, next) => {
-    if (req.query.token && !req.headers['authorization']) {
-      req.headers['authorization'] = `Bearer ${req.query.token}`;
-    }
-    next();
-  },
   authenticate,
   async (req, res) => {
     try {
