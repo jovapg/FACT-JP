@@ -152,6 +152,29 @@ router.post('/:id/reset-sales', authenticate, requireSuperAdmin, async (req, res
 });
 
 /**
+ * POST /api/businesses/purge-orphans — Borra las carpetas de datos de negocios
+ * que ya no están registrados (quedaron de cuando eliminar solo desregistraba).
+ * Solo borra carpetas con nombre de UUID que no figuren en businesses.json.
+ */
+router.post('/purge-orphans', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const registered = new Set((await readJSON(BUSINESSES_FILE()) || []).map(b => b.id));
+    const root = path.resolve(getDataPath());
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const entries = await fs.promises.readdir(root, { withFileTypes: true });
+    const removed = [];
+    for (const e of entries) {
+      if (!e.isDirectory() || !uuidRe.test(e.name) || registered.has(e.name)) continue;
+      await fs.promises.rm(path.join(root, e.name), { recursive: true, force: true });
+      removed.push(e.name);
+    }
+    res.json({ success: true, removed });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * DELETE /api/businesses/:id — Elimina un negocio por completo.
  * Lo quita de la lista global, borra su carpeta de datos (ventas, inventario,
  * usuarios, logo, QR, etc.) y sus links cortos de facturas. Es irreversible.
