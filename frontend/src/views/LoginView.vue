@@ -13,7 +13,7 @@
           <span class="brand-name">facJp</span>
         </div>
         <h1 class="brand-headline">Gestión inteligente para tu negocio</h1>
-        <p class="brand-desc">Inventario, ventas, proveedores y reportes en un solo lugar. Diseñado para bares y restaurantes.</p>
+        <p class="brand-desc">Inventario, ventas, proveedores y reportes en un solo lugar.</p>
 
         <div class="brand-features">
           <div class="feature-item">

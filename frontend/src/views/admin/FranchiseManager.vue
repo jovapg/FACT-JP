@@ -162,10 +162,18 @@ async function confirmResetSales(biz) {
 }
 
 async function confirmDelete(biz) {
-  if (!confirm(`¿Eliminar franquicia "${biz.name}"? Esta acción es irreversible.`)) return
-  await api.delete(`/api/businesses/${biz.id}`)
-  businesses.value = businesses.value.filter(b => b.id !== biz.id)
-  toast('Franquicia eliminada', 'success')
+  const msg = `¿Eliminar la franquicia "${biz.name}"?\n\n` +
+              `- Se borran TODOS sus datos: ventas, inventario, recetas, deudas, usuarios, logo y QR\n` +
+              `- No se puede recuperar\n\n` +
+              `Escribe "ELIMINAR" para confirmar:`
+  if (prompt(msg) !== 'ELIMINAR') return
+  try {
+    await api.delete(`/api/businesses/${biz.id}`)
+    businesses.value = businesses.value.filter(b => b.id !== biz.id)
+    toast('Franquicia eliminada', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al eliminar', 'error')
+  }
 }
 
 function goToSetup(biz) {
