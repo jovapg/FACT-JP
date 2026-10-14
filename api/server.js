@@ -218,7 +218,7 @@ app.use('/api/:businessId', bizAccess, shortlinksRouter);
 app.get('/f/:code', handleShortlink);
 
 // Business profile routes
-const { readJSON, writeJSON, getBusinessPath } = require('./src/services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, getDataPath } = require('./src/services/fileStorage');
 
 app.get('/api/:businessId/profile', ...bizAccess, async (req, res) => {
   try {
@@ -304,17 +304,47 @@ app.get('/api/:businessId/users', ...bizAccess, async (req, res) => {
   }
 });
 
+// Roles que se pueden asignar a usuarios de un negocio. 'superadmin' nunca:
+// de lo contrario un admin podría darse acceso a todos los negocios.
+const ASSIGNABLE_ROLES = ['admin', 'cajero'];
+
+/**
+ * ¿El nombre de usuario ya existe en algún negocio o es el del superadmin?
+ * El login busca el usuario en todos los negocios, así que debe ser único
+ * en todo el sistema para que un cliente no entre al negocio de otro.
+ */
+async function usernameTaken(username, exceptUserId = null) {
+  const wanted = String(username || '').trim().toLowerCase();
+  const superadmin = await readJSON(path.join(getDataPath(), 'superadmin.json'));
+  if (superadmin && String(superadmin.username).toLowerCase() === wanted) return true;
+  const businesses = await readJSON(path.join(getDataPath(), 'businesses.json')) || [];
+  for (const b of businesses) {
+    const list = await readJSON(path.join(getBusinessPath(b.id), 'users.json'));
+    if (Array.isArray(list) && list.some(u => u.id !== exceptUserId && String(u.username).toLowerCase() === wanted)) return true;
+  }
+  return false;
+}
+
 app.post('/api/:businessId/users', ...bizAccess, async (req, res) => {
   try {
     if (req.user.role !== 'superadmin' && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!req.body.username?.trim() || !req.body.password) {
+      return res.status(400).json({ error: 'Usuario y contraseña son obligatorios' });
+    }
+    if (!ASSIGNABLE_ROLES.includes(req.body.role)) {
+      return res.status(400).json({ error: 'Rol no permitido' });
+    }
+    if (await usernameTaken(req.body.username)) {
+      return res.status(409).json({ error: 'Ese nombre de usuario ya existe. Usa otro (ej: prefijo del negocio).' });
     }
     const bcrypt = require('bcryptjs');
     const { v4: uuidv4 } = require('uuid');
     const usersPath = path.join(getBusinessPath(req.params.businessId), 'users.json');
     const users = await readJSON(usersPath) || [];
     const hashed = await bcrypt.hash(req.body.password, 10);
-    const newUser = { id: uuidv4(), ...req.body, password: hashed };
+    const newUser = { ...req.body, id: uuidv4(), username: req.body.username.trim(), password: hashed };
     users.push(newUser);
     await writeJSON(usersPath, users);
     res.status(201).json({ ...newUser, password: undefined });
@@ -333,7 +363,16 @@ app.put('/api/:businessId/users/:id', ...bizAccess, async (req, res) => {
     let users = await readJSON(usersPath) || [];
     const idx = users.findIndex(u => u.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
-    const updated = { ...users[idx], ...req.body };
+    if (req.body.role !== undefined && !ASSIGNABLE_ROLES.includes(req.body.role)) {
+      return res.status(400).json({ error: 'Rol no permitido' });
+    }
+    if (req.body.username !== undefined && req.body.username.trim() !== users[idx].username) {
+      if (!req.body.username.trim()) return res.status(400).json({ error: 'El usuario no puede quedar vacío' });
+      if (await usernameTaken(req.body.username, users[idx].id)) {
+        return res.status(409).json({ error: 'Ese nombre de usuario ya existe. Usa otro (ej: prefijo del negocio).' });
+      }
+    }
+    const updated = { ...users[idx], ...req.body, id: users[idx].id };
     if (req.body.password) {
       updated.password = await bcrypt.hash(req.body.password, 10);
     }

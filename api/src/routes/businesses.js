@@ -15,12 +15,13 @@
  *   GET    /api/businesses       → listar todos los negocios
  *   POST   /api/businesses       → crear nuevo negocio (superadmin)
  *   PUT    /api/businesses/:id   → editar negocio (superadmin)
- *   DELETE /api/businesses/:id   → eliminar negocio (superadmin)
+ *   DELETE /api/businesses/:id   → eliminar negocio y todos sus datos (superadmin)
  */
 
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getDataPath, getBusinessPath, ensureBusinessDir } = require('../services/fileStorage');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
@@ -28,11 +29,16 @@ const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 /** Ruta al archivo con la lista de todos los negocios */
 const BUSINESSES_FILE = () => path.join(getDataPath(), 'businesses.json');
 
-/** GET /api/businesses — Lista todos los negocios registrados */
+/**
+ * GET /api/businesses — Lista los negocios registrados.
+ * El superadmin ve todos; admin/cajero solo ven el suyo (para no exponer
+ * los nombres de los demás clientes).
+ */
 router.get('/', authenticate, async (req, res) => {
   try {
     const businesses = await readJSON(BUSINESSES_FILE()) || [];
-    res.json(businesses);
+    if (req.user.role === 'superadmin') return res.json(businesses);
+    res.json(businesses.filter(b => b.id === req.user.businessId));
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
   }
@@ -146,14 +152,33 @@ router.post('/:id/reset-sales', authenticate, requireSuperAdmin, async (req, res
 });
 
 /**
- * DELETE /api/businesses/:id — Elimina un negocio de la lista global.
- * NOTA: No elimina los archivos de datos del negocio (solo lo desregistra).
+ * DELETE /api/businesses/:id — Elimina un negocio por completo.
+ * Lo quita de la lista global, borra su carpeta de datos (ventas, inventario,
+ * usuarios, logo, QR, etc.) y sus links cortos de facturas. Es irreversible.
  */
 router.delete('/:id', authenticate, requireSuperAdmin, async (req, res) => {
   try {
-    let businesses = await readJSON(BUSINESSES_FILE()) || [];
-    businesses = businesses.filter(b => b.id !== req.params.id);
-    await writeJSON(BUSINESSES_FILE(), businesses);
+    const all = await readJSON(BUSINESSES_FILE()) || [];
+    if (!all.some(b => b.id === req.params.id)) return res.status(404).json({ error: 'Business not found' });
+    await writeJSON(BUSINESSES_FILE(), all.filter(b => b.id !== req.params.id));
+
+    // Borrar la carpeta del negocio, solo si queda realmente dentro de la carpeta de datos
+    const root = path.resolve(getDataPath());
+    const target = path.resolve(getBusinessPath(req.params.id));
+    if (target.startsWith(root + path.sep)) {
+      await fs.promises.rm(target, { recursive: true, force: true });
+    }
+
+    // Quitar los links cortos de facturas de este negocio
+    const linksFile = path.join(getDataPath(), 'shortlinks.json');
+    const links = await readJSON(linksFile);
+    if (links && typeof links === 'object') {
+      for (const code of Object.keys(links)) {
+        if (links[code]?.businessId === req.params.id) delete links[code];
+      }
+      await writeJSON(linksFile, links);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
