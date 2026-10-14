@@ -89,6 +89,7 @@ async function deductFromSale(businessId, saleItems) {
     if (target.type === 'direct') {
       // Producto de inventario (directo o receta que coincide por nombre): −qty unidades
       const inv = target.item;
+      if (inv.noStock) continue; // Servicio / producto sin control de stock
       inv.stock = Math.max(0, (inv.stock || 0) - qty);
       pushAlertIfLow(inv);
     } else {
@@ -133,6 +134,7 @@ async function restoreFromSale(businessId, saleItems) {
 
     if (target.type === 'direct') {
       // Producto de inventario (directo o receta que coincide por nombre): +qty unidades
+      if (target.item.noStock) continue; // Sin control de stock: nada que devolver
       target.item.stock = (target.item.stock || 0) + qty;
     } else {
       // Receta con ingredientes: devolver cada insumo × cantidad vendida
@@ -178,7 +180,7 @@ async function findOutOfStockItems(businessId, items) {
 
     if (target.type === 'direct') {
       // Producto de inventario (directo o receta que coincide por nombre)
-      if ((target.item.stock || 0) <= 0) out.push(target.item.name);
+      if (!target.item.noStock && (target.item.stock || 0) <= 0) out.push(target.item.name);
     } else {
       // Receta con ingredientes: agotada si falta alguno
       for (const ing of target.list) {
@@ -256,7 +258,7 @@ async function adjustStock(businessId, inventoryId, adjustment, reason) {
 async function getLowStockAlerts(businessId) {
   const inventoryPath = path.join(getBusinessPath(businessId), 'inventory.json');
   const inventory = await readJSON(inventoryPath) || [];
-  return inventory.filter(i => i.stock <= (i.minStock || 0));
+  return inventory.filter(i => !i.noStock && i.stock <= (i.minStock || 0));
 }
 
 module.exports = { deductFromSale, restoreFromSale, findOutOfStockItems, addFromPurchase, adjustStock, getLowStockAlerts };

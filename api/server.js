@@ -238,6 +238,13 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
     const profilePath = path.join(getBusinessPath(req.params.businessId), 'profile.json');
     const existing = await readJSON(profilePath) || {};
     const updated = { ...existing, ...req.body, id: req.params.businessId };
+    // "Usa recetas" y el ícono los define solo el superadmin (desde Franquicias)
+    if (req.user.role !== 'superadmin') {
+      for (const k of ['usesRecipes', 'icon']) {
+        if (existing[k] === undefined) delete updated[k];
+        else updated[k] = existing[k];
+      }
+    }
     await writeJSON(profilePath, updated);
     res.json(updated);
   } catch {

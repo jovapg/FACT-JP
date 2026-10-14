@@ -26,6 +26,9 @@ const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getDataPath, getBusinessPath, ensureBusinessDir } = require('../services/fileStorage');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 
+/** Íconos permitidos para un negocio (deben coincidir con frontend/src/utils/businessIcons.js) */
+const BUSINESS_ICON_KEYS = ['store', 'utensils', 'beer', 'wine', 'coffee', 'crosshair', 'croissant', 'dumbbell', 'hotel', 'briefcase'];
+
 /** Ruta al archivo con la lista de todos los negocios */
 const BUSINESSES_FILE = () => path.join(getDataPath(), 'businesses.json');
 
@@ -52,6 +55,8 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
   try {
     const { name, slug, nit, address, city, phone, currency, invoicePrefix, tablesCount } = req.body;
+    const usesRecipes = req.body.usesRecipes !== false; // por defecto sí usa recetas
+    const icon = BUSINESS_ICON_KEYS.includes(req.body.icon) ? req.body.icon : 'store'; // ícono neutro por defecto
     if (!name) return res.status(400).json({ error: 'Name required' });
 
     const id = uuidv4();
@@ -62,6 +67,8 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
       name,
       slug: slug || name.toLowerCase().replace(/\s+/g, '-'), // Slug auto-generado del nombre
       active: true,
+      usesRecipes,
+      icon,
       createdAt: new Date().toISOString()
     };
 
@@ -80,6 +87,8 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
       phone: phone || '',
       logo: '',
       tablesCount: tablesCount || 10,
+      usesRecipes,   // false = el negocio vende directo del inventario (sin pantalla de Recetas)
+      icon,          // ícono del negocio en el menú lateral (cuando no tiene logo)
       currency: currency || 'COP',
       invoicePrefix: invoicePrefix || name.substring(0, 2).toUpperCase(), // Prefijo auto de las 2 primeras letras
       invoiceCounter: 0  // Contador de facturas, se incrementa con cada venta
@@ -120,6 +129,36 @@ router.put('/:id', authenticate, requireSuperAdmin, async (req, res) => {
     res.json(businesses[idx]);
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PUT /api/businesses/:id/settings — Ajustes de módulos del negocio (solo superadmin).
+ * Body: { usesRecipes?: boolean, icon?: string } (al menos uno). Se guarda en la lista global (para mostrarlo en
+ * Franquicias) y en el profile.json del negocio (para que la app lo aplique).
+ */
+router.put('/:id/settings', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    const { usesRecipes, icon } = req.body;
+    if (usesRecipes !== undefined && typeof usesRecipes !== 'boolean') return res.status(400).json({ error: 'usesRecipes debe ser true o false' });
+    if (icon !== undefined && !BUSINESS_ICON_KEYS.includes(icon)) return res.status(400).json({ error: 'Ícono no válido' });
+    if (usesRecipes === undefined && icon === undefined) return res.status(400).json({ error: 'Nada que actualizar' });
+    const businesses = await readJSON(BUSINESSES_FILE()) || [];
+    const idx = businesses.findIndex(b => b.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Business not found' });
+    if (usesRecipes !== undefined) businesses[idx].usesRecipes = usesRecipes;
+    if (icon !== undefined) businesses[idx].icon = icon;
+    await writeJSON(BUSINESSES_FILE(), businesses);
+
+    const profilePath = path.join(getBusinessPath(req.params.id), 'profile.json');
+    const profile = await readJSON(profilePath) || {};
+    if (usesRecipes !== undefined) profile.usesRecipes = usesRecipes;
+    if (icon !== undefined) profile.icon = icon;
+    await writeJSON(profilePath, profile);
+
+    res.json(businesses[idx]);
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
