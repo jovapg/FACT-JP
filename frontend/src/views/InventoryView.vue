@@ -70,7 +70,7 @@
                     <td>{{ item.minStock }}</td>
                     <td>{{ item.unit }}</td>
                     <td>
-                      <span v-if="item.esIngrediente" class="badge badge-ingredient">🧪 Ingrediente</span>
+                      <span v-if="item.esIngrediente" class="badge badge-ingredient">{{ componentLabel.icon }} {{ componentLabel.name }}</span>
                       <span v-else class="badge badge-sale">🛒 Venta</span>
                     </td>
                     <td>{{ formatCOP(item.cost) }}</td>
@@ -106,17 +106,22 @@
                   <span class="tipo-icon">🛒</span>
                   <span>
                     <strong>Producto de venta</strong>
-                    <small>Tiene precio venta, aparece en POS</small>
+                    <small>Tiene precio de venta y aparece al vender</small>
                   </span>
                 </label>
                 <label class="tipo-opt" :class="{ active: form.esIngrediente }" @click="form.esIngrediente = true">
-                  <span class="tipo-icon">🧪</span>
+                  <span class="tipo-icon">{{ componentLabel.icon }}</span>
                   <span>
-                    <strong>Ingrediente</strong>
-                    <small>Solo se usa en recetas, no se vende</small>
+                    <strong>{{ componentLabel.name }}</strong>
+                    <small>{{ componentLabel.hint }}</small>
                   </span>
                 </label>
               </div>
+
+              <label class="nostock-row mb-3">
+                <input type="checkbox" v-model="form.noStock" />
+                <span><strong>No controla stock</strong> (servicios, alquileres, cosas que nunca se agotan)</span>
+              </label>
 
               <!-- Imagen del producto (solo al editar) -->
               <div class="img-upload-row mb-3" v-if="editItem">
@@ -137,8 +142,8 @@
                   <input v-model="form.name" :class="['form-control', { 'input-error': submitted && !form.name.trim() }]" />
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Proveedor *</label>
-                  <select v-model="form.supplierId" :class="['form-control', { 'input-error': submitted && !form.supplierId }]">
+                  <label class="form-label">Proveedor {{ form.noStock ? '(opcional)' : '*' }}</label>
+                  <select v-model="form.supplierId" :class="['form-control', { 'input-error': submitted && !form.noStock && !form.supplierId }]">
                     <option value="">— Seleccionar proveedor —</option>
                     <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
@@ -187,27 +192,21 @@
                     </div>
                   </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group" v-if="!form.noStock">
                   <label class="form-label">Stock actual</label>
                   <input v-model.number="form.stock" type="number" class="form-control" min="0" />
                 </div>
-                <div class="form-group">
+                <div class="form-group" v-if="!form.noStock">
                   <label class="form-label">Stock mínimo</label>
                   <input v-model.number="form.minStock" type="number" class="form-control" min="0" />
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Precio de costo (COP) *</label>
-                  <input v-model.number="form.cost" type="number" :class="['form-control', { 'input-error': submitted && !(form.cost > 0) }]" min="0" />
+                  <label class="form-label">Precio de costo (COP) {{ form.noStock ? '(opcional)' : '*' }}</label>
+                  <input v-model.number="form.cost" type="number" :class="['form-control', { 'input-error': submitted && !form.noStock && !(form.cost > 0) }]" min="0" />
                 </div>
                 <div class="form-group" v-if="!form.esIngrediente">
                   <label class="form-label">Precio de venta (COP)</label>
                   <input v-model.number="form.salePrice" type="number" class="form-control" min="0" placeholder="Ej: 8000" />
-                </div>
-                <div class="form-group" style="grid-column:1/-1">
-                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-                    <input type="checkbox" v-model="form.noStock" />
-                    <span><strong>No controla stock</strong> (servicios, alquileres, cosas que nunca se agotan)</span>
-                  </label>
                 </div>
               </div>
             </div>
@@ -377,6 +376,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useBusinessStore } from '../stores/business.js'
+import { useSpaces } from '../composables/useSpaces.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -384,6 +384,17 @@ import api from '../services/api.js'
 
 const inventoryStore = useInventoryStore()
 const businessStore = useBusinessStore()
+const spaces = useSpaces()
+
+// Cómo se llama el producto que no se vende solo, según el negocio:
+//   restaurante (recetas) → Ingrediente · campo de tiro (combos) → Componente · sin recetas → Insumo
+const componentLabel = computed(() => {
+  if (!businessStore.usesRecipes) return { icon: '📦', name: 'Insumo', hint: 'Uso interno, no se vende' }
+  if (spaces.recipesLabel !== 'Recetas') {
+    return { icon: '🧩', name: 'Componente', hint: `Solo se usa dentro de ${spaces.recipesLabel.toLowerCase()}, no se vende solo` }
+  }
+  return { icon: '🧪', name: 'Ingrediente', hint: 'Solo se usa en recetas, no se vende' }
+})
 const auth = useAuthStore()
 const toast = inject('toast')
 const suppliers = ref([])   // Lista de proveedores del negocio para el selector del formulario
@@ -621,10 +632,10 @@ async function handleImageUpload(event) {
 async function saveItem() {
   submitted.value = true
   if (!form.name.trim()) { toast('El nombre es obligatorio', 'warning'); return }
-  if (!form.supplierId) { toast('Selecciona un proveedor', 'warning'); return }
+  if (!form.noStock && !form.supplierId) { toast('Selecciona un proveedor', 'warning'); return }
   if (!form.category.trim()) { toast('La categoría es obligatoria', 'warning'); return }
   if (!form.unit.trim()) { toast('La unidad es obligatoria', 'warning'); return }
-  if (!(form.cost > 0)) { toast('El precio de costo debe ser mayor a 0', 'warning'); return }
+  if (!form.noStock && !(form.cost > 0)) { toast('El precio de costo debe ser mayor a 0', 'warning'); return }
   // Validar duplicado por nombre (solo al crear)
   if (!editItem.value) {
     const nombre = form.name.trim().toLowerCase()
@@ -634,6 +645,8 @@ async function saveItem() {
   saving.value = true
   try {
     const itemData = { ...form }
+    // Un servicio (sin control de stock) no guarda cantidades
+    if (form.noStock) { itemData.stock = 0; itemData.minStock = 0 }
     // Si es ingrediente, limpiar precio venta para que no aparezca en POS
     if (form.esIngrediente) itemData.salePrice = 0
 
@@ -661,7 +674,7 @@ async function saveItem() {
         })
         toast(`"${form.name}" creado y agregado al menú de venta`, 'success')
       } else {
-        toast(form.esIngrediente ? 'Ingrediente creado' : `"${form.name}" creado`, 'success')
+        toast(form.esIngrediente ? `${componentLabel.value.name} creado` : `"${form.name}" creado`, 'success')
       }
     }
     closeModal()
@@ -806,6 +819,7 @@ onMounted(async () => {
 .input-error { border-color: var(--danger) !important; background: #fff5f5; }
 
 /* Toggle tipo producto */
+.nostock-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); }
 .tipo-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -88,7 +88,7 @@
               <div class="recipe-price">{{ formatCOP(recipe.price) }}</div>
             </div>
             <div class="recipe-ingredients" v-if="recipe.ingredients?.length > 0">
-              <p class="ingredients-label">Ingredientes ({{ recipe.ingredients.length }}):</p>
+              <p class="ingredients-label">{{ isCombo ? 'Incluye' : 'Ingredientes' }} ({{ recipe.ingredients.length }}):</p>
               <div class="ingredient-list">
                 <span
                   v-for="ing in recipe.ingredients"
@@ -164,7 +164,7 @@
               </div>
 
               <!-- Opciones avanzadas: control de inventario (ingredientes). Oculto por defecto. -->
-              <div class="advanced-toggle">
+              <div class="advanced-toggle" v-if="!isCombo">
                 <button type="button" class="link-btn" @click="showAdvanced = !showAdvanced">
                   {{ showAdvanced ? '▼' : '▶' }} Control de inventario (opcional)
                 </button>
@@ -174,16 +174,16 @@
               </div>
 
               <!-- Ingredients -->
-              <div class="ingredients-section" v-if="showAdvanced">
+              <div class="ingredients-section" v-if="showAdvanced || isCombo">
                 <div class="ingredients-header">
-                  <h4>Insumos que consume (descuenta del stock)</h4>
+                  <h4>{{ isCombo ? 'Qué incluye (lo que lleva stock se descuenta al vender)' : 'Insumos que consume (descuenta del stock)' }}</h4>
                   <button class="btn btn-sm btn-outline" @click="addIngredient">+ Agregar</button>
                 </div>
                 <div v-for="(ing, idx) in form.ingredients" :key="idx" class="ingredient-row">
                   <select v-model="ing.inventoryId" class="form-control">
                     <option value="">Seleccionar producto</option>
                     <option v-for="item in inventoryStore.items" :key="item.id" :value="item.id">
-                      {{ item.name }} ({{ item.stock }} {{ item.unit }})
+                      {{ item.name }}{{ item.noStock ? '' : ` (${item.stock} ${item.unit})` }}
                     </option>
                   </select>
                   <input v-model.number="ing.quantity" type="number" class="form-control" placeholder="Cantidad" min="0" step="0.1" style="max-width:100px" />
@@ -191,7 +191,7 @@
                   <button class="btn btn-sm btn-danger" @click="removeIngredient(idx)">×</button>
                 </div>
                 <p v-if="form.ingredients.length === 0" class="text-muted">
-                  Sin ingredientes (no se deducirá inventario)
+                  {{ isCombo ? 'Aún no has agregado productos a este combo' : 'Sin ingredientes (no se deducirá inventario)' }}
                 </p>
               </div>
             </div>
@@ -236,6 +236,8 @@ import { Search } from 'lucide-vue-next'
 const inventoryStore = useInventoryStore()
 const spaces = useSpaces()
 const recipesTitle = computed(() => spaces.recipesLabel === 'Recetas' ? 'Recetas / Menú' : spaces.recipesLabel)
+// Con el nombre "Combos" (u otro), el módulo arma paquetes de productos: la lista de lo que incluye es lo principal
+const isCombo = computed(() => spaces.recipesLabel !== 'Recetas')
 const toast = inject('toast')
 
 const activeCat    = ref('todas')
