@@ -114,7 +114,7 @@ router.get('/sales', authenticate, async (req, res) => {
  */
 router.post('/sales', authenticate, async (req, res) => {
   try {
-    const { tableId, tableNumber, items, paymentMethod, cashier, notes, client, discount, total } = req.body;
+    const { tableId, tableNumber, items, paymentMethod, cashier, notes, client, discount, total, orderId } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'No items in sale' });
@@ -211,8 +211,15 @@ router.post('/sales', authenticate, async (req, res) => {
       const tables = await readJSON(tablesPath(req.params.businessId)) || [];
       const idx = tables.findIndex(t => t.id === tableId);
       if (idx !== -1) {
-        tables[idx].status = 'libre';
-        tables[idx].order = null;
+        const t = tables[idx];
+        if (orderId && Array.isArray(t.orders)) {
+          // Varias ventas por espacio: solo se quita la facturada; el espacio sigue ocupado si quedan más
+          t.orders = t.orders.filter(o => o.id !== orderId);
+          t.status = t.orders.length > 0 ? 'ocupada' : 'libre';
+        } else {
+          t.status = 'libre';
+          t.order = null;
+        }
         await writeJSON(tablesPath(req.params.businessId), tables);
       }
     }

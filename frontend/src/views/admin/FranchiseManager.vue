@@ -17,6 +17,7 @@
               <div>
                 <h4 class="franchise-name">{{ biz.name }}</h4>
                 <p class="franchise-slug">{{ biz.slug }}</p>
+                <p class="franchise-slug">{{ biz.spaceLabelPlural || 'Mesas' }}{{ biz.multiOrders ? ' · varias ventas por espacio' : '' }}</p>
               </div>
               <span :class="['badge', biz.active ? 'badge-success' : 'badge-danger']">
                 {{ biz.active ? 'Activo' : 'Inactivo' }}
@@ -24,6 +25,7 @@
             </div>
             <div class="franchise-actions">
               <button class="btn btn-sm btn-outline" @click="goToSetup(biz)">⚙️ Configurar</button>
+              <button class="btn btn-sm btn-outline" @click="openConfig(biz)" title="Nombre de los espacios, forma de cobro y módulo de recetas">🧩 Forma de trabajo</button>
               <button class="btn btn-sm btn-outline" @click="toggleRecipes(biz)" title="Activar o quitar la pantalla de Recetas">
                 🍳 Recetas: {{ biz.usesRecipes === false ? 'No' : 'Sí' }}
               </button>
@@ -56,6 +58,60 @@
                       <span>{{ opt.label }}</span>
                     </button>
                   </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Forma de trabajo de una franquicia existente -->
+        <div class="modal-overlay" v-if="cfgTarget" @click.self="cfgTarget = null">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 class="modal-title">Forma de trabajo · {{ cfgTarget.name }}</h3>
+              <button class="btn-close" @click="cfgTarget = null">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="grid grid-2">
+                <div class="form-group">
+                  <label class="form-label">Cómo se llaman los espacios</label>
+                  <input v-model="cfg.spaceLabel" class="form-control" placeholder="Mesa, Campo, Pista..." />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">En plural</label>
+                  <input v-model="cfg.spaceLabelPlural" class="form-control" placeholder="Mesas, Campos..." />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Nombres de los espacios (separados por coma)</label>
+                  <input v-model="cfg.spaceNamesText" class="form-control" placeholder="Ej: Alfa, Mega, Beta (vacío = numerados 1, 2, 3...)" />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Forma de cobro</label>
+                  <div class="mode-opts">
+                    <button type="button" :class="['mode-opt', { active: !cfg.multiOrders }]" @click="cfg.multiOrders = false">
+                      <strong>Una cuenta por espacio</strong><span>Como la mesa de un restaurante</span>
+                    </button>
+                    <button type="button" :class="['mode-opt', { active: cfg.multiOrders }]" @click="cfg.multiOrders = true">
+                      <strong>Varias ventas por espacio</strong><span>Cada una se guarda y se factura aparte, más venta directa</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Cómo se llama el módulo de recetas</label>
+                  <input v-model="cfg.recipesLabel" class="form-control" placeholder="Recetas, Combos..." />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Módulos que usa este negocio</label>
+                  <div class="mods-grid">
+                    <label v-for="mm in MODULES" :key="mm.key" class="mod-check">
+                      <input type="checkbox" v-model="cfg.modules[mm.key]" /> <span>{{ mm.label }}</span>
+                    </label>
+                    <label class="mod-check"><input type="checkbox" v-model="cfg.usesRecipes" /> <span>Recetas / Combos</span></label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline" @click="cfgTarget = null">Cancelar</button>
+              <button class="btn btn-primary" @click="saveConfig" :disabled="cfgSaving">{{ cfgSaving ? 'Guardando...' : 'Guardar' }}</button>
             </div>
           </div>
         </div>
@@ -105,10 +161,46 @@
                   <label class="form-label">Tipo de negocio (ícono)</label>
                   <div class="icon-grid">
                     <button v-for="opt in BUSINESS_ICONS" :key="opt.key" type="button"
-                      :class="['icon-opt', { active: form.icon === opt.key }]" @click="form.icon = opt.key">
+                      :class="['icon-opt', { active: form.icon === opt.key }]" @click="pickIcon(opt.key)">
                       <component :is="opt.icon" :size="22" />
                       <span>{{ opt.label }}</span>
                     </button>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Cómo se llaman los espacios</label>
+                  <input v-model="form.spaceLabel" class="form-control" placeholder="Mesa, Campo, Pista..." />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">En plural</label>
+                  <input v-model="form.spaceLabelPlural" class="form-control" placeholder="Mesas, Campos..." />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Nombres de los espacios (separados por coma)</label>
+                  <input v-model="form.spaceNamesText" class="form-control" placeholder="Ej: Alfa, Mega, Beta (vacío = numerados 1, 2, 3...)" />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Forma de cobro</label>
+                  <div class="mode-opts">
+                    <button type="button" :class="['mode-opt', { active: !form.multiOrders }]" @click="form.multiOrders = false">
+                      <strong>Una cuenta por espacio</strong><span>Como la mesa de un restaurante</span>
+                    </button>
+                    <button type="button" :class="['mode-opt', { active: form.multiOrders }]" @click="form.multiOrders = true">
+                      <strong>Varias ventas por espacio</strong><span>Cada una se guarda y se factura aparte, más venta directa</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Cómo se llama el módulo de recetas</label>
+                  <input v-model="form.recipesLabel" class="form-control" placeholder="Recetas, Combos..." />
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                  <label class="form-label">Módulos que usa este negocio</label>
+                  <div class="mods-grid">
+                    <label v-for="mm in MODULES" :key="mm.key" class="mod-check">
+                      <input type="checkbox" v-model="form.modules[mm.key]" /> <span>{{ mm.label }}</span>
+                    </label>
                   </div>
                 </div>
                 <div class="form-group" style="grid-column:1/-1">
@@ -134,22 +226,99 @@
 import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth.js'
+import { useBusinessStore } from '../../stores/business.js'
 import api from '../../services/api.js'
 import PageLayout from '../../components/PageLayout.vue'
 import { BUSINESS_ICONS, DEFAULT_BUSINESS_ICON, businessIconFor } from '../../utils/businessIcons.js'
 
 const router = useRouter()
 const auth = useAuthStore()
+const businessStore = useBusinessStore()
 const toast = inject('toast')
 
 const businesses = ref([])
 const showModal = ref(false)
 const saving = ref(false)
 const iconTarget = ref(null)   // Franquicia a la que se le está cambiando el ícono
+const cfgTarget = ref(null)    // Franquicia a la que se le edita la forma de trabajo
+const cfgSaving = ref(false)
+const MODULES = [
+  { key: 'debtors', label: 'Deudas y fiado' },
+  { key: 'payroll', label: 'Nómina' },
+  { key: 'finance', label: 'Finanzas' },
+  { key: 'reports', label: 'Reportes' },
+  { key: 'audit', label: 'Bitácora' }
+]
+const allModules = () => ({ debtors: true, payroll: true, finance: true, reports: true, audit: true })
+const cfg = reactive({ spaceLabel: 'Mesa', spaceLabelPlural: 'Mesas', spaceNamesText: '', multiOrders: false, recipesLabel: 'Recetas', usesRecipes: true, modules: allModules() })
+
+/** "Alfa, Mega\nBeta" → ['Alfa', 'Mega', 'Beta'] */
+const parseNames = (t) => String(t || '').split(/[,\n]/).map(x => x.trim()).filter(Boolean)
+
+// Al escoger el tipo de negocio se propone una forma de trabajo (todo se puede cambiar)
+const presetBase = () => ({ spaceLabel: 'Mesa', spaceLabelPlural: 'Mesas', spaceNamesText: '', multiOrders: false, recipesLabel: 'Recetas', usesRecipes: true, modules: allModules() })
+const PRESETS = {
+  // Restaurante: mesas, una cuenta por mesa y recetas (platos con ingredientes)
+  utensils: {},
+  // Bar y licorería: mesas, una cuenta por mesa, sin recetas (se vende directo del inventario)
+  beer: { usesRecipes: false },
+  wine: { usesRecipes: false },
+  // Campo de tiro: campos con nombre, varias ventas por campo, combos y sin deudas
+  crosshair: { spaceLabel: 'Campo', spaceLabelPlural: 'Campos', spaceNamesText: 'Alfa, Mega, Beta', multiOrders: true, recipesLabel: 'Combos', usesRecipes: true, modules: { ...allModules(), debtors: false } }
+}
+function pickIcon(key) {
+  form.icon = key
+  Object.assign(form, presetBase(), PRESETS[key] || {})
+}
+
+async function openConfig(biz) {
+  try {
+    const p = (await api.get(`/api/${biz.id}/profile`)).data
+    Object.assign(cfg, {
+      spaceLabel: p.spaceLabel || 'Mesa',
+      spaceLabelPlural: p.spaceLabelPlural || 'Mesas',
+      spaceNamesText: (p.spaceNames || []).join(', '),
+      multiOrders: !!p.multiOrders,
+      recipesLabel: p.recipesLabel || 'Recetas',
+      usesRecipes: p.usesRecipes !== false,
+      modules: { ...allModules(), ...(p.modules || {}) }
+    })
+    cfgTarget.value = biz
+  } catch {
+    toast('No se pudo cargar la configuración', 'error')
+  }
+}
+
+async function saveConfig() {
+  cfgSaving.value = true
+  try {
+    const biz = cfgTarget.value
+    const res = await api.put(`/api/businesses/${biz.id}/settings`, {
+      spaceLabel: cfg.spaceLabel,
+      spaceLabelPlural: cfg.spaceLabelPlural,
+      spaceNames: parseNames(cfg.spaceNamesText),
+      multiOrders: cfg.multiOrders,
+      recipesLabel: cfg.recipesLabel,
+      usesRecipes: cfg.usesRecipes,
+      modules: cfg.modules
+    })
+    const idx = businesses.value.findIndex(b => b.id === biz.id)
+    if (idx !== -1) businesses.value[idx] = res.data
+    if (auth.currentBusiness?.id === biz.id) await businessStore.fetchProfile()
+    cfgTarget.value = null
+    toast('Forma de trabajo guardada', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'Error al guardar', 'error')
+  } finally {
+    cfgSaving.value = false
+  }
+}
 
 const form = reactive({
   name: '', slug: '', nit: '', address: '',
-  city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON
+  city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON,
+  spaceLabel: 'Mesa', spaceLabelPlural: 'Mesas', spaceNamesText: '', multiOrders: false, recipesLabel: 'Recetas',
+  modules: { debtors: true, payroll: true, finance: true, reports: true, audit: true }
 })
 
 async function loadBusinesses() {
@@ -158,7 +327,7 @@ async function loadBusinesses() {
 }
 
 function openCreate() {
-  Object.assign(form, { name: '', slug: '', nit: '', address: '', city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON })
+  Object.assign(form, { name: '', slug: '', nit: '', address: '', city: 'Medellín', phone: '', invoicePrefix: '', tablesCount: 10, usesRecipes: true, icon: DEFAULT_BUSINESS_ICON, spaceLabel: 'Mesa', spaceLabelPlural: 'Mesas', spaceNamesText: '', multiOrders: false, recipesLabel: 'Recetas', modules: { debtors: true, payroll: true, finance: true, reports: true, audit: true } })
   showModal.value = true
 }
 
@@ -168,7 +337,7 @@ async function createFranchise() {
   if (!form.name) { toast('Nombre requerido', 'warning'); return }
   saving.value = true
   try {
-    const res = await api.post('/api/businesses', { ...form })
+    const res = await api.post('/api/businesses', { ...form, spaceNames: parseNames(form.spaceNamesText) })
     businesses.value.push(res.data)
     auth.businesses.push(res.data)
     toast('Franquicia creada', 'success')
@@ -270,6 +439,18 @@ onMounted(loadBusinesses)
   background: var(--surface-2); color: var(--text); cursor: pointer;
 }
 .franchise-icon:hover { border-color: var(--accent); }
+.mods-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; }
+.mod-check { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; }
+.mode-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mode-opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px;
+  border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface);
+  color: var(--text); cursor: pointer; font-size: 13px;
+}
+.mode-opt span { font-size: 11.5px; color: var(--text-light); }
+.mode-opt:hover { border-color: var(--accent); }
+.mode-opt.active { border-color: var(--accent); background: rgba(245,158,11,0.12); }
+@media (max-width: 520px) { .mode-opts { grid-template-columns: 1fr; } }
 .icon-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .icon-opt {
   display: flex; flex-direction: column; align-items: center; gap: 4px;

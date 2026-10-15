@@ -18,7 +18,7 @@
         <div class="brand-features">
           <div class="feature-item">
             <span class="feature-dot"></span>
-            <span>Registro de ventas por mesa en segundos</span>
+            <span>Registro de ventas en segundos</span>
           </div>
           <div class="feature-item">
             <span class="feature-dot"></span>

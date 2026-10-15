@@ -144,8 +144,16 @@ const router = createRouter({
  * 3. Requiere negocio → si no hay negocio seleccionado, va al selector
  * 4. Requiere rol → si el rol del usuario no está en la lista, va al dashboard
  */
+// Rutas que dependen de un módulo que el superadmin puede apagar por negocio
+const MODULE_ROUTES = { '/debtors': 'debtors', '/payroll': 'payroll', '/finance': 'finance', '/reports': 'reports', '/audit': 'audit' }
+
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
+
+  const moduleKey = MODULE_ROUTES[to.path]
+  if (moduleKey && authStore.currentBusiness?.modules?.[moduleKey] === false) {
+    return next('/dashboard')
+  }
 
   if (to.meta.public) {
     if (authStore.isAuthenticated) return next('/dashboard')

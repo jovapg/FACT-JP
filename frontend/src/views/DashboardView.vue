@@ -44,7 +44,7 @@
                 <TableIcon :size="20" color="#2563eb" />
               </div>
               <div>
-                <p class="stat-label">Mesas ocupadas</p>
+                <p class="stat-label">{{ spaces.plural }} en uso</p>
                 <p class="stat-value">{{ occupiedTables }}<span class="stat-denom"> / {{ totalTables }}</span></p>
               </div>
             </div>
@@ -81,7 +81,7 @@
         </div>
 
         <!-- Nómina del mes -->
-        <div class="card nomina-card mb-4" v-if="!loadingData && suppliers.some(s => s.tipo === 'empleado')">
+        <div class="card nomina-card mb-4" v-if="!loadingData && spaces.has('payroll') && suppliers.some(s => s.tipo === 'empleado')">
           <div class="nomina-header">
             <div class="nomina-title-wrap">
               <div class="nomina-icon-wrap">
@@ -147,14 +147,14 @@
             <h3 class="section-title">Acceso rápido</h3>
             <div class="quick-actions">
               <router-link to="/tables" class="quick-btn">
-                <UtensilsCrossed :size="22" />
+                <Store :size="22" />
                 <span>Registrar Venta</span>
               </router-link>
               <router-link to="/inventory" class="quick-btn" v-if="auth.isAdmin">
                 <Package :size="22" />
                 <span>Inventario</span>
               </router-link>
-              <router-link to="/reports" class="quick-btn" v-if="auth.isAdmin">
+              <router-link to="/reports" class="quick-btn" v-if="auth.isAdmin && spaces.has('reports')">
                 <BarChart3 :size="22" />
                 <span>Reportes</span>
               </router-link>
@@ -220,7 +220,7 @@
               <thead>
                 <tr>
                   <th>Factura</th>
-                  <th>Mesa</th>
+                  <th>{{ spaces.label }}</th>
                   <th>Cajero</th>
                   <th>Método</th>
                   <th>Total</th>
@@ -230,7 +230,7 @@
               <tbody>
                 <tr v-for="sale in recentSales" :key="sale.id">
                   <td><code class="invoice-code">{{ sale.invoiceNumber }}</code></td>
-                  <td>{{ sale.tableNumber ? 'Mesa ' + sale.tableNumber : '-' }}</td>
+                  <td>{{ sale.tableNumber ? spaces.label + ' ' + sale.tableNumber : '-' }}</td>
                   <td>{{ sale.cashier }}</td>
                   <td>
                     <span :class="['badge', paymentBadge(sale.paymentMethod)]">{{ paymentLabel(sale.paymentMethod) }}</span>
@@ -262,10 +262,11 @@ import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
 import api from '../services/api.js'
 import PageLayout from '../components/PageLayout.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 import SkeletonCard from '../components/SkeletonCard.vue'
 import {
   RefreshCw, DollarSign, ShoppingBag, AlertTriangle, TrendingUp,
-  BarChart3, UtensilsCrossed, Package, Receipt,
+  BarChart3, Store, Package, Receipt,
   Table as TableIcon, Users
 } from 'lucide-vue-next'
 import { paymentLabel, paymentBadge, paymentIcon } from '../utils/payment.js'
@@ -274,6 +275,7 @@ import { paymentLabel, paymentBadge, paymentIcon } from '../utils/payment.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const auth = useAuthStore()
+const spaces = useSpaces()
 const inventoryStore = useInventoryStore()
 const tablesStore = useTablesStore()
 const salesStore = useSalesStore()

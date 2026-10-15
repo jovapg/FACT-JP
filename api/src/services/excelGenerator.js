@@ -72,7 +72,7 @@ async function generateSalesReport(sales, business, fromDate, toDate, res) {
   sheet.addRow([]);
 
   // Headers
-  const headerRow = sheet.addRow(['#', 'Factura', 'Fecha', 'Mesa', 'Cajero', 'Método de Pago', 'Total']);
+  const headerRow = sheet.addRow(['#', 'Factura', 'Fecha', (business && business.spaceLabel) || 'Mesa', 'Cajero', 'Método de Pago', 'Total']);
   headerRow.eachCell(cell => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
@@ -288,7 +288,7 @@ async function generateRentabilidadReport(data, business, fromDate, toDate, peri
   const salesSheet = workbook.addWorksheet('Ventas');
   salesSheet.columns = [{ width: 5 }, { width: 18 }, { width: 20 }, { width: 10 }, { width: 15 }, { width: 18 }, { width: 15 }, { width: 12 }];
 
-  const sh = salesSheet.addRow(['#', 'Factura', 'Fecha', 'Mesa', 'Cajero', 'Método', 'Descuento', 'Total']);
+  const sh = salesSheet.addRow(['#', 'Factura', 'Fecha', (business && business.spaceLabel) || 'Mesa', 'Cajero', 'Método', 'Descuento', 'Total']);
   sh.eachCell(cell => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };

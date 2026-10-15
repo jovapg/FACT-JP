@@ -1,5 +1,5 @@
 <template>
-  <PageLayout title="Mesas - POS">
+  <PageLayout :title="spaces.plural + ' - POS'">
 
         <!-- Banner turno activo / sin turno -->
         <router-link
@@ -33,19 +33,20 @@
             </button>
           </div>
           <div class="toolbar-right">
+            <button v-if="spaces.multi" class="btn btn-primary btn-sm" @click="startDirect">⚡ Venta directa</button>
             <button class="btn btn-outline btn-sm" @click="tablesStore.fetchTables()">↻</button>
           </div>
         </div>
 
         <div v-if="tablesStore.loading" class="loading">
-          <div class="spinner"></div> Cargando mesas...
+          <div class="spinner"></div> Cargando {{ spaces.plural.toLowerCase() }}...
         </div>
 
         <div v-else-if="filteredTables.length === 0" class="empty-state">
-          <div class="empty-state-icon">🪑</div>
-          <p class="empty-state-text">No hay mesas configuradas</p>
+          <div class="empty-state-icon">📋</div>
+          <p class="empty-state-text">Aún no hay {{ spaces.plural.toLowerCase() }} configurados</p>
           <button v-if="auth.isAdmin" class="btn btn-primary mt-2" @click="showInitModal = true">
-            Configurar mesas
+            Configurar {{ spaces.plural.toLowerCase() }}
           </button>
         </div>
 
@@ -54,26 +55,59 @@
             v-for="table in filteredTables"
             :key="table.id"
             :table="table"
+            :multi="spaces.multi"
+            :class="{ 'table-selected': spaces.multi && expandedId === table.id }"
             @click="openTable(table)"
           />
+        </div>
+
+        <!-- Varias ventas por espacio: ventas guardadas del espacio abierto -->
+        <div v-if="spaces.multi && expandedTable" class="orders-panel">
+          <div class="orders-head">
+            <h3 class="orders-title">{{ spaces.nameOf(expandedTable) }}</h3>
+            <button class="btn btn-primary btn-sm" @click="newSale(expandedTable)">+ Nueva venta</button>
+          </div>
+          <p v-if="!(expandedTable.orders || []).length" class="orders-empty">
+            Sin ventas guardadas. Crea una nueva venta para empezar.
+          </p>
+          <div v-for="o in expandedTable.orders || []" :key="o.id" class="order-row">
+            <div class="order-main">
+              <div class="order-line1">
+                <strong>{{ o.name }}</strong>
+                <span v-if="o.client" class="order-client">👤 {{ o.client }}</span>
+                <span class="order-time">🕒 {{ formatTime(o.createdAt) }}</span>
+              </div>
+              <div class="order-items">{{ itemsSummary(o) }}</div>
+            </div>
+            <div class="order-side">
+              <span class="order-amount">{{ formatCOP(orderTotal(o)) }}</span>
+              <button class="btn btn-outline btn-sm" @click="editOrder(o)">Editar</button>
+              <button class="btn btn-primary btn-sm" @click="billOrder(o)">Facturar</button>
+              <button class="btn btn-outline btn-sm" @click="removeOrder(o)" title="Eliminar venta">🗑️</button>
+            </div>
+          </div>
+          <div v-if="(expandedTable.orders || []).length" class="orders-foot">
+            <span>Por facturar en este espacio</span>
+            <strong>{{ formatCOP(expandedTotal) }}</strong>
+          </div>
         </div>
 
         <!-- Init tables modal -->
         <div class="modal-overlay" v-if="showInitModal" @click.self="showInitModal = false">
           <div class="modal">
             <div class="modal-header">
-              <h3 class="modal-title">Configurar mesas</h3>
+              <h3 class="modal-title">Configurar {{ spaces.plural.toLowerCase() }}</h3>
               <button class="btn-close" @click="showInitModal = false">×</button>
             </div>
             <div class="modal-body">
               <div class="form-group">
-                <label class="form-label">Número de mesas</label>
+                <label class="form-label">Cantidad de {{ spaces.plural.toLowerCase() }}</label>
                 <input v-model.number="initCount" type="number" class="form-control" min="1" max="100" />
               </div>
             </div>
             <div class="modal-footer">
               <button class="btn btn-outline" @click="showInitModal = false">Cancelar</button>
-              <button class="btn btn-primary" @click="initTables">Crear mesas</button>
+              <button class="btn btn-primary" @click="initTables">Crear {{ spaces.plural.toLowerCase() }}</button>
             </div>
           </div>
         </div>
@@ -84,6 +118,7 @@
             <div class="order-panel">
               <OrderCart
                 :table="tablesStore.selectedTable"
+                :start-invoice="startInvoice"
                 @close="closePanel"
                 @saved="handleOrderSaved"
                 @sale-confirmed="handleSaleConfirmed"
@@ -116,7 +151,7 @@
  *   4. "Guardar orden" → guarda el pedido sin facturar
  *   5. "Ver factura" → abre InvoicePreview para confirmar y facturar
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useAuthStore } from '../stores/auth.js'
 import { useTablesStore } from '../stores/tables.js'
 import { useInventoryStore } from '../stores/inventory.js'
@@ -124,34 +159,120 @@ import { useShiftsStore } from '../stores/shifts.js'
 import PageLayout from '../components/PageLayout.vue'
 import TableCard from '../components/TableCard.vue'
 import OrderCart from '../components/OrderCart.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 
 const auth = useAuthStore()
 const tablesStore = useTablesStore()
 const inventoryStore = useInventoryStore()
 const shiftsStore = useShiftsStore()
+const spaces = useSpaces()
+const toast = inject('toast')
 
 const activeFilter = ref('all')
 const showInitModal = ref(false)
 const initCount = ref(10)
 
-const filters = computed(() => [
-  { value: 'all', label: 'Todas', count: tablesStore.tables.length },
-  { value: 'libre', label: 'Libres', count: tablesStore.freeCount },
-  { value: 'ocupada', label: 'Ocupadas', count: tablesStore.occupiedCount }
-])
+const filters = computed(() => spaces.label === 'Mesa'
+  ? [
+      { value: 'all', label: 'Todas', count: tablesStore.tables.length },
+      { value: 'libre', label: 'Libres', count: tablesStore.freeCount },
+      { value: 'ocupada', label: 'Ocupadas', count: tablesStore.occupiedCount }
+    ]
+  : [
+      { value: 'all', label: 'Todos', count: tablesStore.tables.length },
+      { value: 'libre', label: 'Libres', count: tablesStore.freeCount },
+      { value: 'ocupada', label: 'En uso', count: tablesStore.occupiedCount }
+    ])
 
 const filteredTables = computed(() => {
   if (activeFilter.value === 'all') return tablesStore.tables
   return tablesStore.tables.filter(t => t.status === activeFilter.value)
 })
 
-function openTable(table) {
-  tablesStore.selectTable(table)
+// ── Varias ventas por espacio (ej. campo de tiro) ─────────────────
+const expandedId = ref(null)      // Espacio desplegado (el que muestra sus ventas guardadas)
+const startInvoice = ref(false)   // true = el panel abre directo la factura (botón Facturar)
+const expandedTable = computed(() => tablesStore.tables.find(t => t.id === expandedId.value) || null)
+const expandedTotal = computed(() => (expandedTable.value?.orders || []).reduce((s, o) => s + orderTotal(o), 0))
+
+function loadMenu() {
   inventoryStore.fetchRecipes()
   inventoryStore.fetchInventory()
 }
 
+function openTable(table) {
+  if (spaces.multi) {
+    // Despliega / pliega las ventas guardadas del espacio
+    expandedId.value = expandedId.value === table.id ? null : table.id
+    return
+  }
+  startInvoice.value = false
+  tablesStore.selectTable(table)
+  loadMenu()
+}
+
+/** Crea una venta guardada nueva en el espacio y la abre para agregar productos y el cliente */
+async function newSale(table) {
+  try {
+    const { table: t, order } = await tablesStore.createOrder(table.id)
+    startInvoice.value = false
+    tablesStore.selectOrder(t, order)
+    loadMenu()
+  } catch {
+    toast('No se pudo crear la venta', 'error')
+  }
+}
+
+function editOrder(o) {
+  startInvoice.value = false
+  tablesStore.selectOrder(expandedTable.value, o)
+  loadMenu()
+}
+
+function billOrder(o) {
+  if (!(o.items || []).length) {
+    toast('Agrega productos a la venta antes de facturar', 'warning')
+    return editOrder(o)
+  }
+  startInvoice.value = true
+  tablesStore.selectOrder(expandedTable.value, o)
+  loadMenu()
+}
+
+async function removeOrder(o) {
+  if (!confirm('¿Eliminar esta venta guardada? No se puede deshacer.')) return
+  try {
+    await tablesStore.clearTable(expandedTable.value.id, o.id)
+    toast('Venta eliminada', 'success')
+  } catch {
+    toast('No se pudo eliminar la venta', 'error')
+  }
+}
+
+/** Venta directa: sin espacio, para quien solo compra algo y se va */
+function startDirect() {
+  startInvoice.value = false
+  tablesStore.selectDirect()
+  loadMenu()
+}
+
+function orderTotal(o) {
+  return (o.items || []).reduce((s, i) => s + (i.qty * i.price - (Number(i.discount) || 0)), 0)
+}
+
+function itemsSummary(o) {
+  const items = o.items || []
+  if (!items.length) return 'Sin productos todavía'
+  const txt = items.map(i => `${i.name} x${i.qty}`).join(' · ')
+  return txt.length > 90 ? txt.slice(0, 87) + '…' : txt
+}
+
+function formatTime(iso) {
+  return iso ? new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : ''
+}
+
 function closePanel() {
+  startInvoice.value = false
   tablesStore.clearSelection()
 }
 
@@ -305,4 +426,31 @@ onMounted(async () => {
   /* Mesas más compactas en celular para mostrar más en pantalla */
   .tables-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
 }
+
+/* Varias ventas por espacio */
+.table-selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+.toolbar-right { display: flex; gap: 8px; align-items: center; }
+.orders-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 16px;
+}
+.orders-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.orders-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--text); }
+.orders-empty { color: var(--text-light); font-size: 13.5px; text-align: center; padding: 14px 0; margin: 0; }
+.order-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.order-main { flex: 1 1 240px; min-width: 0; }
+.order-line1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; margin-bottom: 2px; }
+.order-client, .order-time { font-size: 12px; color: var(--text-light); }
+.order-items { font-size: 12.5px; color: var(--text-light); }
+.order-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.order-amount { font-weight: 800; font-size: 15px; min-width: 84px; text-align: right; }
+.orders-foot { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-light); padding-top: 6px; }
+.orders-foot strong { color: var(--text); }
 </style>

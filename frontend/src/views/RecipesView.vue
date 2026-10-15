@@ -1,8 +1,8 @@
 <template>
-  <PageLayout title="Recetas / Menú">
+  <PageLayout :title="recipesTitle">
         <div class="page-header">
           <div>
-            <h1 class="page-title">Recetas / Menú</h1>
+            <h1 class="page-title">{{ recipesTitle }}</h1>
             <p class="page-subtitle">{{ inventoryStore.recipes.length }} productos en el menú</p>
           </div>
           <button class="btn btn-primary" @click="openCreate">+ Nueva receta</button>
@@ -229,10 +229,13 @@
 import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import PageLayout from '../components/PageLayout.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import { Search } from 'lucide-vue-next'
 
 const inventoryStore = useInventoryStore()
+const spaces = useSpaces()
+const recipesTitle = computed(() => spaces.recipesLabel === 'Recetas' ? 'Recetas / Menú' : spaces.recipesLabel)
 const toast = inject('toast')
 
 const activeCat    = ref('todas')

@@ -10,7 +10,7 @@
 
       <!-- Marca / logo -->
       <div class="nf-brand">
-        <UtensilsCrossed :size="30" color="#f59e0b" />
+        <Store :size="30" color="#f59e0b" />
         <span class="nf-brand-name">facJp</span>
       </div>
 
@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { UtensilsCrossed } from 'lucide-vue-next'
+import { Store } from 'lucide-vue-next'
 </script>
 
 <style scoped>

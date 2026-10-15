@@ -197,6 +197,26 @@ app.use('/api/businesses', businessRoutes);
 const { authenticate, requireBusinessAccess } = require('./src/middleware/auth');
 const bizAccess = [authenticate, requireBusinessAccess];
 
+// Módulos que el superadmin puede apagar por negocio (Franquicias). Un módulo apagado
+// responde 403 aunque alguien escriba la ruta a mano. (Reportes solo se oculta en la
+// pantalla: el Dashboard usa sus datos.)
+function moduleGuard(key) {
+  return async (req, res, next) => {
+    try {
+      const { readJSON: rj, getBusinessPath: gp } = require('./src/services/fileStorage');
+      const profile = await rj(path.join(gp(req.params.businessId), 'profile.json')) || {};
+      if (profile.modules && profile.modules[key] === false) {
+        return res.status(403).json({ error: 'Este módulo no está habilitado para este negocio' });
+      }
+    } catch { /* si no se puede leer el perfil, no se bloquea */ }
+    next();
+  };
+}
+app.use('/api/:businessId/debtors', bizAccess, moduleGuard('debtors'));
+app.use('/api/:businessId/payroll', bizAccess, moduleGuard('payroll'));
+app.use('/api/:businessId/finance', bizAccess, moduleGuard('finance'));
+app.use('/api/:businessId/audit', bizAccess, moduleGuard('audit'));
+
 app.use('/api/:businessId/inventory/:id/image', bizAccess, uploadProductImg.single('image'));
 app.use('/api/:businessId', bizAccess, inventoryRoutes);
 app.use('/api/:businessId', bizAccess, recipesRoutes);
@@ -237,9 +257,9 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
     const profilePath = path.join(getBusinessPath(req.params.businessId), 'profile.json');
     const existing = await readJSON(profilePath) || {};
     const updated = { ...existing, ...req.body, id: req.params.businessId };
-    // "Usa recetas" y el ícono los define solo el superadmin (desde Franquicias)
+    // Recetas, ícono y forma de trabajo de los espacios los define solo el superadmin (desde Franquicias)
     if (req.user.role !== 'superadmin') {
-      for (const k of ['usesRecipes', 'icon']) {
+      for (const k of ['usesRecipes', 'icon', 'spaceLabel', 'spaceLabelPlural', 'recipesLabel', 'multiOrders', 'spaceNames', 'modules']) {
         if (existing[k] === undefined) delete updated[k];
         else updated[k] = existing[k];
       }

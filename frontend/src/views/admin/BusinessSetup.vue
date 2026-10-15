@@ -132,16 +132,22 @@
 
         <!-- Tables config -->
         <div class="card" v-if="activeTab === 'tables'">
-          <h3 class="section-title">Configurar mesas</h3>
-          <p class="text-muted mb-3">Actualmente: {{ tablesStore.tables.length }} mesas configuradas</p>
-          <div class="form-group" style="max-width:200px">
-            <label class="form-label">Número de mesas</label>
-            <input v-model.number="newTableCount" type="number" class="form-control" min="1" max="100" />
-          </div>
-          <div class="alert alert-warning">
-            Esto recreará todas las mesas. Las órdenes activas se perderán.
-          </div>
-          <button class="btn btn-primary" @click="reinitTables">Aplicar configuración</button>
+          <h3 class="section-title">Configurar {{ spaces.plural.toLowerCase() }}</h3>
+          <p class="text-muted mb-3">Actualmente: {{ tablesStore.tables.length }} {{ spaces.plural.toLowerCase() }} configurados</p>
+          <p v-if="hasNamedSpaces" class="text-muted">
+            Los nombres de los {{ spaces.plural.toLowerCase() }} ({{ tablesStore.tables.map(t => t.name || t.number).join(', ') }})
+            los define el administrador del sistema desde <strong>Franquicias</strong>.
+          </p>
+          <template v-else>
+            <div class="form-group" style="max-width:200px">
+              <label class="form-label">Cantidad de {{ spaces.plural.toLowerCase() }}</label>
+              <input v-model.number="newTableCount" type="number" class="form-control" min="1" max="100" />
+            </div>
+            <div class="alert alert-warning">
+              Esto recreará todos los {{ spaces.plural.toLowerCase() }}. Las órdenes activas se perderán.
+            </div>
+            <button class="btn btn-primary" @click="reinitTables">Aplicar configuración</button>
+          </template>
         </div>
 
         <!-- Users -->
@@ -266,23 +272,27 @@
  */
 import { ref, reactive, onMounted, inject } from 'vue'
 import { useBusinessStore } from '../../stores/business.js'
+import { useSpaces } from '../../composables/useSpaces.js'
 import { useTablesStore } from '../../stores/tables.js'
 import PageLayout from '../../components/PageLayout.vue'
 import api from '../../services/api.js'
 import { useAuthStore } from '../../stores/auth.js'
 
 const businessStore = useBusinessStore()
+const spaces = useSpaces()
+// Si los espacios tienen nombre propio (Alfa, Mega…), se editan desde Franquicias
+const hasNamedSpaces = computed(() => !!businessStore.profile?.spaceNames?.length)
 const tablesStore = useTablesStore()
 const authStore = useAuthStore()
 const toast = inject('toast')
 
-const tabs = [
+const tabs = computed(() => [
   { id: 'profile', label: 'Perfil del negocio' },
   { id: 'categories', label: 'Categorías' },
-  { id: 'tables', label: 'Mesas' },
+  { id: 'tables', label: spaces.plural },
   { id: 'users', label: 'Usuarios' },
   { id: 'backup', label: '⬇️ Backup' }
-]
+])
 const activeTab = ref('profile')
 const backingUp = ref(false)
 const resetConfirm = ref('')

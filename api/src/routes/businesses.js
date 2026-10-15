@@ -25,6 +25,8 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getDataPath, getBusinessPath, ensureBusinessDir } = require('../services/fileStorage');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
+const spaces = require('../services/spaces');
+const mods = require('../services/modules');
 
 /** Íconos permitidos para un negocio (deben coincidir con frontend/src/utils/businessIcons.js) */
 const BUSINESS_ICON_KEYS = ['store', 'utensils', 'beer', 'wine', 'coffee', 'crosshair', 'croissant', 'dumbbell', 'hotel', 'briefcase'];
@@ -57,6 +59,13 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
     const { name, slug, nit, address, city, phone, currency, invoicePrefix, tablesCount } = req.body;
     const usesRecipes = req.body.usesRecipes !== false; // por defecto sí usa recetas
     const icon = BUSINESS_ICON_KEYS.includes(req.body.icon) ? req.body.icon : 'store'; // ícono neutro por defecto
+    // Cómo se llaman y cómo funcionan los espacios de venta (Mesa, Campo…) — configurable
+    const spaceLabel = spaces.txt(req.body.spaceLabel, 30, 'Mesa');
+    const spaceLabelPlural = spaces.txt(req.body.spaceLabelPlural, 30, spaceLabel + 's');
+    const recipesLabel = spaces.txt(req.body.recipesLabel, 30, 'Recetas');
+    const multiOrders = req.body.multiOrders === true;
+    const spaceNames = spaces.cleanNames(req.body.spaceNames);
+    const modules = mods.cleanModules(req.body.modules); // módulos prendidos (por defecto todos)
     if (!name) return res.status(400).json({ error: 'Name required' });
 
     const id = uuidv4();
@@ -69,6 +78,7 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
       active: true,
       usesRecipes,
       icon,
+      spaceLabel, spaceLabelPlural, recipesLabel, multiOrders, modules,
       createdAt: new Date().toISOString()
     };
 
@@ -86,7 +96,13 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
       city: city || 'Medellín',
       phone: phone || '',
       logo: '',
-      tablesCount: tablesCount || 10,
+      tablesCount: spaceNames.length || tablesCount || 10,
+      spaceLabel,        // cómo se llaman los espacios: Mesa, Campo…
+      spaceLabelPlural,  // Mesas, Campos…
+      spaceNames,        // nombres propios (Alfa, Mega…); vacío = numerados
+      multiOrders,       // true = cada espacio guarda varias ventas abiertas
+      recipesLabel,      // cómo se llama el módulo de recetas (Recetas, Combos…)
+      modules,           // módulos prendidos: { debtors, payroll, finance, reports, audit }
       usesRecipes,   // false = el negocio vende directo del inventario (sin pantalla de Recetas)
       icon,          // ícono del negocio en el menú lateral (cuando no tiene logo)
       currency: currency || 'COP',
@@ -103,12 +119,8 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
     await writeJSON(path.join(getBusinessPath(id), 'suppliers.json'), []);
     await writeJSON(path.join(getBusinessPath(id), 'users.json'), []);
 
-    // Crear mesas numeradas del 1 al N, todas libres por defecto
-    const tables = [];
-    const count = tablesCount || 10;
-    for (let i = 1; i <= count; i++) {
-      tables.push({ id: uuidv4(), number: i, status: 'libre', order: null });
-    }
+    // Crear los espacios (con nombre o numerados), todos libres por defecto
+    const tables = spaces.buildTables({ names: spaceNames, count: tablesCount, multi: multiOrders });
     await writeJSON(path.join(getBusinessPath(id), 'tables.json'), tables);
 
     res.status(201).json(newBusiness);
@@ -134,26 +146,84 @@ router.put('/:id', authenticate, requireSuperAdmin, async (req, res) => {
 
 /**
  * PUT /api/businesses/:id/settings — Ajustes de módulos del negocio (solo superadmin).
- * Body: { usesRecipes?: boolean, icon?: string } (al menos uno). Se guarda en la lista global (para mostrarlo en
+ * Body (al menos uno): { usesRecipes?, icon?, spaceLabel?, spaceLabelPlural?, recipesLabel?,
+ *   multiOrders?, spaceNames?, modules? }. Se guarda en la lista global (para mostrarlo en
  * Franquicias) y en el profile.json del negocio (para que la app lo aplique).
  */
 router.put('/:id/settings', authenticate, requireSuperAdmin, async (req, res) => {
   try {
     const { usesRecipes, icon } = req.body;
+    const b = req.body;
+    const has = (k) => b[k] !== undefined;
+    if (has('multiOrders') && typeof b.multiOrders !== 'boolean') return res.status(400).json({ error: 'multiOrders debe ser true o false' });
+    if (has('spaceNames') && !Array.isArray(b.spaceNames)) return res.status(400).json({ error: 'spaceNames debe ser una lista' });
     if (usesRecipes !== undefined && typeof usesRecipes !== 'boolean') return res.status(400).json({ error: 'usesRecipes debe ser true o false' });
     if (icon !== undefined && !BUSINESS_ICON_KEYS.includes(icon)) return res.status(400).json({ error: 'Ícono no válido' });
-    if (usesRecipes === undefined && icon === undefined) return res.status(400).json({ error: 'Nada que actualizar' });
+    if (has('modules') && (typeof b.modules !== 'object' || b.modules === null)) return res.status(400).json({ error: 'modules debe ser un objeto' });
+    const touchesSpaces = ['spaceLabel', 'spaceLabelPlural', 'recipesLabel', 'multiOrders', 'spaceNames'].some(has);
+    if (usesRecipes === undefined && icon === undefined && !touchesSpaces && !has('modules')) return res.status(400).json({ error: 'Nada que actualizar' });
     const businesses = await readJSON(BUSINESSES_FILE()) || [];
     const idx = businesses.findIndex(b => b.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Business not found' });
     if (usesRecipes !== undefined) businesses[idx].usesRecipes = usesRecipes;
     if (icon !== undefined) businesses[idx].icon = icon;
-    await writeJSON(BUSINESSES_FILE(), businesses);
 
     const profilePath = path.join(getBusinessPath(req.params.id), 'profile.json');
     const profile = await readJSON(profilePath) || {};
     if (usesRecipes !== undefined) profile.usesRecipes = usesRecipes;
     if (icon !== undefined) profile.icon = icon;
+
+    // Espacios de venta: nombre, modo de cobro y nombres propios
+    if (touchesSpaces) {
+      const tablesFile = path.join(getBusinessPath(req.params.id), 'tables.json');
+      let tables = await readJSON(tablesFile) || [];
+      let tablesChanged = false;
+
+      const multi = has('multiOrders') ? b.multiOrders : !!profile.multiOrders;
+      if (has('multiOrders') && b.multiOrders !== !!profile.multiOrders) {
+        if (b.multiOrders) { tables = spaces.convertToMulti(tables); }
+        else {
+          const r = spaces.convertToSingle(tables);
+          if (r.blocked) return res.status(409).json({ error: 'Hay ventas guardadas en los espacios. Fácturalas o elimínalas antes de volver a una sola cuenta por espacio.' });
+          tables = r.tables;
+        }
+        tablesChanged = true;
+      }
+      if (has('spaceNames')) {
+        const r = spaces.applyNames(tables, spaces.cleanNames(b.spaceNames), multi);
+        if (r.blocked) {
+          return res.status(409).json({ error: 'No se pueden quitar espacios ocupados: ' + r.blocked.map(t => t.name || t.number).join(', ') + '. Factúralos primero.' });
+        }
+        tables = r.tables;
+        tablesChanged = true;
+        profile.spaceNames = spaces.cleanNames(b.spaceNames);
+        profile.tablesCount = tables.length;
+      }
+      if (tablesChanged) await writeJSON(tablesFile, tables);
+
+      if (has('multiOrders')) { profile.multiOrders = b.multiOrders; businesses[idx].multiOrders = b.multiOrders; }
+      if (has('spaceLabel')) {
+        profile.spaceLabel = spaces.txt(b.spaceLabel, 30, 'Mesa');
+        businesses[idx].spaceLabel = profile.spaceLabel;
+        if (!has('spaceLabelPlural')) { profile.spaceLabelPlural = profile.spaceLabel + 's'; businesses[idx].spaceLabelPlural = profile.spaceLabelPlural; }
+      }
+      if (has('spaceLabelPlural')) {
+        profile.spaceLabelPlural = spaces.txt(b.spaceLabelPlural, 30, (profile.spaceLabel || 'Mesa') + 's');
+        businesses[idx].spaceLabelPlural = profile.spaceLabelPlural;
+      }
+      if (has('recipesLabel')) {
+        profile.recipesLabel = spaces.txt(b.recipesLabel, 30, 'Recetas');
+        businesses[idx].recipesLabel = profile.recipesLabel;
+      }
+    }
+
+    // Módulos que usa el negocio (Deudas, Nómina, Finanzas, Reportes, Bitácora)
+    if (has('modules')) {
+      profile.modules = mods.cleanModules(b.modules, profile.modules);
+      businesses[idx].modules = profile.modules;
+    }
+
+    await writeJSON(BUSINESSES_FILE(), businesses);
     await writeJSON(profilePath, profile);
 
     res.json(businesses[idx]);

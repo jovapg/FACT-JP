@@ -13,6 +13,13 @@
  *   POST   /api/:businessId/tables/init            → reinicializar mesas (admin+)
  *   PUT    /api/:businessId/tables/:id/order       → actualizar pedido de una mesa
  *   DELETE /api/:businessId/tables/:id/order       → limpiar pedido (liberar mesa)
+ *
+ * Modo "varias ventas" (profile.multiOrders): cada espacio (mesa/campo) guarda una
+ * lista de ventas abiertas en table.orders:
+ *   POST   /api/:businessId/tables/:id/orders             → nueva venta guardada
+ *   PUT    /api/:businessId/tables/:id/orders/:orderId    → editar la venta (items, cliente)
+ *   DELETE /api/:businessId/tables/:id/orders/:orderId    → eliminar la venta
+ * Al facturar, la ruta de ventas quita la venta facturada (orderId) del espacio.
  */
 
 const express = require('express');
@@ -21,6 +28,9 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
+const spaces = require('../services/spaces');
+
+const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
 
 const tablesPath = (id) => path.join(getBusinessPath(id), 'tables.json');
 
@@ -43,11 +53,10 @@ router.post('/tables/init', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
     const { count } = req.body;
-    const tableCount = Number(count) || 10;
-    const tables = [];
-    for (let i = 1; i <= tableCount; i++) {
-      tables.push({ id: uuidv4(), number: i, status: 'libre', order: null });
-    }
+    // Si la franquicia tiene espacios con nombre (Alfa, Mega…) se conservan los nombres
+    const profile = await readJSON(profilePath(req.params.businessId)) || {};
+    const names = spaces.cleanNames(profile.spaceNames);
+    const tables = spaces.buildTables({ names, count, multi: !!profile.multiOrders });
     await writeJSON(tablesPath(req.params.businessId), tables);
     res.json(tables);
   } catch (err) {
@@ -114,6 +123,80 @@ router.delete('/tables/:id/order', authenticate, async (req, res) => {
     res.json(tables[idx]);
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** Busca un espacio y devuelve { tables, idx } (o null si no existe) */
+async function findTable(businessId, tableId) {
+  const tables = await readJSON(tablesPath(businessId)) || [];
+  const idx = tables.findIndex(t => t.id === tableId);
+  return idx === -1 ? null : { tables, idx };
+}
+
+/** Un espacio con ventas guardadas está 'ocupada'; sin ninguna, 'libre' */
+function refreshStatus(t) {
+  t.status = (t.orders && t.orders.length > 0) ? 'ocupada' : 'libre';
+}
+
+/** POST /tables/:id/orders — Crea una venta guardada nueva en el espacio */
+router.post('/tables/:id/orders', authenticate, async (req, res) => {
+  try {
+    const f = await findTable(req.params.businessId, req.params.id);
+    if (!f) return res.status(404).json({ error: 'Table not found' });
+    const t = f.tables[f.idx];
+    t.orders = Array.isArray(t.orders) ? t.orders : [];
+    t.orderSeq = (t.orderSeq || t.orders.length) + 1;
+    const now = new Date().toISOString();
+    const order = {
+      id: uuidv4(),
+      name: 'Venta ' + t.orderSeq,
+      client: spaces.txt(req.body.client, 60),
+      items: Array.isArray(req.body.items) ? req.body.items : [],
+      waiter: req.user.name || req.user.username,
+      createdAt: now,
+      updatedAt: now
+    };
+    t.orders.push(order);
+    refreshStatus(t);
+    await writeJSON(tablesPath(req.params.businessId), f.tables);
+    res.status(201).json({ table: t, order });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** PUT /tables/:id/orders/:orderId — Guarda los productos y el cliente de una venta */
+router.put('/tables/:id/orders/:orderId', authenticate, async (req, res) => {
+  try {
+    const f = await findTable(req.params.businessId, req.params.id);
+    if (!f) return res.status(404).json({ error: 'Table not found' });
+    const t = f.tables[f.idx];
+    const order = (t.orders || []).find(o => o.id === req.params.orderId);
+    if (!order) return res.status(404).json({ error: 'Venta no encontrada' });
+    if (Array.isArray(req.body.items)) order.items = req.body.items;
+    if (req.body.client !== undefined) order.client = spaces.txt(req.body.client, 60);
+    order.waiter = req.body.waiter || order.waiter || req.user.name || req.user.username;
+    order.updatedAt = new Date().toISOString();
+    refreshStatus(t);
+    await writeJSON(tablesPath(req.params.businessId), f.tables);
+    res.json({ table: t, order });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/** DELETE /tables/:id/orders/:orderId — Elimina una venta guardada (sin facturar) */
+router.delete('/tables/:id/orders/:orderId', authenticate, async (req, res) => {
+  try {
+    const f = await findTable(req.params.businessId, req.params.id);
+    if (!f) return res.status(404).json({ error: 'Table not found' });
+    const t = f.tables[f.idx];
+    t.orders = (t.orders || []).filter(o => o.id !== req.params.orderId);
+    refreshStatus(t);
+    await writeJSON(tablesPath(req.params.businessId), f.tables);
+    res.json({ table: t });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 

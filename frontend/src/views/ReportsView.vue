@@ -219,7 +219,7 @@
                   <tr>
                     <th>Factura</th>
                     <th>Fecha/Hora</th>
-                    <th>Mesa</th>
+                    <th>{{ spaces.label }}</th>
                     <th>Cajero</th>
                     <th>Método</th>
                     <th>Descuento</th>
@@ -288,6 +288,7 @@ import { useSalesStore } from '../stores/sales.js'
 import { useAuthStore } from '../stores/auth.js'
 import api from '../services/api.js'
 import PageLayout from '../components/PageLayout.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 import { paymentLabel, paymentBadge } from '../utils/payment.js'
 import { openProtected, downloadProtected } from '../utils/download.js'
 
@@ -297,6 +298,7 @@ ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Le
 const salesStore = useSalesStore()
 const auth = useAuthStore()
 const toast = inject('toast')
+const spaces = useSpaces()
 
 const bizId = computed(() => auth.currentBusiness?.id)
 const token = computed(() => auth.token)

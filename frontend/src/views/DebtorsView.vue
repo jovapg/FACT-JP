@@ -259,7 +259,7 @@
           <!-- Nota libre opcional -->
           <div class="form-group mt-2">
             <label class="form-label">Nota adicional (opcional)</label>
-            <input v-model="chargeNote" type="text" class="form-control" placeholder="Ej: Mesa 3, para llevar..." />
+            <input v-model="chargeNote" type="text" class="form-control" placeholder="Ej: para llevar, nota del pedido..." />
           </div>
           <p v-if="chargeSubmitted && chargeCart.length === 0" class="error-hint">Agrega al menos un producto</p>
         </div>
@@ -719,7 +719,7 @@ async function handleCharge() {
   if (chargeCart.value.length === 0) return
   saving.value = true
   try {
-    // Descripción legible: "2x Cerveza, 1x Hamburguesa — Mesa 3"
+    // Descripción legible: "2x Cerveza, 1x Hamburguesa — para llevar"
     const desc = chargeCart.value
       .map(i => `${i.qty}x ${i.name}`)
       .join(', ') + (chargeNote.value ? ` — ${chargeNote.value}` : '')

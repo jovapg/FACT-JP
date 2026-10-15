@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="cart-header">
       <div class="cart-title">
-        <span class="mesa-badge">Mesa {{ table.number }}</span>
+        <span class="mesa-badge">{{ headerTitle }}</span>
         <span :class="['status-dot', table.status]"></span>
       </div>
       <button class="btn-close-cart" @click="$emit('close')">✕</button>
@@ -82,18 +82,19 @@
     <!-- Actions -->
     <div class="cart-actions">
       <button
+        v-if="!table._direct"
         class="btn btn-outline btn-sm"
         @click="saveOrder"
-        :disabled="saving || cartItems.length === 0"
+        :disabled="saving || (cartItems.length === 0 && !(table._orderId && clientName))"
       >
         💾 Guardar orden
       </button>
       <button
         class="btn btn-danger btn-sm"
         @click="clearOrder"
-        v-if="table.status === 'ocupada'"
+        v-if="table.status === 'ocupada' && !table._direct"
       >
-        🗑️ Limpiar mesa
+        {{ table._orderId ? '🗑️ Eliminar venta' : '🗑️ Limpiar ' + spaces.label.toLowerCase() }}
       </button>
       <button
         class="btn btn-primary"
@@ -146,9 +147,19 @@ import { ref, reactive, computed, watch, onMounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useTablesStore } from '../stores/tables.js'
 import InvoicePreview from './InvoicePreview.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 
 const props = defineProps({
-  table: { type: Object, required: true }
+  table: { type: Object, required: true },
+  startInvoice: { type: Boolean, default: false } // abrir directo la factura (botón Facturar)
+})
+
+const spaces = useSpaces()
+
+/** Título del panel: "Campo Alfa · Venta 2", "Mesa 3" o "Venta directa" */
+const headerTitle = computed(() => {
+  if (props.table._direct) return 'Venta directa'
+  return spaces.nameOf(props.table) + (props.table._orderName ? ' · ' + props.table._orderName : '')
 })
 
 const emit = defineEmits(['close', 'saved', 'sale-confirmed'])
@@ -177,6 +188,7 @@ onMounted(() => {
     cartItems.value = props.table.order.items.map(normalizeCartItem)
     clientName.value = props.table.order.client || ''
   }
+  if (props.startInvoice && cartItems.value.length > 0) showInvoice.value = true
 })
 
 /**
@@ -336,7 +348,7 @@ function removeFromCart(item) {
 async function saveOrder() {
   saving.value = true
   try {
-    await tablesStore.updateOrder(props.table.id, cartItems.value, clientName.value)
+    await tablesStore.updateOrder(props.table.id, cartItems.value, clientName.value, undefined, props.table._orderId)
     emit('saved')
     toast('Orden guardada', 'success')
   } catch {
@@ -352,11 +364,12 @@ async function saveOrder() {
  * Efecto secundario: emite 'close' para cerrar el panel.
  */
 async function clearOrder() {
-  if (!confirm('¿Limpiar la orden de esta mesa?')) return
+  const esVenta = !!props.table._orderId
+  if (!confirm(esVenta ? '¿Eliminar esta venta guardada?' : `¿Limpiar la orden de este ${spaces.label.toLowerCase()}?`)) return
   cartItems.value = []
-  await tablesStore.clearTable(props.table.id)
+  await tablesStore.clearTable(props.table.id, props.table._orderId)
   emit('close')
-  toast('Mesa liberada', 'success')
+  toast(esVenta ? 'Venta eliminada' : `${spaces.label} liberado`, 'success')
 }
 
 /**

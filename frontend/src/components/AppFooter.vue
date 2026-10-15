@@ -19,7 +19,7 @@
     <!-- Marca -->
     <div class="footer-brand">
       <div class="footer-logo">
-        <UtensilsCrossed :size="12" />
+        <Store :size="12" />
       </div>
       <span class="footer-name">facJp</span>
       <span class="footer-sep">·</span>
@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { UtensilsCrossed } from 'lucide-vue-next'
+import { Store } from 'lucide-vue-next'
 
 /** Año actual para el texto de copyright — se actualiza solo cada año */
 const year = new Date().getFullYear()

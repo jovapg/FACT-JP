@@ -62,14 +62,16 @@ import { usePayrollStore } from '../stores/payroll.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useMenu } from '../composables/useMenu.js'
 import { businessIconFor } from '../utils/businessIcons.js'
+import { useSpaces } from '../composables/useSpaces.js'
 import {
-  LayoutDashboard, UtensilsCrossed, Package, BookOpen,
+  LayoutDashboard, Store, Package, BookOpen,
   ShoppingCart, Truck, BarChart3, Receipt, Settings, Building2,
   ChevronLeft, ChevronRight, Clock, Wallet, PiggyBank, History, CalendarClock
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const businessStore = useBusinessStore()
+const spaces = useSpaces()
 // Ícono del negocio (si no tiene logo): el que eligió el superadmin, neutro por defecto
 const businessIcon = computed(() => businessIconFor(businessStore.profile?.icon))
 const inventoryStore = useInventoryStore()
@@ -81,7 +83,7 @@ const isMobile = ref(false)
 
 const menuItems = [
   { path: '/dashboard',        label: 'Dashboard',       icon: LayoutDashboard,  roles: ['superadmin','admin','cajero'] },
-  { path: '/tables',           label: 'Registrar Venta', icon: UtensilsCrossed,  roles: ['superadmin','admin','cajero'] },
+  { path: '/tables',           label: 'Registrar Venta', icon: Store,  roles: ['superadmin','admin','cajero'] },
   { path: '/inventory',        label: 'Inventario',      icon: Package,          roles: ['superadmin','admin','cajero'] },
   { path: '/recipes',          label: 'Recetas / Menú',  icon: BookOpen,         roles: ['superadmin','admin'] },
   { path: '/purchases',        label: 'Salidas',         icon: ShoppingCart,     roles: ['superadmin','admin'] },
@@ -97,13 +99,19 @@ const menuItems = [
   { path: '/admin/franchises', label: 'Franquicias',     icon: Building2,        roles: ['superadmin'] }
 ]
 
+// Qué módulo del negocio controla cada opción del menú (el superadmin los prende/apaga en Franquicias)
+const MODULE_BY_PATH = { '/debtors': 'debtors', '/payroll': 'payroll', '/finance': 'finance', '/reports': 'reports', '/audit': 'audit' }
+
 const visibleMenuItems = computed(() => {
   const role = auth.user?.role
   return menuItems
     .filter(item => item.roles.includes(role))
     .filter(item => item.path !== '/recipes' || businessStore.usesRecipes)
+    .filter(item => !MODULE_BY_PATH[item.path] || spaces.has(MODULE_BY_PATH[item.path]))
     .map(item => ({
     ...item,
+    // El módulo de recetas puede llamarse Combos (u otro nombre) según el negocio
+    label: item.path === '/recipes' && spaces.recipesLabel !== 'Recetas' ? spaces.recipesLabel : item.label,
     badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length
       // Badge rojo en Nómina: días pendientes por aprobar (solo lo ve el admin)
       : (item.path === '/payroll' && auth.isAdmin) ? payrollStore.pendingCount

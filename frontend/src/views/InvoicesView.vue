@@ -9,7 +9,7 @@
 
         <!-- Search -->
         <div class="card mb-3" style="padding:14px">
-          <input v-model="search" class="form-control" placeholder="Buscar por número, cajero, mesa..." style="max-width:400px" />
+          <input v-model="search" class="form-control" :placeholder="`Buscar por número, cajero, ${spaces.label.toLowerCase()}...`" style="max-width:400px" />
         </div>
 
         <div v-if="loading" class="loading">
@@ -23,7 +23,7 @@
                 <tr>
                   <th>Factura</th>
                   <th>Fecha</th>
-                  <th>Mesa</th>
+                  <th>{{ spaces.label }}</th>
                   <th>Cajero</th>
                   <th>Items</th>
                   <th>Método</th>
@@ -35,7 +35,7 @@
                 <tr v-for="inv in filteredInvoices" :key="inv.id">
                   <td><code style="font-size:12px">{{ inv.invoiceNumber }}</code></td>
                   <td>{{ formatDateTime(inv.createdAt) }}</td>
-                  <td>{{ inv.tableNumber ? 'Mesa ' + inv.tableNumber : '-' }}</td>
+                  <td>{{ inv.tableNumber ? spaces.label + ' ' + inv.tableNumber : '-' }}</td>
                   <td>{{ inv.cashier }}</td>
                   <td>{{ inv.items?.length || 0 }} items</td>
                   <td>
@@ -85,7 +85,7 @@
                 <div><strong>Factura #:</strong> {{ selectedInvoice.invoiceNumber }}</div>
                 <div><strong>Fecha:</strong> {{ formatDate(selectedInvoice.createdAt) }}</div>
                 <div><strong>Cajero:</strong> {{ selectedInvoice.cashier }}</div>
-                <div v-if="selectedInvoice.tableNumber"><strong>Mesa:</strong> {{ selectedInvoice.tableNumber }}</div>
+                <div v-if="selectedInvoice.tableNumber"><strong>{{ spaces.label }}:</strong> {{ selectedInvoice.tableNumber }}</div>
                 <div v-if="selectedInvoice.editedAt" class="edited-note">✏️ Editada por {{ selectedInvoice.editedBy }} el {{ formatDateTime(selectedInvoice.editedAt) }}</div>
               </div>
               <table class="inv-items-table">
@@ -219,6 +219,7 @@ import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useInventoryStore } from '../stores/inventory.js'
 import PageLayout from '../components/PageLayout.vue'
+import { useSpaces } from '../composables/useSpaces.js'
 import { paymentLabel, paymentBadge } from '../utils/payment.js'
 import { openProtected } from '../utils/download.js'
 
@@ -227,6 +228,7 @@ const auth = useAuthStore()
 const businessStore = useBusinessStore()
 const inventoryStore = useInventoryStore()
 const toast = inject('toast')
+const spaces = useSpaces()
 
 const invoices = ref([])             // Lista completa de facturas
 const loading = ref(false)

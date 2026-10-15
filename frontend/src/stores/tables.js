@@ -62,6 +62,29 @@ export const useTablesStore = defineStore('tables', () => {
     selectedTable.value = table
   }
 
+  /** Una venta guardada de un espacio, presentada como "mesa" para que OrderCart la edite igual */
+  function virtualOrder(table, order) {
+    return { ...table, order, _orderId: order.id, _orderName: order.name, status: 'ocupada' }
+  }
+
+  /** Abre una venta guardada (de un espacio con varias ventas) en el panel de pedidos */
+  function selectOrder(table, order) {
+    selectedTable.value = virtualOrder(table, order)
+  }
+
+  /** Abre el panel para una venta directa: sin espacio, se cobra y listo */
+  function selectDirect() {
+    selectedTable.value = { id: null, number: '', name: '', status: 'libre', order: null, _direct: true }
+  }
+
+  /** Crea una venta guardada nueva en un espacio. Devuelve { table, order } */
+  async function createOrder(tableId) {
+    const res = await api.post(`/api/${bizId()}/tables/${tableId}/orders`, {})
+    const idx = tables.value.findIndex(t => t.id === tableId)
+    if (idx !== -1) tables.value[idx] = res.data.table
+    return res.data
+  }
+
   /** Deselecciona la mesa activa (cierra el panel de pedidos) */
   function clearSelection() {
     selectedTable.value = null
@@ -72,7 +95,15 @@ export const useTablesStore = defineStore('tables', () => {
    * Si `items` está vacío, la mesa vuelve a estado 'libre'.
    * Actualiza tanto la lista local como la mesa seleccionada si coinciden.
    */
-  async function updateOrder(tableId, items, client, waiter) {
+  async function updateOrder(tableId, items, client, waiter, orderId) {
+    if (orderId) {
+      // Espacio con varias ventas: se guarda solo esa venta
+      const r = await api.put(`/api/${bizId()}/tables/${tableId}/orders/${orderId}`, { items, client, waiter })
+      const i = tables.value.findIndex(t => t.id === tableId)
+      if (i !== -1) tables.value[i] = r.data.table
+      if (selectedTable.value?._orderId === orderId) selectedTable.value = virtualOrder(r.data.table, r.data.order)
+      return r.data.table
+    }
     const res = await api.put(`/api/${bizId()}/tables/${tableId}/order`, { items, client, waiter })
     const idx = tables.value.findIndex(t => t.id === tableId)
     if (idx !== -1) tables.value[idx] = res.data
@@ -85,7 +116,15 @@ export const useTablesStore = defineStore('tables', () => {
    * Se llama automáticamente después de crear una venta exitosa.
    * También deselecciona la mesa si era la que estaba activa.
    */
-  async function clearTable(tableId) {
+  async function clearTable(tableId, orderId) {
+    if (orderId) {
+      // Espacio con varias ventas: se elimina solo esa venta
+      const r = await api.delete(`/api/${bizId()}/tables/${tableId}/orders/${orderId}`)
+      const i = tables.value.findIndex(t => t.id === tableId)
+      if (i !== -1) tables.value[i] = r.data.table
+      if (selectedTable.value?._orderId === orderId) selectedTable.value = null
+      return r.data.table
+    }
     const res = await api.delete(`/api/${bizId()}/tables/${tableId}/order`)
     const idx = tables.value.findIndex(t => t.id === tableId)
     if (idx !== -1) tables.value[idx] = res.data
@@ -96,7 +135,7 @@ export const useTablesStore = defineStore('tables', () => {
   return {
     tables, selectedTable, loading,
     occupiedCount, freeCount,
-    fetchTables, initTables, selectTable, clearSelection,
+    fetchTables, initTables, selectTable, selectOrder, selectDirect, createOrder, clearSelection,
     updateOrder, clearTable
   }
 })

@@ -20,7 +20,7 @@
           <div class="inv-divider">- - - - - - - - - - - - - - -</div>
 
           <div class="inv-meta">
-            <div><strong>Mesa:</strong> {{ table.number }}</div>
+            <div v-if="table.id"><strong>{{ spaces.label }}:</strong> {{ table.name || table.number }}</div>
             <div><strong>Cajero:</strong> {{ auth.user?.name || auth.user?.username }}</div>
             <div><strong>Fecha:</strong> {{ formatDate(new Date()) }}</div>
           </div>
@@ -185,7 +185,7 @@
               <div><strong>Fecha:</strong> {{ formatDate(new Date(confirmedSale.createdAt)) }}</div>
               <div><strong>Cajero:</strong> {{ confirmedSale.cashier }}</div>
               <div v-if="confirmedSale.client"><strong>Cliente:</strong> {{ confirmedSale.client }}</div>
-              <div v-if="confirmedSale.tableNumber"><strong>Mesa:</strong> {{ confirmedSale.tableNumber }}</div>
+              <div v-if="confirmedSale.tableNumber"><strong>{{ spaces.label }}:</strong> {{ confirmedSale.tableNumber }}</div>
               <div><strong>Pago:</strong> {{ paymentLabel(confirmedSale.paymentMethod) }}</div>
             </div>
 
@@ -311,6 +311,7 @@ import { useTablesStore } from '../stores/tables.js'
 import { useSalesStore } from '../stores/sales.js'
 import api from '../services/api.js'
 import { paymentLabel } from '../utils/payment.js'
+import { useSpaces } from '../composables/useSpaces.js'
 import { openProtected } from '../utils/download.js'
 
 const props = defineProps({
@@ -323,6 +324,7 @@ const emit = defineEmits(['close', 'confirmed'])
 
 const auth = useAuthStore()
 const businessStore = useBusinessStore()
+const spaces = useSpaces()
 const tablesStore = useTablesStore()
 const salesStore = useSalesStore()
 const toast = inject('toast')
@@ -384,8 +386,9 @@ async function confirmSale() {
   confirming.value = true
   try {
     const result = await salesStore.createSale({
-      tableId: props.table.id,
-      tableNumber: props.table.number,
+      tableId: props.table.id || null,
+      orderId: props.table._orderId,   // venta guardada que se está facturando (espacios con varias ventas)
+      tableNumber: props.table._direct ? null : (props.table.name || props.table.number),
       // Cada ítem viaja con su bolsillo (area) y su descuento individual
       items: editableItems.value.map(i => ({
         ...i,

@@ -100,7 +100,7 @@ function generateInvoicePDF(sale, business, res) {
   doc.text(`Fecha: ${formatDate(sale.createdAt)}`,  { width: CONTENT_WIDTH, align: 'center' });
   if (sale.client)      doc.text(`Cliente: ${sale.client}`,       { width: CONTENT_WIDTH, align: 'center' });
   if (sale.cashier)     doc.text(`Cajero: ${sale.cashier}`,       { width: CONTENT_WIDTH, align: 'center' });
-  if (sale.tableNumber) doc.text(`Mesa: ${sale.tableNumber}`,     { width: CONTENT_WIDTH, align: 'center' });
+  if (sale.tableNumber) doc.text(`${(business && business.spaceLabel) || 'Mesa'}: ${sale.tableNumber}`, { width: CONTENT_WIDTH, align: 'center' });
   if (sale.notes)       doc.text(`Nota: ${sale.notes}`,           { width: CONTENT_WIDTH, align: 'center' });
 
   doc.moveDown(0.3);

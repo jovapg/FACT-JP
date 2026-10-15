@@ -3,11 +3,16 @@
     :class="['table-card', `table-${table.status}`]"
     @click="$emit('click', table)"
   >
-    <div class="table-number">Mesa {{ table.number }}</div>
+    <div class="table-number">{{ spaces.nameOf(table) }}</div>
     <div class="table-status-dot"></div>
 
     <div class="table-status-text" v-if="table.status === 'libre'">
       Libre
+    </div>
+
+    <div class="table-order-info" v-else-if="multi">
+      <div class="order-count">{{ ordersList.length }} {{ ordersList.length === 1 ? 'venta guardada' : 'ventas guardadas' }}</div>
+      <div class="order-total">{{ formatCOP(multiTotal) }}</div>
     </div>
 
     <div class="table-order-info" v-else-if="table.order">
@@ -19,7 +24,7 @@
     </div>
 
     <div class="table-icon">
-      🍽️
+      <component :is="icon" :size="28" />
     </div>
   </div>
 </template>
@@ -40,10 +45,24 @@
  * Emite 'click' al padre (TablesView) para abrir el panel de pedidos.
  */
 import { computed } from 'vue'
+import { useSpaces } from '../composables/useSpaces.js'
+import { useBusinessStore } from '../stores/business.js'
+import { businessIconFor } from '../utils/businessIcons.js'
 
 const props = defineProps({
-  table: { type: Object, required: true }
+  table: { type: Object, required: true },
+  multi: { type: Boolean, default: false } // el espacio guarda varias ventas
 })
+
+const spaces = useSpaces()
+const businessStore = useBusinessStore()
+const icon = computed(() => businessIconFor(businessStore.profile?.icon))
+
+/** Ventas guardadas del espacio y su total (modo varias ventas) */
+const ordersList = computed(() => props.table.orders || [])
+const multiTotal = computed(() =>
+  ordersList.value.reduce((sum, o) => sum + (o.items || []).reduce((s, i) => s + (i.qty * i.price - (Number(i.discount) || 0)), 0), 0)
+)
 
 defineEmits(['click'])
 
