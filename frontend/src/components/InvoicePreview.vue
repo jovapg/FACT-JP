@@ -828,6 +828,6 @@ onMounted(async () => {
 }
 
 /* Modo oscuro: estos fondos eran claros fijos y la letra clara no se veía */
-:global(html.dark) .confirmed-header { background: rgba(16, 185, 129, 0.12); }
+:global(html.dark .confirmed-header) { background: rgba(16, 185, 129, 0.12); }
 
 </style>

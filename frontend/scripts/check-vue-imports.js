@@ -1,10 +1,15 @@
 /**
- * scripts/check-vue-imports.js — Revisa que cada función de Vue usada esté importada
+ * scripts/check-vue-imports.js — Revisiones que se ejecutan antes de `npm run build`
  *
- * Si un archivo usa computed(), ref(), watch()… sin importarlo de 'vue', la compilación
- * pasa igual pero la pantalla se rompe al abrirla (ReferenceError). Esto pasó en
- * Configuración. Se ejecuta automáticamente antes de `npm run build`; si encuentra un
- * problema, el build se detiene.
+ * 1) Que cada función de Vue usada (computed, ref, watch…) esté importada de 'vue'.
+ *    Si falta, la compilación pasa igual pero la pantalla se rompe al abrirla
+ *    (ReferenceError). Esto pasó en Configuración.
+ *
+ * 2) Que ningún estilo use `:global(html.dark) .clase`. En este Vue se compila MAL: queda
+ *    solo `html.dark`, se pierde `.clase` y la regla pinta la página entera. La forma
+ *    correcta es `:global(html.dark .clase)`, con todo el selector adentro.
+ *
+ * Si encuentra un problema, el build se detiene.
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +27,8 @@ const files = [];
 })(ROOT);
 
 let problems = 0;
+
+// ── 1) Imports de Vue ──
 for (const f of files) {
   let s = fs.readFileSync(f, 'utf8');
   if (f.endsWith('.vue')) {
@@ -42,8 +49,21 @@ for (const f of files) {
   }
 }
 
+// ── 2) Selectores :global mal escritos ──
+const BAD_GLOBAL = /:global\([^)]*\)\s+[.#\w\[:]/;
+for (const f of files.filter(x => x.endsWith('.vue'))) {
+  const blocks = fs.readFileSync(f, 'utf8').match(/<style[^>]*>[\s\S]*?<\/style>/g) || [];
+  for (const block of blocks) {
+    const bad = block.match(BAD_GLOBAL);
+    if (bad) {
+      console.error(`✗ Selector :global mal escrito en ${path.relative(ROOT, f)}: "${bad[0]}". Usa :global(html.dark .clase) con todo adentro.`);
+      problems++;
+    }
+  }
+}
+
 if (problems) {
-  console.error(`\n${problems} problema(s). Agrega el import y vuelve a compilar.`);
+  console.error(`\n${problems} problema(s). Corrígelos y vuelve a compilar.`);
   process.exit(1);
 }
-console.log('✓ Imports de Vue correctos');
+console.log('✓ Imports de Vue y estilos :global correctos');

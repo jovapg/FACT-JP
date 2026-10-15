@@ -898,6 +898,6 @@ onMounted(async () => {
 .mb-2 { margin-bottom: 8px; }
 
 /* Modo oscuro: estos fondos eran claros fijos y la letra clara no se veía */
-:global(html.dark) .input-error { background: rgba(239, 68, 68, 0.12); }
+:global(html.dark .input-error) { background: rgba(239, 68, 68, 0.12); }
 
 </style>
