@@ -270,7 +270,7 @@
  *
  * Pestañas: 'profile' | 'categories' | 'tables' | 'users'
  */
-import { ref, reactive, onMounted, inject } from 'vue'
+import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useBusinessStore } from '../../stores/business.js'
 import { useSpaces } from '../../composables/useSpaces.js'
 import { useTablesStore } from '../../stores/tables.js'
