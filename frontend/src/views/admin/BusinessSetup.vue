@@ -751,4 +751,9 @@ onMounted(async () => {
   color: var(--primary);
   flex-shrink: 0;
 }
+
+/* Modo oscuro: estos fondos eran claros fijos y la letra clara no se veía */
+:global(html.dark) .reset-zone { background: rgba(239, 68, 68, 0.10); }
+:global(html.dark) .logo-preview { background: var(--surface-2); }
+
 </style>

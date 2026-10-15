@@ -927,4 +927,9 @@ onMounted(async () => {
 .area-badge.bar { background: #f59e0b22; color: #b45309; }
 .area-badge.restaurante { background: #10b98122; color: #047857; }
 .gasto-detail-total { margin-top: 16px; text-align: right; font-size: 16px; color: var(--success); }
+
+/* Modo oscuro: estos fondos eran claros fijos y la letra clara no se veía */
+:global(html.dark) .input-error { background: rgba(239, 68, 68, 0.12); }
+:global(html.dark) .btn-danger-outline:hover { background: rgba(239, 68, 68, 0.15); }
+
 </style>

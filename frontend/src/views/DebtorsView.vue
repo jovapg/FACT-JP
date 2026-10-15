@@ -1350,4 +1350,12 @@ onMounted(() => {
   .summary-cards { grid-template-columns: 1fr; }
   .pos-products-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Modo oscuro: estos fondos eran claros fijos y la letra clara no se veía */
+:global(html.dark) .balance-hero-debt { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); }
+:global(html.dark) .balance-hero-ok { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.35); }
+:global(html.dark) .transaction-row.charge { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.30); }
+:global(html.dark) .transaction-row.payment { background: rgba(16, 185, 129, 0.10); border-color: rgba(16, 185, 129, 0.30); }
+:global(html.dark) .tx-action-btn.danger:hover { background: rgba(239, 68, 68, 0.15); }
+
 </style>
