@@ -5,7 +5,7 @@
             <h1 class="page-title">{{ recipesTitle }}</h1>
             <p class="page-subtitle">{{ inventoryStore.recipes.length }} productos en el menú</p>
           </div>
-          <button class="btn btn-primary" @click="openCreate">+ Nueva receta</button>
+          <button class="btn btn-primary" @click="openCreate">+ {{ word.newOne }}</button>
         </div>
 
         <!-- Barra de búsqueda y filtros -->
@@ -16,7 +16,7 @@
             <input
               v-model="search"
               class="form-control search-input"
-              placeholder="Buscar receta..."
+              :placeholder="`Buscar ${word.one}...`"
               @input="activeLetter = ''"
             />
             <!-- Botón para limpiar la búsqueda con un solo clic -->
@@ -115,14 +115,14 @@
 
           <div v-if="filteredRecipes.length === 0" class="empty-state">
             <div class="empty-state-icon">🍽️</div>
-            <p class="empty-state-text">No hay recetas en esta categoría</p>
+            <p class="empty-state-text">No hay {{ word.many }} en esta categoría</p>
           </div>
         </div>
 
         <!-- Modal de confirmación para eliminar receta -->
         <ConfirmModal
           :visible="!!deleteTarget"
-          :title="`Eliminar receta`"
+          :title="`Eliminar ${word.one}`"
           :message="`¿Eliminar &quot;${deleteTarget?.name}&quot;? Esta acción no se puede deshacer.`"
           confirmText="Sí, eliminar"
           type="danger"
@@ -134,7 +134,7 @@
         <div class="modal-overlay" v-if="showModal" @click.self="closeModal">
           <div class="modal" style="max-width:700px">
             <div class="modal-header">
-              <h3 class="modal-title">{{ editRecipe ? 'Editar receta' : 'Nueva receta' }}</h3>
+              <h3 class="modal-title">{{ editRecipe ? 'Editar ' + word.one : word.newOne }}</h3>
               <button class="btn-close" @click="closeModal">×</button>
             </div>
             <div class="modal-body">
@@ -147,8 +147,7 @@
                   <label class="form-label">Categoría</label>
                   <input v-model="form.category" class="form-control" list="recipe-cats" />
                   <datalist id="recipe-cats">
-                    <option value="platos" /><option value="bebidas" /><option value="postres" />
-                    <option value="entradas" /><option value="licores" />
+                    <option v-for="c in categorySuggestions" :key="c" :value="c" />
                   </datalist>
                 </div>
                 <div class="form-group">
@@ -158,7 +157,7 @@
                 <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:24px;">
                   <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                     <input type="checkbox" v-model="form.available" />
-                    Disponible en menú
+                    {{ isCombo ? 'Disponible para vender' : 'Disponible en menú' }}
                   </label>
                 </div>
               </div>
@@ -228,6 +227,7 @@
  */
 import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
+import { useBusinessStore } from '../stores/business.js'
 import PageLayout from '../components/PageLayout.vue'
 import { useSpaces } from '../composables/useSpaces.js'
 import ConfirmModal from '../components/ConfirmModal.vue'
@@ -238,6 +238,24 @@ const spaces = useSpaces()
 const recipesTitle = computed(() => spaces.recipesLabel === 'Recetas' ? 'Recetas / Menú' : spaces.recipesLabel)
 // Con el nombre "Combos" (u otro), el módulo arma paquetes de productos: la lista de lo que incluye es lo principal
 const isCombo = computed(() => spaces.recipesLabel !== 'Recetas')
+const businessStore = useBusinessStore()
+
+// Palabras de la pantalla según cómo se llame el módulo: Receta / Combo (u otro nombre)
+const word = computed(() => {
+  if (!isCombo.value) {
+    return { one: 'receta', One: 'Receta', many: 'recetas', newOne: 'Nueva receta', created: 'creada', updated: 'actualizada', deleted: 'eliminada' }
+  }
+  const plural = spaces.recipesLabel                               // "Combos"
+  const one = plural.replace(/s$/i, '').toLowerCase()              // "combo"
+  return { one, One: one.charAt(0).toUpperCase() + one.slice(1), many: plural.toLowerCase(), newOne: 'Nuevo ' + one, created: 'creado', updated: 'actualizado', deleted: 'eliminado' }
+})
+
+// Categorías que se sugieren al escribir: las del negocio (Configuración) + las que ya existen
+const categorySuggestions = computed(() => {
+  const base = isCombo.value ? ['Combos'] : ['platos', 'bebidas', 'postres', 'entradas', 'licores']
+  const fromBiz = (businessStore.profile?.categories || []).map(c => c.name)
+  return [...new Set([...base, ...fromBiz, ...inventoryStore.recipeCategories].filter(Boolean))]
+})
 const toast = inject('toast')
 
 const activeCat    = ref('todas')
@@ -324,7 +342,7 @@ function openCreate() {
   editRecipe.value = null
   showAdvanced.value = false
   const defaultArea = 'bar' // una sola cuenta
-  Object.assign(form, { name: '', category: 'platos', price: 0, area: defaultArea, available: true, ingredients: [] })
+  Object.assign(form, { name: '', category: isCombo.value ? 'Combos' : 'platos', price: 0, area: defaultArea, available: true, ingredients: [] })
   showModal.value = true
 }
 
@@ -366,10 +384,10 @@ async function saveRecipe() {
     }
     if (editRecipe.value) {
       await inventoryStore.updateRecipe(editRecipe.value.id, data)
-      toast('Receta actualizada', 'success')
+      toast(`${word.One} ${word.updated}`, 'success')
     } else {
       await inventoryStore.createRecipe(data)
-      toast('Receta creada', 'success')
+      toast(`${word.One} ${word.created}`, 'success')
     }
     closeModal()
   } catch (err) {
@@ -393,7 +411,7 @@ function confirmDelete(recipe) {
 async function doDelete() {
   try {
     await inventoryStore.deleteRecipe(deleteTarget.value.id)
-    toast('Receta eliminada', 'success')
+    toast(`${word.One} ${word.deleted}`, 'success')
   } catch {
     toast('Error al eliminar', 'error')
   } finally {
