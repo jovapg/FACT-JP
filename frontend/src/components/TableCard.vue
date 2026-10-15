@@ -119,6 +119,10 @@ function formatTime(iso) {
   border: 2px solid #e74c3c;
 }
 
+/* Modo oscuro: fondos suaves oscuros para que la letra clara se lea */
+:global(html.dark) .table-libre { background: rgba(39, 174, 96, 0.16); }
+:global(html.dark) .table-ocupada { background: rgba(231, 76, 60, 0.16); }
+
 .table-number {
   font-size: 18px;
   font-weight: 800;

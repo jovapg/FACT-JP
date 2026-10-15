@@ -28,6 +28,7 @@
   --surface: #ffffff;
   --surface-2: #f8fafc;
   --white: #ffffff;
+  --navbar-bg: 255,255,255; /* barra superior (RGB; se usa con transparencia) */
 
   /* Texto */
   --text: #0f172a;
@@ -64,7 +65,8 @@ html.dark {
   --surface-2: #0f1629;
   --text: #f1f5f9;
   --text-secondary: #94a3b8;
-  --text-light: #4b5563;
+  --navbar-bg: 17,24,39;
+  --text-light: #8b9bb4; /* antes #4b5563: casi no se leia sobre fondo oscuro */
   --border: #1f2937;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
   --shadow: 0 4px 12px rgba(0,0,0,0.5);

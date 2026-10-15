@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 const { NAME_RE, backupDir, listBackups, createBackup, KEEP } = require('../services/backupService');
+const { recordProblem } = require('../services/systemEvents');
 
 const router = express.Router();
 
@@ -27,7 +28,9 @@ router.post('/', authenticate, requireSuperAdmin, (req, res) => {
   try {
     res.status(201).json(createBackup());
   } catch (err) {
-    console.error(err); res.status(500).json({ error: 'No se pudo crear el respaldo' });
+    console.error(err);
+    recordProblem({ type: 'respaldo_fallo', title: 'No se pudo crear el respaldo', detail: err.message });
+    res.status(500).json({ error: 'No se pudo crear el respaldo' });
   }
 });
 

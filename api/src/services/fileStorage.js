@@ -89,9 +89,41 @@ async function readJSON(filePath) {
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath, 'utf-8');
     return JSON.parse(raw);
-  } catch {
+  } catch (err) {
+    reportCorruptFile(filePath, err);
     return null;
   }
+}
+
+// Archivos dañados ya avisados en esta ejecución (para no avisar en cada lectura)
+const reportedCorrupt = new Set();
+
+/**
+ * Un archivo que existe pero no se puede leer (JSON dañado) se lee como "vacío", y el
+ * siguiente guardado lo sobrescribiría. Antes de eso: se guarda una copia del archivo
+ * dañado (<archivo>.corrupt-<fecha>) y se registra un problema en la Bitácora del superadmin.
+ */
+function reportCorruptFile(filePath, err) {
+  try {
+    if (!(err instanceof SyntaxError)) return; // solo JSON mal formado
+    const key = path.resolve(filePath);
+    if (reportedCorrupt.has(key)) return;
+    reportedCorrupt.add(key);
+
+    let copyName = '';
+    try {
+      copyName = key + '.corrupt-' + new Date().toISOString().replace(/[:.]/g, '-');
+      fs.copyFileSync(key, copyName);
+    } catch { copyName = ''; }
+
+    require('./systemEvents').recordProblem({
+      type: 'archivo_danado',
+      title: 'Archivo de datos dañado',
+      detail: `${path.relative(DATA_PATH, key)} no se pudo leer (${err.message}). ` +
+        (copyName ? `Se guardó una copia dañada como ${path.basename(copyName)}. ` : '') +
+        'La app lo toma como vacío: restaura el archivo desde un respaldo antes de seguir guardando.'
+    });
+  } catch { /* avisar nunca debe romper la lectura */ }
 }
 
 /**
@@ -102,6 +134,7 @@ async function writeJSON(filePath, data) {
   const dir = path.dirname(filePath);
   ensureDir(dir);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  reportedCorrupt.delete(path.resolve(filePath)); // el archivo quedó sano otra vez
 }
 
 /**

@@ -57,6 +57,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
+import api from '../services/api.js'
 import { useInventoryStore } from '../stores/inventory.js'
 import { usePayrollStore } from '../stores/payroll.js'
 import { useBusinessStore } from '../stores/business.js'
@@ -115,9 +116,18 @@ const visibleMenuItems = computed(() => {
     badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length
       // Badge rojo en Nómina: días pendientes por aprobar (solo lo ve el admin)
       : (item.path === '/payroll' && auth.isAdmin) ? payrollStore.pendingCount
+      // Bitácora: problemas del sistema sin revisar (solo el superadmin)
+      : (item.path === '/audit' && auth.isSuperAdmin) ? systemOpen.value
       : 0
   }))
 })
+
+// Problemas del sistema sin revisar (solo se consulta si eres superadmin)
+const systemOpen = ref(0)
+async function refreshSystemOpen() {
+  if (!auth.isSuperAdmin) return
+  try { systemOpen.value = (await api.get('/api/system-events')).data.open || 0 } catch { /* sin aviso */ }
+}
 
 const roleLabel = computed(() => {
   const labels = { superadmin: 'Super Admin', admin: 'Administrador', cajero: 'Cajero' }
@@ -143,12 +153,14 @@ watch(isMenuOpen, (open) => {
 })
 watch(() => route.path, () => {
   if (isMobile.value) closeMenu()
+  refreshSystemOpen()
 })
 
 onMounted(() => {
   handleResize(); window.addEventListener('resize', handleResize)
   // Refresca el contador de nómina pendiente para el badge (solo admin)
   if (auth.isAdmin) payrollStore.fetch().catch(() => {})
+  refreshSystemOpen()
 })
 onUnmounted(() => window.removeEventListener('resize', handleResize))
 </script>

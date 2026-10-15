@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { getDataPath } = require('./fileStorage');
+const { recordProblem } = require('./systemEvents');
 
 const KEEP = 30;                       // cuántos respaldos se conservan
 const EVERY_MS = 24 * 3600 * 1000;     // cada cuánto se crea uno automático
@@ -92,6 +93,7 @@ function backupIfDue() {
     }
   } catch (err) {
     console.error('[backup] error al crear el respaldo automático:', err);
+    recordProblem({ type: 'respaldo_fallo', title: 'No se pudo crear el respaldo automático', detail: err.message });
   }
 }
 

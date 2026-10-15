@@ -191,6 +191,7 @@ const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shor
 app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/backups', require('./src/routes/backups'));   // respaldos (solo superadmin)
+app.use('/api/system-events', require('./src/routes/systemEvents')); // problemas del sistema (solo superadmin)
 
 // Rutas de negocio: authenticate + requireBusinessAccess aplicados a nivel de mount.
 // Esto garantiza que cualquier usuario no-superadmin solo pueda acceder a su propio negocio.
@@ -550,6 +551,18 @@ if (fs.existsSync(DIST_PATH)) {
   });
   console.log(`[Frontend] Sirviendo dist desde ${DIST_PATH}`);
 }
+
+// Un error que nunca se atrapó tumba el servidor (Railway lo reinicia). Antes de salir
+// se deja constancia para el superadmin: así se sabe que pasó y qué fue.
+function recordFatal(title, err) {
+  try {
+    require('./src/services/systemEvents').recordProblem({
+      type: 'error_servidor', title, detail: String((err && err.stack) || err).split('\n').slice(0, 3).join(' | ')
+    });
+  } catch { /* nada más que hacer */ }
+}
+process.on('uncaughtException', (err) => { console.error(err); recordFatal('El servidor se detuvo por un error', err); process.exit(1); });
+process.on('unhandledRejection', (err) => { console.error(err); recordFatal('El servidor se detuvo por un error (promesa sin atrapar)', err); process.exit(1); });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`facJp API corriendo en http://0.0.0.0:${PORT}`);
