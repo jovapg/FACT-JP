@@ -456,15 +456,15 @@ app.get('/api/:businessId/backup', ...bizAccess, async (req, res) => {
 /**
  * Reinicio para producción — pone en CERO los datos transaccionales de prueba,
  * conservando recetas, inventario, deudas, directorio (contactos), usuarios y config.
- * Requiere rol admin/superadmin y body { confirm: 'REINICIAR' }.
+ * SOLO el superadmin (un admin de negocio no puede borrar el historial) y body { confirm: 'REINICIAR' }.
  * Limpia: ventas, salidas (compras), turnos, bitácora, finanzas; libera mesas;
  * conserva el directorio pero borra su historial de pagos y deudas; reinicia
  * el contador de facturas.
  */
 app.post('/api/:businessId/reset-produccion', ...bizAccess, async (req, res) => {
   try {
-    if (!['superadmin', 'admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden' });
+    if (req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Solo el superadmin puede reiniciar los datos' });
     }
     if (req.body.confirm !== 'REINICIAR') {
       return res.status(400).json({ error: 'Confirmación inválida' });

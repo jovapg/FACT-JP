@@ -201,8 +201,8 @@
             El archivo se descarga con la fecha de hoy en el nombre. Recomendamos hacerlo semanalmente.
           </p>
 
-          <!-- Zona de reinicio para iniciar producción -->
-          <div class="reset-zone">
+          <!-- Zona de reinicio para iniciar producción: solo el superadmin la ve -->
+          <div class="reset-zone" v-if="authStore.isSuperAdmin">
             <h4 class="reset-title">⚠️ Iniciar producción (reiniciar datos)</h4>
             <p class="reset-desc">
               Pone en <strong>CERO</strong>: ventas/facturas, salidas (compras/gastos), turnos de caja,
