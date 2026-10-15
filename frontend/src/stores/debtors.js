@@ -4,8 +4,8 @@
  * Gestiona los clientes que compran fiado y su historial de transacciones.
  * balance = sum(cargos) - sum(abonos)
  *
- * Al saldar (balance = 0), el backend genera automáticamente una factura
- * de paymentMethod='pago_fiado' con los items acumulados.
+ * Cada abono genera una factura (venta) con el ítem "Abono a deuda", el cliente y
+ * el valor, en efectivo o banco: así el dinero entra como cualquier venta.
  */
 
 import { defineStore } from 'pinia'
@@ -76,13 +76,13 @@ export const useDebtorsStore = defineStore('debtors', () => {
     return res.data  // { debtor }
   }
 
-  /** Registra abono. Si salda, el backend genera factura y la retorna en generatedSale. */
+  /** Registra abono. El backend genera la factura del abono y la retorna en generatedSale. */
   async function addPayment(id, amount, description, paidWith = 'efectivo') {
     const res = await api.post(`/api/${bizId()}/debtors/${id}/payment`, { amount, description, paidWith })
     const debtor = res.data.debtor
     const idx = debtors.value.findIndex(d => d.id === id)
     if (idx !== -1) debtors.value[idx] = debtor
-    return res.data  // { debtor, generatedSale|null }
+    return res.data  // { debtor, generatedSale }
   }
 
   /** Edita un abono (solo admin). Reabre fiados si la deuda vuelve a quedar pendiente. */

@@ -444,6 +444,7 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
         if (t.type === 'charge') { fiadosNuevos += t.amount || 0; continue; }
         if (t.type !== 'payment') continue;
         abonos += t.amount || 0;
+        if (t.abonoSaleId) continue; // el abono nuevo ya es una venta y está contado arriba
         const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';
         const split = t.areaSplit || { bar: t.amount || 0, restaurante: 0 };
         ventas.bar[bucket] += split.bar || 0;

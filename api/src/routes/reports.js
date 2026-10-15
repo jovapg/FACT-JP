@@ -88,6 +88,7 @@ router.get('/reports/sales', authenticate, async (req, res) => {
     // Top products
     const products = {};
     sales.forEach(s => {
+      if (s.type === 'abono_deuda') return; // un abono de deuda no es un producto
       (s.items || []).forEach(item => {
         const name = item.name || item.recipeName || 'Sin nombre';
         if (!products[name]) products[name] = { qty: 0, total: 0 };

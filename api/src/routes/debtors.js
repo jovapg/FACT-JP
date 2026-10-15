@@ -10,9 +10,11 @@
  *   - Al registrar un fiado con items, se descuenta el inventario inmediatamente
  *     (los productos salieron físicamente del negocio).
  *   - Los items quedan guardados en la transacción con settled=false.
- *   - Al abonar, si el saldo del deudor llega a 0, se generan una factura
- *     automática con paymentMethod='pago_fiado', agregando los items de todos
- *     los cargos no liquidados; esos cargos quedan marcados settled=true.
+ *   - CADA abono genera una factura (venta) con un ítem "Abono a deuda", el cliente
+ *     y el valor, en efectivo o banco. Así el dinero entra por el mismo camino que
+ *     una venta (turno de caja, Finanzas, reportes) y se sabe de quién fue.
+ *   - Cuando el saldo llega a 0, los cargos quedan marcados settled=true (ya no se
+ *     pueden editar ni borrar). No se genera otra factura: sería contar la plata dos veces.
  *
  * Rutas:
  *   GET    /api/:businessId/debtors              → listar todos los deudores
@@ -36,6 +38,7 @@ const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorag
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 const { logAudit, cop } = require('../services/audit');
+const { updateActiveShift, adjustShiftForSaleEdit, removeSaleFromShift } = require('../services/shiftSales');
 
 const debtorsPath = (id) => path.join(getBusinessPath(id), 'debtors.json');
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
@@ -51,28 +54,83 @@ function generateInvoiceNumber(profile) {
 }
 
 /**
- * Suma un abono de fiado al turno abierto EN TIEMPO REAL, para que el efectivo
- * (y banco) del turno reflejen la plata que realmente entró a la caja al recibir
- * el abono — así el cuadre no marca sobrante. Si no hay turno abierto, no hace nada.
+ * Genera la factura (venta) de un abono: un solo ítem "Abono a deuda" con el cliente
+ * y el valor, pagada en efectivo o banco. Se guarda en sales.json, consume un número
+ * de factura y suma al turno abierto (si lo hay), igual que cualquier venta.
  */
-async function addAbonoToActiveShift(businessId, amount, paidWith, areaSplit) {
-  try {
-    const shifts = await readJSON(shiftsPath(businessId)) || [];
-    const idx = shifts.findIndex(s => s.status === 'open');
-    if (idx === -1) return;
-    const isEfectivo = paidWith !== 'banco';
-    shifts[idx].totalSales      = (shifts[idx].totalSales || 0) + amount;
-    shifts[idx].totalCashSales  = (shifts[idx].totalCashSales || 0) + (isEfectivo ? amount : 0);
-    shifts[idx].totalOtherSales = (shifts[idx].totalOtherSales || 0) + (isEfectivo ? 0 : amount);
-    const prev = shifts[idx].salesByArea || { bar: 0, restaurante: 0 };
-    shifts[idx].salesByArea = {
-      bar: (prev.bar || 0) + ((areaSplit && areaSplit.bar) || 0),
-      restaurante: (prev.restaurante || 0) + ((areaSplit && areaSplit.restaurante) || 0)
-    };
-    await writeJSON(shiftsPath(businessId), shifts);
-  } catch (err) {
-    console.error('[shifts] Error acumulando abono en turno:', err);
-  }
+async function createAbonoSale(businessId, debtor, transaction, user) {
+  const profile = await readJSON(profilePath(businessId)) || {};
+  const invoiceNumber = generateInvoiceNumber(profile);
+  const amount = transaction.amount;
+  const split = transaction.areaSplit || { bar: amount, restaurante: 0 };
+  const extra = transaction.description && transaction.description !== 'Abono' ? ` — ${transaction.description}` : '';
+
+  const sale = {
+    id: uuidv4(),
+    invoiceNumber,
+    type: 'abono_deuda',           // distingue estas facturas de las ventas de productos
+    tableId: null,
+    tableNumber: null,
+    items: [{ name: 'Abono a deuda', kind: 'abono_deuda', price: amount, qty: 1, discount: 0, area: 'bar' }],
+    subtotal: amount,
+    discount: 0,
+    total: amount,
+    totalsByArea: { bar: split.bar || 0, restaurante: split.restaurante || 0 },
+    paymentMethod: transaction.paidWith === 'banco' ? 'transferencia' : 'efectivo',
+    cashier: user.name || user.username,
+    client: debtor.name,
+    debtorId: debtor.id,
+    debtorTxId: transaction.id,
+    notes: `Abono a deuda de ${debtor.name}${extra}`,
+    createdAt: transaction.date
+  };
+
+  const sales = await readJSON(salesPath(businessId)) || [];
+  sales.push(sale);
+  await writeJSON(salesPath(businessId), sales);
+
+  profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
+  await writeJSON(profilePath(businessId), profile);
+
+  await updateActiveShift(businessId, sale);
+  return sale;
+}
+
+/**
+ * Actualiza la factura de un abono cuando el abono se edita (monto o nota) y
+ * ajusta el turno al que pertenece. Re-escala el reparto por área del abono.
+ */
+async function syncAbonoSale(businessId, debtor, tx, oldAmount) {
+  const sales = await readJSON(salesPath(businessId)) || [];
+  const idx = sales.findIndex(x => x.id === tx.abonoSaleId);
+  if (idx === -1) return;
+  const oldSale = sales[idx];
+
+  const oldSplit = tx.areaSplit || { bar: oldAmount, restaurante: 0 };
+  const bar = oldAmount > 0 ? Math.round(tx.amount * ((oldSplit.bar || 0) / oldAmount)) : tx.amount;
+  tx.areaSplit = { bar, restaurante: tx.amount - bar };
+
+  const extra = tx.description && tx.description !== 'Abono' ? ` — ${tx.description}` : '';
+  const newSale = {
+    ...oldSale,
+    items: [{ ...(oldSale.items?.[0] || { name: 'Abono a deuda', kind: 'abono_deuda', qty: 1, discount: 0, area: 'bar' }), price: tx.amount }],
+    subtotal: tx.amount,
+    total: tx.amount,
+    totalsByArea: { bar: tx.areaSplit.bar, restaurante: tx.areaSplit.restaurante },
+    notes: `Abono a deuda de ${debtor.name}${extra}`
+  };
+  sales[idx] = newSale;
+  await writeJSON(salesPath(businessId), sales);
+  await adjustShiftForSaleEdit(businessId, oldSale, newSale);
+}
+
+/** Borra la factura de un abono (cuando el abono se elimina) y la quita del turno */
+async function removeAbonoSale(businessId, tx) {
+  const sales = await readJSON(salesPath(businessId)) || [];
+  const sale = sales.find(x => x.id === tx.abonoSaleId);
+  if (!sale) return;
+  await writeJSON(salesPath(businessId), sales.filter(x => x.id !== tx.abonoSaleId));
+  await removeSaleFromShift(businessId, sale);
 }
 
 /** Recalcula el saldo del deudor a partir de sus transacciones: Σcargos − Σabonos */
@@ -107,6 +165,8 @@ async function reversePaymentSettlement(businessId, debtor, payment) {
   let saleIds;
   if (payment.generatedSaleId) {
     saleIds = new Set([payment.generatedSaleId]);
+  } else if (payment.abonoSaleId) {
+    saleIds = new Set(); // abono nuevo: su factura de abono se maneja aparte, no hay 'pago_fiado'
   } else {
     saleIds = new Set(
       sales.filter(s => s.paymentMethod === 'pago_fiado' && s.debtorId === debtor.id).map(s => s.id)
@@ -381,13 +441,14 @@ router.delete('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
 
 /**
  * POST /debtors/:id/payment — Registra un abono (reduce el saldo).
- * Si el saldo queda en 0, agrega los items de los cargos no liquidados y
- * genera una factura con paymentMethod='pago_fiado' (sin tocar inventario,
- * que ya se descontó al registrar el fiado). Los cargos quedan marcados
- * settled=true para no volver a facturarlos.
+ * Genera una factura (venta) con el ítem "Abono a deuda", el cliente y el valor, en
+ * efectivo o banco; esa venta es la que suma al turno y a Finanzas. Si el saldo
+ * queda en 0, los cargos quedan marcados settled=true (ya no se editan).
  *
- * Body: { amount, description? }
- * Respuesta: { debtor, generatedSale? }
+ * Requiere un turno de caja abierto (si no, responde 400).
+ *
+ * Body: { amount, description?, paidWith? }
+ * Respuesta: { debtor, generatedSale }   (generatedSale = la factura del abono)
  */
 router.post('/debtors/:id/payment', authenticate, async (req, res) => {
   try {
@@ -397,6 +458,12 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
 
     const amount = Number(req.body.amount);
     if (!amount || amount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
+
+    // Un abono es plata que entra: debe quedar dentro de un turno de caja abierto
+    const openShifts = await readJSON(shiftsPath(req.params.businessId)) || [];
+    if (!openShifts.some(s => s.status === 'open')) {
+      return res.status(400).json({ error: 'No hay un turno de caja abierto. Abre un turno para registrar abonos.' });
+    }
 
     // Capear al saldo actual para mantener consistencia entre saldo e historial
     const currentBalance = debtors[idx].balance || 0;
@@ -435,75 +502,22 @@ router.post('/debtors/:id/payment', authenticate, async (req, res) => {
     debtors[idx].transactions = [...(debtors[idx].transactions || []), transaction];
     debtors[idx].balance = Math.max(0, currentBalance - actualAmount);
 
-    let generatedSale = null;
-
-    // Si el saldo queda en 0, generar factura por los cargos no liquidados
+    // Si el saldo queda en 0, los cargos quedan liquidados (ya no se pueden editar ni borrar).
+    // No se genera otra factura: el dinero ya entra con la factura de cada abono.
     if (debtors[idx].balance === 0) {
-      const unsettled = debtors[idx].transactions.filter(t => t.type === 'charge' && !t.settled);
-
-      if (unsettled.length > 0) {
-        // Agregar items de todos los cargos. Si algún cargo no tenía items
-        // (formato viejo o monto suelto), incluir una línea genérica por su monto.
-        const allItems = [];
-        for (const charge of unsettled) {
-          if (Array.isArray(charge.items) && charge.items.length > 0) {
-            allItems.push(...charge.items);
-          } else {
-            allItems.push({
-              name: charge.description || 'Pago de fiado',
-              price: charge.amount,
-              qty: 1
-            });
-          }
-        }
-        const saleTotal = unsettled.reduce((s, c) => s + c.amount, 0);
-
-        const profile = await readJSON(profilePath(req.params.businessId)) || {};
-        const invoiceNumber = generateInvoiceNumber(profile);
-
-        const sale = {
-          id: uuidv4(),
-          invoiceNumber,
-          tableId: null,
-          tableNumber: null,
-          items: allItems,
-          subtotal: saleTotal,
-          discount: 0,
-          total: saleTotal,
-          paymentMethod: 'pago_fiado',
-          cashier: req.user.name || req.user.username,
-          client: debtors[idx].name,
-          debtorId: debtors[idx].id,
-          notes: `Pago de fiado de ${debtors[idx].name}`,
-          createdAt: new Date().toISOString()
-        };
-
-        const sales = await readJSON(salesPath(req.params.businessId)) || [];
-        sales.push(sale);
-        await writeJSON(salesPath(req.params.businessId), sales);
-
-        profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
-        await writeJSON(profilePath(req.params.businessId), profile);
-
-        // Nota: la factura pago_fiado NO se suma al turno (la plata ya se contó como abono)
-
-        // Marcar cargos como liquidados para no volver a facturarlos y
-        // guardar el enlace en el abono (permite revertir con precisión luego)
-        const settledIds = [];
-        for (const t of debtors[idx].transactions) {
-          if (t.type === 'charge' && !t.settled) { t.settled = true; settledIds.push(t.id); }
-        }
-        transaction.generatedSaleId = sale.id;
-        transaction.settledChargeIds = settledIds;
-
-        generatedSale = sale;
+      const settledIds = [];
+      for (const t of debtors[idx].transactions) {
+        if (t.type === 'charge' && !t.settled) { t.settled = true; settledIds.push(t.id); }
       }
+      if (settledIds.length > 0) transaction.settledChargeIds = settledIds;
     }
 
-    await writeJSON(debtorsPath(req.params.businessId), debtors);
+    // Factura del abono: así el dinero entra como una venta (turno, Finanzas, reportes)
+    const generatedSale = await createAbonoSale(req.params.businessId, debtors[idx], transaction, req.user);
+    transaction.abonoSaleId = generatedSale.id;
+    transaction.invoiceNumber = generatedSale.invoiceNumber;
 
-    // Sumar el abono al turno abierto en tiempo real (efectivo/banco + área)
-    await addAbonoToActiveShift(req.params.businessId, actualAmount, transaction.paidWith, transaction.areaSplit);
+    await writeJSON(debtorsPath(req.params.businessId), debtors);
 
     res.json({ debtor: debtors[idx], generatedSale });
   } catch (err) {
@@ -555,6 +569,9 @@ router.put('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
       delete tx.settledChargeIds;
     }
 
+    // La factura del abono (y el turno al que pertenece) quedan con el nuevo monto
+    if (tx.abonoSaleId) await syncAbonoSale(req.params.businessId, debtor, tx, oldPayAmount);
+
     recomputeBalance(debtor);
     await writeJSON(debtorsPath(req.params.businessId), debtors);
 
@@ -588,8 +605,9 @@ router.delete('/debtors/:id/payment/:txId', authenticate, async (req, res) => {
     const tx = (debtor.transactions || []).find(t => t.id === req.params.txId);
     if (!tx || tx.type !== 'payment') return res.status(404).json({ error: 'Abono no encontrado' });
 
-    // Quitar el abono
+    // Quitar el abono y su factura (se descuenta del turno)
     debtor.transactions = debtor.transactions.filter(t => t.id !== req.params.txId);
+    if (tx.abonoSaleId) await removeAbonoSale(req.params.businessId, tx);
 
     // Si la deuda vuelve a quedar pendiente, revertir la liquidación previa
     const totalCharges  = debtor.transactions.filter(t => t.type === 'charge').reduce((s, t) => s + (t.amount || 0), 0);

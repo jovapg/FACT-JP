@@ -46,7 +46,7 @@
                     <div class="action-btns">
                       <button class="btn btn-sm btn-outline" @click="viewInvoice(inv)">👁 Ver</button>
                       <button
-                        v-if="canManage && inv.paymentMethod !== 'pago_fiado'"
+                        v-if="canManage && inv.paymentMethod !== 'pago_fiado' && inv.type !== 'abono_deuda'"
                         class="btn btn-sm btn-outline"
                         @click="openEditInvoice(inv)"
                       >✏️ Editar</button>

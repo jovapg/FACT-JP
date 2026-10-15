@@ -184,13 +184,25 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
       const sales = await readJSON(salesPath(req.params.businessId)) || [];
       incomeBreakdown = incomeByAreaBucket(sales, shift.openedAt, closedAt);
 
-      // Sumar los abonos de fiado hechos durante el turno, repartidos por área (areaSplit)
+      // Los abonos de deuda nuevos son ventas (type 'abono_deuda'): ya están en el desglose
+      // de arriba; aquí solo se cuenta cuánto del ingreso del turno fueron abonos.
+      {
+        const f0 = new Date(shift.openedAt).getTime(), t0 = new Date(closedAt).getTime();
+        for (const sa of sales) {
+          if (sa.type !== 'abono_deuda') continue;
+          const tt = new Date(sa.createdAt).getTime();
+          if (!isNaN(tt) && tt >= f0 && tt <= t0) fiadoAbonos += sa.total || 0;
+        }
+      }
+
+      // Abonos ANTIGUOS (sin factura propia): se suman aquí, repartidos por área (areaSplit)
       const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
       const fromT = new Date(shift.openedAt).getTime();
       const toT = new Date(closedAt).getTime();
       for (const d of debtors) {
         for (const t of (d.transactions || [])) {
           if (t.type !== 'payment') continue;
+          if (t.abonoSaleId) continue; // ya cuenta como venta
           const tt = new Date(t.date).getTime();
           if (isNaN(tt) || tt < fromT || tt > toT) continue;
           const bucket = t.paidWith === 'banco' ? 'banco' : 'efectivo';

@@ -11,6 +11,10 @@
       </button>
     </div>
 
+    <div v-if="noShift" class="shift-warning">
+      ⚠️ No hay un turno de caja abierto. Abre un turno en <strong>Turnos de Caja</strong> para poder registrar abonos.
+    </div>
+
     <!-- Resumen -->
     <div class="summary-cards mb-4">
       <div class="summary-card">
@@ -80,7 +84,7 @@
                   <button class="btn btn-sm btn-danger-outline" @click="openCharge(d)" title="Registrar fiado">
                     <Plus :size="12" /> Fiado
                   </button>
-                  <button class="btn btn-sm btn-success-outline" @click="openPayment(d)" title="Registrar abono" :disabled="d.balance <= 0">
+                  <button class="btn btn-sm btn-success-outline" @click="openPayment(d)" :title="noShift ? 'Abre un turno de caja para registrar abonos' : 'Registrar abono'" :disabled="d.balance <= 0 || noShift">
                     <Minus :size="12" /> Abono
                   </button>
                   <button class="btn btn-sm btn-outline" @click="printStatement(d)" title="Estado de cuenta" :disabled="!d.transactions?.length">📄</button>
@@ -328,9 +332,9 @@
         </div>
         <div class="modal-body">
           <p class="text-muted" style="font-size:12.5px;margin-bottom:12px">
-            Al cambiar el monto se recalcula el saldo. Si la deuda vuelve a quedar pendiente,
-            los fiados que figuraban como <strong>facturados</strong> se reabren y se borra la
-            factura automática de pago de fiado.
+            Al cambiar el monto se recalcula el saldo y se actualiza la <strong>factura del abono</strong>
+            (y el turno de caja al que pertenece). Si la deuda vuelve a quedar pendiente,
+            los fiados que figuraban como <strong>liquidados</strong> se reabren.
           </p>
           <div class="form-group">
             <label class="form-label">Monto del abono *</label>
@@ -390,7 +394,7 @@
                       {{ t.description }}
                       <span v-if="t.editedAt" class="edited-tag" title="Editado">✏️ editado</span>
                     </p>
-                    <p class="transaction-meta">{{ formatDateTime(t.date) }} · por {{ t.registeredBy }}</p>
+                    <p class="transaction-meta">{{ formatDateTime(t.date) }} · por {{ t.registeredBy }}<span v-if="t.invoiceNumber"> · Factura {{ t.invoiceNumber }}</span></p>
                   </div>
                 </div>
                 <div class="transaction-right">
@@ -421,7 +425,7 @@
           <button class="btn btn-danger-outline" @click="openCharge(detailDebtor); detailDebtor = null">
             <Plus :size="13" /> Fiado
           </button>
-          <button class="btn btn-primary" @click="openPayment(detailDebtor); detailDebtor = null" :disabled="detailDebtor.balance <= 0">
+          <button class="btn btn-primary" @click="openPayment(detailDebtor); detailDebtor = null" :disabled="detailDebtor.balance <= 0 || noShift" :title="noShift ? 'Abre un turno de caja para registrar abonos' : ''">
             <Minus :size="13" /> Abono
           </button>
         </div>
@@ -454,7 +458,7 @@
     <ConfirmModal
       :visible="!!deletePaymentTarget"
       title="Eliminar abono"
-      :message="`¿Eliminar este abono de ${formatCOP(deletePaymentTarget?.tx?.amount)}? Se recalcula el saldo y, si la deuda vuelve a quedar pendiente, se reabren los fiados facturados.`"
+      :message="`¿Eliminar este abono de ${formatCOP(deletePaymentTarget?.tx?.amount)}? Se elimina también su factura y se descuenta del turno. Se recalcula el saldo y, si la deuda vuelve a quedar pendiente, se reabren los fiados liquidados.`"
       confirmText="Sí, eliminar"
       type="danger"
       @confirm="doDeletePayment"
@@ -468,6 +472,7 @@
 import { ref, computed, onMounted, inject } from 'vue'
 import { useDebtorsStore } from '../stores/debtors.js'
 import { useInventoryStore } from '../stores/inventory.js'
+import { useShiftsStore } from '../stores/shifts.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
 import PageLayout from '../components/PageLayout.vue'
@@ -476,6 +481,9 @@ import { UserPlus, Wallet, X, Plus, Minus, FileText } from 'lucide-vue-next'
 
 const debtorsStore = useDebtorsStore()
 const inventoryStore = useInventoryStore()
+const shiftsStore = useShiftsStore()
+// Sin turno de caja abierto no se pueden registrar abonos (es plata que entra)
+const noShift = computed(() => !shiftsStore.currentShift)
 const auth = useAuthStore()
 const businessStore = useBusinessStore()
 const toast = inject('toast')
@@ -672,6 +680,7 @@ function openEditCharge(d, tx) {
 }
 
 function openPayment(d) {
+  if (noShift.value) { toast('Abre un turno de caja para registrar abonos', 'warning'); return }
   activeDebtor.value = d
   paymentForm.value = { amount: '', description: '', paidWith: 'efectivo' }
   paymentSubmitted.value = false
@@ -754,11 +763,10 @@ async function handlePayment() {
   try {
     const res = await debtorsStore.addPayment(activeDebtor.value.id, paymentForm.value.amount, paymentForm.value.description, paymentForm.value.paidWith)
     showPaymentModal.value = false
-    if (res.generatedSale) {
-      toast(`✅ Saldo cubierto. Factura ${res.generatedSale.invoiceNumber} generada`, 'success')
-    } else {
-      toast(`Abono de ${formatCOP(paymentForm.value.amount)} registrado`, 'success')
-    }
+    // Cada abono genera su factura (ítem "Abono a deuda" con el cliente y el valor)
+    const inv = res.generatedSale?.invoiceNumber
+    const monto = res.generatedSale?.total ?? paymentForm.value.amount
+    toast(`${res.debtor?.balance === 0 ? '✅ Saldo cubierto · ' : ''}Abono de ${formatCOP(monto)} registrado${inv ? ` · Factura ${inv}` : ''}`, 'success')
   } catch (err) {
     toast(err.response?.data?.error || 'Error al registrar', 'error')
   } finally {
@@ -793,7 +801,7 @@ async function printStatement(d) {
       running -= net; totalPayments += net
       return `<tr class="payment">
       <td>${date}</td>
-      <td><strong>Abono</strong><div>${esc(t.description || '')}<div class="note">${t.paidWith === 'banco' ? 'Pago por banco' : 'Pago en efectivo'}</div></div></td>
+      <td><strong>Abono</strong><div>${esc(t.description || '')}<div class="note">${t.paidWith === 'banco' ? 'Pago por banco' : 'Pago en efectivo'}${t.invoiceNumber ? ' · Factura ' + esc(t.invoiceNumber) : ''}</div></div></td>
       <td class="num"></td>
       <td class="num">${formatCOP(net)}</td>
       <td class="num"><strong>${formatCOP(Math.max(0, running))}</strong></td>
@@ -900,7 +908,7 @@ async function confirmClearHistory() {
               '- Se borrarán cargos y abonos de todos los clientes\n' +
               '- Los saldos volverán a $0\n' +
               '- Los clientes registrados se conservan\n' +
-              '- Las facturas ya generadas (pago_fiado) NO se borran\n\n' +
+              '- Las facturas ya generadas (incluidas las de abonos) NO se borran\n\n' +
               'Escribe "BORRAR" para confirmar:'
   const answer = prompt(msg)
   if (answer !== 'BORRAR') return
@@ -996,6 +1004,7 @@ async function doDeletePayment() {
 
 onMounted(() => {
   debtorsStore.fetchDebtors()
+  shiftsStore.fetchCurrentShift()
   inventoryStore.fetchRecipes()
   inventoryStore.fetchInventory()
 })
@@ -1003,6 +1012,10 @@ onMounted(() => {
 
 <style scoped>
 .mb-4 { margin-bottom: 20px; }
+.shift-warning {
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+  border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; margin-bottom: 14px;
+}
 .mb-3 { margin-bottom: 14px; }
 
 /* Resumen */
