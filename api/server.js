@@ -190,6 +190,7 @@ const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shor
 // Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
+app.use('/api/backups', require('./src/routes/backups'));   // respaldos (solo superadmin)
 
 // Rutas de negocio: authenticate + requireBusinessAccess aplicados a nivel de mount.
 // Esto garantiza que cualquier usuario no-superadmin solo pueda acceder a su propio negocio.
@@ -553,6 +554,8 @@ if (fs.existsSync(DIST_PATH)) {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`facJp API corriendo en http://0.0.0.0:${PORT}`);
   console.log(`Accede en: http://localhost:${PORT}`);
+  // Respaldo automático de los datos cada ~24 horas (se conservan los últimos 30)
+  require('./src/services/backupService').scheduleBackups();
 });
 
 module.exports = app;

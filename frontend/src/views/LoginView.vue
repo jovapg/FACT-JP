@@ -30,7 +30,7 @@
           </div>
           <div class="feature-item">
             <span class="feature-dot"></span>
-            <span>Facturas electrónicas con un clic</span>
+            <span>Facturas en PDF con un clic</span>
           </div>
         </div>
       </div>

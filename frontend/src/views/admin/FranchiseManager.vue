@@ -43,6 +43,34 @@
           </div>
         </div>
 
+        <!-- Respaldos de seguridad -->
+        <div class="card backups-card">
+          <div class="backups-head">
+            <div>
+              <h3 class="backups-title">Respaldos de seguridad</h3>
+              <p class="backups-text">
+                Se crea uno automático cada día y se guardan los últimos {{ keepBackups }}. Incluyen todos los datos
+                (ventas, inventario, usuarios, deudas…), pero no las imágenes. Descarga uno de vez en cuando a tu
+                computador: así tienes una copia fuera del servidor.
+              </p>
+            </div>
+            <button class="btn btn-primary btn-sm" @click="makeBackup" :disabled="backing">
+              {{ backing ? 'Respaldando...' : 'Respaldar ahora' }}
+            </button>
+          </div>
+          <p v-if="!backups.length" class="backups-text">Todavía no hay respaldos. El primero se crea solo, un minuto después de que arranca el servidor.</p>
+          <table v-else class="table backups-table">
+            <thead><tr><th>Fecha</th><th>Tamaño</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="b in backups" :key="b.name">
+                <td>{{ fmtBackupDate(b.createdAt) }}</td>
+                <td>{{ fmtSize(b.size) }}</td>
+                <td class="backups-act"><button class="btn btn-sm btn-outline" @click="downloadBackup(b)">⬇️ Descargar</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <!-- Cambiar ícono de una franquicia -->
         <div class="modal-overlay" v-if="iconTarget" @click.self="iconTarget = null">
           <div class="modal" style="max-width:460px">
@@ -229,6 +257,7 @@ import { useAuthStore } from '../../stores/auth.js'
 import { useBusinessStore } from '../../stores/business.js'
 import api from '../../services/api.js'
 import PageLayout from '../../components/PageLayout.vue'
+import { downloadProtected } from '../../utils/download.js'
 import { BUSINESS_ICONS, DEFAULT_BUSINESS_ICON, businessIconFor } from '../../utils/businessIcons.js'
 
 const router = useRouter()
@@ -417,7 +446,44 @@ function goToSetup(biz) {
   router.push('/admin/setup')
 }
 
-onMounted(loadBusinesses)
+// ── Respaldos de seguridad ──
+const backups = ref([])
+const keepBackups = ref(30)
+const backing = ref(false)
+
+async function loadBackups() {
+  try {
+    const res = await api.get('/api/backups')
+    backups.value = res.data.backups || []
+    keepBackups.value = res.data.keep || 30
+  } catch { backups.value = [] }
+}
+
+async function makeBackup() {
+  backing.value = true
+  try {
+    await api.post('/api/backups')
+    await loadBackups()
+    toast('Respaldo creado', 'success')
+  } catch (err) {
+    toast(err.response?.data?.error || 'No se pudo crear el respaldo', 'error')
+  } finally {
+    backing.value = false
+  }
+}
+
+async function downloadBackup(b) {
+  try {
+    await downloadProtected(`/api/backups/${b.name}/download`, b.name)
+  } catch {
+    toast('No se pudo descargar el respaldo', 'error')
+  }
+}
+
+const fmtBackupDate = (iso) => new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+const fmtSize = (n) => n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (n / 1024 / 1024).toFixed(1) + ' MB'
+
+onMounted(() => { loadBusinesses(); loadBackups() })
 </script>
 
 <style scoped>
@@ -441,6 +507,12 @@ onMounted(loadBusinesses)
 .franchise-icon:hover { border-color: var(--accent); }
 .mods-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; }
 .mod-check { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; }
+.backups-card { margin-top: 24px; padding: 18px; }
+.backups-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.backups-title { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--text); }
+.backups-text { margin: 0; font-size: 12.5px; color: var(--text-light); max-width: 620px; }
+.backups-table { margin-top: 6px; }
+.backups-act { text-align: right; }
 .mode-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mode-opt {
   display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px;

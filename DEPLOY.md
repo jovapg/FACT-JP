@@ -148,6 +148,23 @@ el servidor generó una aleatoria y la imprimió **una sola vez** en el log al a
 
 ---
 
+## Respaldos
+
+- El servidor crea **un respaldo automático cada ~24 horas** y guarda los últimos 30 en la carpeta
+  `backups/` dentro de la carpeta de datos (el volumen). Son archivos `.json.gz` con todos los datos
+  (negocios, ventas, inventario, usuarios, deudas, nómina…). **No incluyen las imágenes** (logos, QR, fotos).
+- El superadmin los ve, crea uno a mano y los descarga en **Franquicias → Respaldos de seguridad**.
+- Viven en el mismo volumen: protegen contra errores y archivos dañados, **no** contra perder el volumen.
+  Descarga uno al computador de vez en cuando.
+- Para restaurar (a una carpeta nueva, para revisarla antes de copiarla al servidor):
+
+```bash
+cd api
+node restore-backup.js ruta/al/backup-AAAA-MM-DD_HH-MM-SS.json.gz ./restaurado
+```
+
+---
+
 ## Comandos útiles de PM2
 
 ```bash
