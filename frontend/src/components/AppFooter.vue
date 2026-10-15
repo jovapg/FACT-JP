@@ -23,7 +23,7 @@
       </div>
       <span class="footer-name">facJp</span>
       <span class="footer-sep">·</span>
-      <span class="footer-tagline">Gestión para bares y restaurantes</span>
+      <span class="footer-tagline">Gestión financiera</span>
     </div>
 
     <!-- Copyright -->

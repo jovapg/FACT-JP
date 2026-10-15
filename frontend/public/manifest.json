@@ -1,7 +1,7 @@
 {
-  "name": "FACT-JP - Gestión Bar/Restaurante",
+  "name": "FACT-JP - Gestión financiera",
   "short_name": "FACT-JP",
-  "description": "Sistema de gestión para bar y restaurante",
+  "description": "Sistema de gestión financiera para tu negocio",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1e293b",

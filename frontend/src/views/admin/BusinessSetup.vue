@@ -111,7 +111,7 @@
           <p class="text-muted mb-3">Define las categorías que usarás en inventario. Marca <strong>✅ Crea receta</strong> para que cada producto de esa categoría aparezca automáticamente en el menú de ventas.</p>
 
           <div class="cat-add-row">
-            <input v-model="newCatName" class="form-control" placeholder="Nueva categoría (ej: bebidas, licores, mecato...)" @keyup.enter="addCategory" style="max-width:320px" />
+            <input v-model="newCatName" class="form-control" placeholder="Nueva categoría (ej: productos, servicios, alquileres...)" @keyup.enter="addCategory" style="max-width:320px" />
             <button class="btn btn-primary" @click="addCategory">+ Agregar</button>
           </div>
 
