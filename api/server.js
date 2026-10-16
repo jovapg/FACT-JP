@@ -241,10 +241,33 @@ app.get('/f/:code', handleShortlink);
 // Business profile routes
 const { readJSON, writeJSON, getBusinessPath, getDataPath } = require('./src/services/fileStorage');
 
+/**
+ * El nombre de un negocio vive en dos lugares: su perfil (profile.json, lo que se edita en
+ * Configuración) y la lista de negocios (businesses.json, lo que se ve junto al usuario y
+ * al elegir negocio). Esta función deja el de la lista igual al del perfil.
+ */
+async function syncBusinessName(businessId, name) {
+  try {
+    const clean = String(name || '').trim().slice(0, 80);
+    if (!clean) return;
+    const file = path.join(getDataPath(), 'businesses.json');
+    const list = await readJSON(file) || [];
+    const idx = list.findIndex(b => b.id === businessId);
+    if (idx !== -1 && list[idx].name !== clean) {
+      list[idx].name = clean;
+      await writeJSON(file, list);
+    }
+  } catch (err) {
+    console.error('[perfil] no se pudo sincronizar el nombre del negocio:', err.message);
+  }
+}
+
 app.get('/api/:businessId/profile', ...bizAccess, async (req, res) => {
   try {
     const profilePath = path.join(getBusinessPath(req.params.businessId), 'profile.json');
     const profile = await readJSON(profilePath);
+    // Si el nombre ya se había cambiado antes y la lista quedó con el viejo, se corrige aquí
+    if (profile && profile.name) await syncBusinessName(req.params.businessId, profile.name);
     res.json(profile || {});
   } catch {
     res.status(404).json({ error: 'Profile not found' });
@@ -259,6 +282,8 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
     const profilePath = path.join(getBusinessPath(req.params.businessId), 'profile.json');
     const existing = await readJSON(profilePath) || {};
     const updated = { ...existing, ...req.body, id: req.params.businessId };
+    // El nombre del negocio no puede quedar vacío: si llega en blanco se conserva el anterior
+    if (req.body.name !== undefined && !String(req.body.name).trim()) updated.name = existing.name;
     // Recetas, ícono y forma de trabajo de los espacios los define solo el superadmin (desde Franquicias)
     if (req.user.role !== 'superadmin') {
       for (const k of ['usesRecipes', 'icon', 'spaceLabel', 'spaceLabelPlural', 'recipesLabel', 'multiOrders', 'spaceNames', 'modules']) {
@@ -267,6 +292,7 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
       }
     }
     await writeJSON(profilePath, updated);
+    await syncBusinessName(req.params.businessId, updated.name); // que el nombre nuevo se vea en todos lados
     res.json(updated);
   } catch {
     res.status(500).json({ error: 'Error al guardar el perfil' });

@@ -66,6 +66,21 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * Cambia el nombre de un negocio en lo que la sesión tiene guardado (la lista y el negocio
+   * activo), para que se vea al instante junto al usuario y en el selector de negocios.
+   */
+  function renameBusiness(id, name) {
+    if (!id || !name) return
+    const list = businesses.value.map(b => (b.id === id ? { ...b, name } : b))
+    businesses.value = list
+    localStorage.setItem('facjp_businesses', JSON.stringify(list))
+    if (currentBusiness.value?.id === id) {
+      currentBusiness.value = { ...currentBusiness.value, name }
+      localStorage.setItem('facjp_business', JSON.stringify(currentBusiness.value))
+    }
+  }
+
+  /**
    * Cierra la sesión: borra todo el estado en memoria y localStorage.
    * El router lleva al login después de llamar esta función.
    */
@@ -83,6 +98,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user, token, currentBusiness, businesses,
     isAuthenticated, isSuperAdmin, isAdmin,
-    login, selectBusiness, logout
+    login, selectBusiness, renameBusiness, logout
   }
 })

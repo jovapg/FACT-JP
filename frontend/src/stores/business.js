@@ -43,6 +43,8 @@ export const useBusinessStore = defineStore('business', () => {
     try {
       const res = await api.get(`${bizApi()}/profile`)
       profile.value = res.data
+      // Si el perfil tiene otro nombre que el guardado en la sesión, se ajusta (ej: se cambió desde otro equipo)
+      if (res.data?.name) auth.renameBusiness(auth.currentBusiness?.id, res.data.name)
     } finally {
       loading.value = false
     }
@@ -55,6 +57,7 @@ export const useBusinessStore = defineStore('business', () => {
   async function updateProfile(data) {
     const res = await api.put(`${bizApi()}/profile`, data)
     profile.value = res.data
+    if (res.data?.name) auth.renameBusiness(auth.currentBusiness?.id, res.data.name)
     return res.data
   }
 
