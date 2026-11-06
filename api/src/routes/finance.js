@@ -133,35 +133,6 @@ async function buildMovements(id) {
     });
   }
 
-  // 1b. Ventas que aún NO están en un turno cerrado (turno abierto o sin turno).
-  // En negocios con pedidos en línea una factura es entrada desde el momento en que se factura, sin esperar
-  // al cierre de caja. Al cerrar el turno esas ventas pasan a su cierre y dejan de contarse aquí (no se duplican).
-  const profile = await readJSON(path.join(getBusinessPath(id), 'profile.json')) || {};
-  if (profile.cartaOnline) {
-    const closed = shifts.filter(x => x.status === 'closed').map(x => [new Date(x.openedAt).getTime(), new Date(x.closedAt || x.openedAt).getTime()]);
-    const groups = {};
-    for (const s of await readJSON(salesPath(id)) || []) {
-      const t = new Date(s.createdAt).getTime();
-      if (isNaN(t) || s.paymentMethod === 'pago_fiado') continue;
-      if (closed.some(([a, b]) => t >= a && t <= b)) continue; // ya está en un cierre
-      const bucket = bucketOfMethod(s.paymentMethod);
-      const tba = s.totalsByArea;
-      const parts = (tba && ((tba.bar || 0) + (tba.restaurante || 0)) > 0) ? tba : { bar: s.total || 0, restaurante: 0 };
-      for (const area of ['bar', 'restaurante']) {
-        const amt = Math.round(parts[area] || 0);
-        if (amt <= 0) continue;
-        const key = cotDay(s.createdAt) + '|' + area + '|' + bucket;
-        const g = groups[key] || (groups[key] = { day: cotDay(s.createdAt), area, bucket, amount: 0, last: s.createdAt });
-        g.amount += amt;
-        if (s.createdAt > g.last) g.last = s.createdAt;
-      }
-    }
-    for (const g of Object.values(groups)) moves.push({
-      id: 'open-' + g.day + '-' + g.area + '-' + g.bucket, date: g.last, type: 'ingreso', area: g.area, bucket: g.bucket,
-      amount: g.amount, label: 'Ventas del día (turno sin cerrar)', kind: 'ventas_abiertas', source: 'sales', locked: true
-    });
-  }
-
   // 2. Compras / gastos / arriendo
   const purchases = await readJSON(purchasesPath(id)) || [];
   for (const p of purchases) {
@@ -268,6 +239,12 @@ async function loadDomicilios(id) {
 /** Día calendario colombiano (UTC-5) de una fecha ISO: 'yyyy-mm-dd' */
 const cotDay = (iso) => new Date(new Date(iso).getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
 
+/** Devuelve una función que dice si una fecha cae dentro de un turno CERRADO */
+function closedRanges(shifts) {
+  const r = shifts.filter(x => x.status === 'closed').map(x => [new Date(x.openedAt).getTime(), new Date(x.closedAt || x.openedAt).getTime()]);
+  return (iso) => { const t = new Date(iso).getTime(); return r.some(([f, e]) => t >= f && t <= e); };
+}
+
 /** Valor de domicilio cobrado en una venta (suma de sus líneas "domicilio") */
 function feeOfSale(s) {
   const fromItems = (s.items || []).filter(i => i.kind === 'domicilio').reduce((a, i) => a + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
@@ -285,21 +262,32 @@ router.get('/finance/domicilios', authenticate, adminOnly, async (req, res) => {
     const day = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : cotDay(new Date().toISOString());
     const sales = (await readJSON(salesPath(id)) || []).filter(s => s.source === 'carta' || feeOfSale(s) > 0);
     const payouts = await loadDomicilios(id);
+    const shifts = await readJSON(shiftsPath(id)) || [];
+    const closedIds = new Set(shifts.filter(x => x.status === 'closed').map(x => x.id));
+    const inClosedShift = closedRanges(shifts);
 
-    let inAll = 0, outAll = 0, inDay = 0, outDay = 0, delivs = 0, free = 0;
+    // El bolsillo se llena al CERRAR el turno (igual que Finanzas). Lo facturado en un turno abierto
+    // se ve como "pendiente de cierre" y cuenta en las ventas del día, pero no en el saldo.
+    let inDay = 0, outDay = 0, delivs = 0, free = 0, pendIn = 0, pendOut = 0;
     const sal = { efectivo: 0, banco: 0 }, dayIn = { efectivo: 0, banco: 0 };
     for (const s of sales) {
-      const fee = feeOfSale(s);
-      inAll += fee; sal[bucketOfMethod(s.paymentMethod)] += fee;
-      if (cotDay(s.createdAt) === day) dayIn[bucketOfMethod(s.paymentMethod)] += fee;
-      const isDelivery = s.source === 'carta' && (s.notes || '').includes('domicilio');
-      if (cotDay(s.createdAt) === day) { inDay += fee; if (isDelivery) { delivs++; if (!fee) free++; } }
+      const fee = feeOfSale(s), b = bucketOfMethod(s.paymentMethod);
+      if (inClosedShift(s.createdAt)) sal[b] += fee; else pendIn += fee;
+      if (cotDay(s.createdAt) === day) {
+        inDay += fee; dayIn[b] += fee;
+        if (s.source === 'carta' && (s.notes || '').includes('domicilio')) { delivs++; if (!fee) free++; }
+      }
     }
-    for (const p of payouts) { outAll += p.amount || 0; sal[p.bucket === 'banco' ? 'banco' : 'efectivo'] -= p.amount || 0; if (cotDay(p.date) === day) outDay += p.amount || 0; }
+    for (const p of payouts) {
+      const pending = !!p.shiftId && !closedIds.has(p.shiftId); // pagado con un turno abierto: sale en Finanzas al cerrarlo
+      if (pending) pendOut += p.amount || 0; else sal[p.bucket === 'banco' ? 'banco' : 'efectivo'] -= p.amount || 0;
+      if (cotDay(p.date) === day) outDay += p.amount || 0;
+    }
 
     res.json({
-      date: day, ingresosDia: inDay, salidasDia: outDay, saldo: inAll - outAll,
+      date: day, ingresosDia: inDay, salidasDia: outDay, saldo: sal.efectivo + sal.banco,
       saldoEfectivo: sal.efectivo, saldoBanco: sal.banco, ingresosDiaEfectivo: dayIn.efectivo, ingresosDiaBanco: dayIn.banco,
+      pendienteEntradas: pendIn, pendienteSalidas: pendOut,
       domiciliosDia: delivs, gratisDia: free,
       salidas: payouts.filter(p => cotDay(p.date) === day).sort((a, b) => new Date(b.date) - new Date(a.date))
     });
@@ -442,12 +430,16 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
 
     // Cuánto del efectivo y del banco de este periodo es del bolsillo Domicilios (ya está incluido en los saldos)
     const domi = { efectivo: 0, banco: 0 };
+    // Solo lo que ya está en un turno cerrado (es lo que Finanzas tiene sumado)
+    const shiftsAll = await readJSON(shiftsPath(id)) || [];
+    const wasClosed = closedRanges(shiftsAll), closedIds = new Set(shiftsAll.filter(x => x.status === 'closed').map(x => x.id));
     for (const s of await readJSON(salesPath(id)) || []) {
       const t = new Date(s.createdAt).getTime(), fee = feeOfSale(s);
-      if (fee && t >= fromTime && t <= toTime) domi[bucketOfMethod(s.paymentMethod)] += fee;
+      if (fee && t >= fromTime && t <= toTime && wasClosed(s.createdAt)) domi[bucketOfMethod(s.paymentMethod)] += fee;
     }
     for (const p of await loadDomicilios(id)) {
       const t = new Date(p.date).getTime();
+      if (p.shiftId && !closedIds.has(p.shiftId)) continue; // se resta al cerrar su turno
       if (t >= fromTime && t <= toTime) domi[p.bucket === 'banco' ? 'banco' : 'efectivo'] -= p.amount || 0;
     }
 

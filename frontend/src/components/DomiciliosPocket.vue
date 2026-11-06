@@ -18,6 +18,13 @@
         <small>💵 efectivo {{ money(d.saldoEfectivo) }} · 🏦 banco {{ money(d.saldoBanco) }}</small></div>
     </div>
 
+    <p v-if="d && (d.pendienteEntradas || d.pendienteSalidas)" class="dp-pend">
+      ⏳ Pendiente de cierre de turno:
+      <template v-if="d.pendienteEntradas"><b class="in">+{{ money(d.pendienteEntradas) }}</b> en domicilios facturados</template>
+      <template v-if="d.pendienteSalidas"> · <b class="out">−{{ money(d.pendienteSalidas) }}</b> en pagos</template>.
+      El bolsillo y Finanzas suman esto al cerrar el turno; las ventas del día ya lo cuentan.
+    </p>
+
     <div class="dp-actions">
       <button class="btn btn-primary btn-sm" @click="open('pago')">Pagar al domiciliario</button>
       <button class="btn btn-outline btn-sm" @click="open('moto')">Gasto de la moto</button>
@@ -110,6 +117,8 @@ onMounted(load)
 .dp-box { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface-2); display: flex; flex-direction: column; gap: 2px; }
 .dp-box span { font-size: 12px; color: var(--text-secondary); } .dp-box b { font-size: 20px; } .dp-box small { font-size: 11px; color: var(--text-secondary); }
 .dp-box.in b { color: var(--success); } .dp-box.out b { color: var(--danger); } .dp-box.neg b { color: var(--danger); }
+.dp-pend { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; border: 1px dashed #f59e0b; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.dp-pend b.in { color: var(--success); } .dp-pend b.out { color: var(--danger); }
 .dp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .dp-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .dp-list li { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
