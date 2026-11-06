@@ -182,7 +182,26 @@ async function readPedidos(businessId) {
 }
 async function writePedidos(businessId, list) { await writeJSON(pedidosPath(businessId), list); }
 
-/** Código corto tipo A47, que no se repita entre los pedidos guardados */
+const fs = require('fs');
+const counterPath = (id) => path.join(getBusinessPath(id), 'pedidos-counter.json');
+
+/**
+ * Número de pedido consecutivo: D-DC01 (D = domicilio, R = recoger; DC = prefijo del negocio; 01 = consecutivo).
+ * Cada tipo lleva su propio contador y nunca se repite. Se lee y se guarda de forma SÍNCRONA para que dos
+ * pedidos que llegan a la vez no reciban el mismo número.
+ */
+function nextCode(businessId, mode, prefix) {
+  const letter = mode === 'recoger' ? 'R' : 'D';
+  let c = {};
+  try { c = JSON.parse(fs.readFileSync(counterPath(businessId), 'utf8')) || {}; } catch { c = {}; }
+  c[letter] = (Number(c[letter]) || 0) + 1;
+  fs.mkdirSync(path.dirname(counterPath(businessId)), { recursive: true });
+  fs.writeFileSync(counterPath(businessId), JSON.stringify(c));
+  const pre = String(prefix || 'DC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'DC';
+  return `${letter}-${pre}${String(c[letter]).padStart(2, '0')}`;
+}
+
+/** (antiguo) Código corto aleatorio tipo A47 */
 function newCode(list) {
   const used = new Set(list.map(p => p.code));
   const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -255,5 +274,5 @@ function priceOrder(carta, rawItems) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, priceOrder
+  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath
 };

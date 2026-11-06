@@ -506,6 +506,9 @@ app.post('/api/:businessId/reset-produccion', ...bizAccess, async (req, res) => 
     await write('purchases', []);
     await write('shifts', []);
     await write('audit', []);
+    await write('pedidos', []);            // pedidos en línea
+    await write('domicilios', []);         // salidas del bolsillo Domicilios
+    await write('pedidos-counter', {});    // la numeración D-DC01 vuelve a empezar
 
     // Finanzas: saldo inicial en 0, sin movimientos ni resumen (se conserva la meta de costo)
     const finance = await readJSON(P('finance')) || {};

@@ -246,6 +246,10 @@ router.post('/:id/reset-sales', authenticate, requireSuperAdmin, async (req, res
     const bizDir = getBusinessPath(req.params.id);
     await writeJSON(path.join(bizDir, 'sales.json'), []);
     await writeJSON(path.join(bizDir, 'shifts.json'), []);
+    // Pedidos en línea: borrar pedidos, salidas del bolsillo Domicilios y reiniciar la numeración (D-DC01…)
+    await writeJSON(path.join(bizDir, 'pedidos.json'), []);
+    await writeJSON(path.join(bizDir, 'domicilios.json'), []);
+    await writeJSON(path.join(bizDir, 'pedidos-counter.json'), {});
 
     const profilePath = path.join(bizDir, 'profile.json');
     const profile = await readJSON(profilePath);

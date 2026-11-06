@@ -11,7 +11,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON } = require('../services/fileStorage');
+const { readJSON, getBusinessPath } = require('../services/fileStorage');
 const carta = require('../services/cartaService');
 
 const router = express.Router();
@@ -95,7 +95,7 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
     const freeDelivery = c.settings.freeDeliveryFrom > 0 && priced.subtotal >= c.settings.freeDeliveryFrom;
     const pedido = {
       id: uuidv4(),
-      code: carta.newCode(list),
+      code: carta.nextCode(biz.id, mode, (await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}).invoicePrefix),
       status: 'por_confirmar',
       customer: { name, phone, address: mode === 'domicilio' ? address : '', notes: carta.txt(b.notes, 200) },
       mode, payment, cashFor,
