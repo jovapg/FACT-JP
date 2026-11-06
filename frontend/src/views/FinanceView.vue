@@ -501,9 +501,10 @@ const salidasTotals = computed(() => {
 // ── Resumen de INGRESOS por tipo (mismo formato que salidas) ──
 const IN_KIND_LABELS = {
   shift: '🧾 Ventas (cierre de turno)',
+  ventas_abiertas: '🧾 Ventas del día (turno sin cerrar)',
   manual: '➕ Otros ingresos (manual)'
 }
-const IN_KIND_ORDER = ['shift', 'manual']
+const IN_KIND_ORDER = ['shift', 'ventas_abiertas', 'manual']
 const ingresosSummary = computed(() => {
   const rows = {}
   for (const m of movs.value) {

@@ -133,6 +133,35 @@ async function buildMovements(id) {
     });
   }
 
+  // 1b. Ventas que aún NO están en un turno cerrado (turno abierto o sin turno).
+  // En negocios con pedidos en línea una factura es entrada desde el momento en que se factura, sin esperar
+  // al cierre de caja. Al cerrar el turno esas ventas pasan a su cierre y dejan de contarse aquí (no se duplican).
+  const profile = await readJSON(path.join(getBusinessPath(id), 'profile.json')) || {};
+  if (profile.cartaOnline) {
+    const closed = shifts.filter(x => x.status === 'closed').map(x => [new Date(x.openedAt).getTime(), new Date(x.closedAt || x.openedAt).getTime()]);
+    const groups = {};
+    for (const s of await readJSON(salesPath(id)) || []) {
+      const t = new Date(s.createdAt).getTime();
+      if (isNaN(t) || s.paymentMethod === 'pago_fiado') continue;
+      if (closed.some(([a, b]) => t >= a && t <= b)) continue; // ya está en un cierre
+      const bucket = bucketOfMethod(s.paymentMethod);
+      const tba = s.totalsByArea;
+      const parts = (tba && ((tba.bar || 0) + (tba.restaurante || 0)) > 0) ? tba : { bar: s.total || 0, restaurante: 0 };
+      for (const area of ['bar', 'restaurante']) {
+        const amt = Math.round(parts[area] || 0);
+        if (amt <= 0) continue;
+        const key = cotDay(s.createdAt) + '|' + area + '|' + bucket;
+        const g = groups[key] || (groups[key] = { day: cotDay(s.createdAt), area, bucket, amount: 0, last: s.createdAt });
+        g.amount += amt;
+        if (s.createdAt > g.last) g.last = s.createdAt;
+      }
+    }
+    for (const g of Object.values(groups)) moves.push({
+      id: 'open-' + g.day + '-' + g.area + '-' + g.bucket, date: g.last, type: 'ingreso', area: g.area, bucket: g.bucket,
+      amount: g.amount, label: 'Ventas del día (turno sin cerrar)', kind: 'ventas_abiertas', source: 'sales', locked: true
+    });
+  }
+
   // 2. Compras / gastos / arriendo
   const purchases = await readJSON(purchasesPath(id)) || [];
   for (const p of purchases) {
