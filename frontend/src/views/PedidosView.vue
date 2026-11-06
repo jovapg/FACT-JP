@@ -71,13 +71,15 @@
 
           <footer v-if="canAct(p)">
             <!-- ¿Cómo te pagaron? (obligatorio al entregar; al facturar ya viene fijado) -->
-            <div v-if="p.status === 'en_camino' || p.status === 'entregado'" class="pv-pay">
+            <div v-if="p.status === 'en_camino' || p.status === 'entregado' || (!readOnly && ['pendiente', 'en_preparacion'].includes(p.status))" class="pv-pay">
               <span>{{ p.status === 'entregado' ? 'Método de pago' : '¿Cómo te pagaron?' }}</span>
               <button :class="{ on: payOf(p) === 'efectivo' }" @click="payInput[p.id] = 'efectivo'">💵 Efectivo</button>
               <button :class="{ on: payOf(p) === 'transferencia' }" @click="payInput[p.id] = 'transferencia'">🏦 Transferencia</button>
             </div>
             <button v-if="p.status === 'entregado'" class="pv-btn main" :disabled="busy === p.id" @click="facturar(p)">Facturar · {{ money(totalOf(p)) }}</button>
             <button v-else class="pv-btn main" :disabled="busy === p.id || (nextOf(p) === 'entregado' && !payOf(p))" @click="advance(p)">{{ actionLabel(p) }}</button>
+            <!-- Atajo para admin/caja: marcar entregado sin pasar por los estados intermedios (exige método de pago) -->
+            <button v-if="!readOnly && ['pendiente', 'en_preparacion'].includes(p.status)" class="pv-btn ok" :disabled="busy === p.id || !payOf(p)" :title="payOf(p) ? '' : 'Escoge primero el método de pago'" @click="advance(p, 'entregado')">✓ Marcar entregado</button>
             <a v-if="!readOnly && p.status !== 'entregado'" class="pv-btn wa" :href="waLink(p)" target="_blank" rel="noopener">WhatsApp al cliente</a>
             <button v-if="!readOnly && p.status !== 'entregado'" class="pv-btn danger" :disabled="busy === p.id" @click="cancel(p)">Cancelar</button>
           </footer>
@@ -375,7 +377,7 @@ onUnmounted(() => clearInterval(tick))
 .pv-fee input { width: 110px; text-align: right; padding: 6px 8px; border-radius: 8px; border: 1px solid #f59e0b; background: var(--surface-2); color: inherit; font-weight: 700; }
 .pv-card footer { display: flex; gap: 8px; flex-wrap: wrap; }
 .pv-btn { border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 700; font-size: 14px; cursor: pointer; text-decoration: none; color: #fff; background: #475569; }
-.pv-btn.main { background: #f59e0b; color: #1a0a00; flex: 1; min-width: 150px; } .pv-btn.wa { background: #16a34a; } .pv-btn.danger { background: #7f1d1d; }
+.pv-btn.main { background: #f59e0b; color: #1a0a00; flex: 1; min-width: 150px; } .pv-btn.wa { background: #16a34a; } .pv-btn.danger { background: #7f1d1d; } .pv-btn.ok { background: #16a34a; }
 .pv-btn:disabled { opacity: .5; }
 .pv-set { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
 .pv-set h3, .pv-h { margin: 0; font-size: 15px; }
