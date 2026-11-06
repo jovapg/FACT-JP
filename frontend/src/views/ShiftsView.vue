@@ -55,6 +55,7 @@
             · 💵 efectivo {{ formatCOP(shiftsStore.currentShift.totalCashSales) }}
             · 💳 tarjeta/transf. {{ formatCOP(shiftsStore.currentShift.totalOtherSales) }}
             · total {{ formatCOP(shiftsStore.currentShift.totalSales) }}
+            <template v-if="shiftsStore.currentShift.totalDomicilios"> (incluye 🛵 domicilios {{ formatCOP(shiftsStore.currentShift.totalDomicilios) }})</template>
           </p>
 
           <!-- Salidas de caja del turno (gastos + retiros unificados) -->
@@ -156,6 +157,7 @@
                 <!-- Ventas del turno (lo que se sube a Finanzas) -->
                 <div class="detail-row"><span class="detail-label" style="padding-left:14px">💵 Efectivo / 🏦 Banco</span><span>{{ formatCOP(cashBucket(selectedShift,'efectivo')) }} / {{ formatCOP(cashBucket(selectedShift,'banco')) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Total ventas</span><span class="success fw-700">{{ formatCOP(selectedShift.totalSales) }}</span></div>
+                <div class="detail-row" v-if="selectedShift.totalDomicilios"><span class="detail-label" style="padding-left:14px">🛵 Incluye domicilios</span><span>{{ formatCOP(selectedShift.totalDomicilios) }}</span></div>
                 <div class="detail-row"><span class="detail-label">Retiros</span><span class="danger">-{{ formatCOP(selectedShift.totalWithdrawals) }}</span></div>
                 <div class="detail-row" v-if="selectedShift.totalExpenses"><span class="detail-label">Gastos caja menor</span><span class="danger">-{{ formatCOP(selectedShift.totalExpenses) }}</span></div>
                 <div class="detail-divider"></div>

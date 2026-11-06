@@ -11,6 +11,12 @@ const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
 
 const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
 
+/** Valor de domicilio incluido en una venta (líneas "domicilio" de los pedidos en línea) */
+function feeOf(sale) {
+  const fromItems = (sale.items || []).filter(i => i.kind === 'domicilio').reduce((a, i) => a + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+  return fromItems || Number(sale.deliveryFee) || 0;
+}
+
 /** Clasifica una forma de pago en su bucket: 💵 efectivo o 🏦 banco */
 function bucketOf(method) {
   const m = (method || '').toLowerCase();
@@ -41,6 +47,7 @@ async function adjustShiftForSaleEdit(businessId, oldSale, newSale) {
     sh.totalSales      = (sh.totalSales || 0) - (oldSale.total || 0) + (newSale.total || 0);
     sh.totalCashSales  = (sh.totalCashSales || 0) - (isEf(oldSale.paymentMethod) ? oldSale.total : 0) + (isEf(newSale.paymentMethod) ? newSale.total : 0);
     sh.totalOtherSales = (sh.totalOtherSales || 0) - (!isEf(oldSale.paymentMethod) ? oldSale.total : 0) + (!isEf(newSale.paymentMethod) ? newSale.total : 0);
+    sh.totalDomicilios = Math.max(0, (sh.totalDomicilios || 0) - feeOf(oldSale) + feeOf(newSale));
     const prev = sh.salesByArea || { bar: 0, restaurante: 0 };
     sh.salesByArea = {
       bar: (prev.bar || 0) - (oA.bar || 0) + (nA.bar || 0),
@@ -86,6 +93,8 @@ async function updateActiveShift(businessId, sale) {
     shifts[idx].totalSales     = (shifts[idx].totalSales || 0) + sale.total;
     shifts[idx].totalCashSales = (shifts[idx].totalCashSales || 0) + (isEfectivo ? sale.total : 0);
     shifts[idx].totalOtherSales= (shifts[idx].totalOtherSales || 0) + (isEfectivo ? 0 : sale.total);
+    // De ese total, cuánto fueron domicilios (ya está incluido en las ventas; solo se muestra aparte)
+    shifts[idx].totalDomicilios = (shifts[idx].totalDomicilios || 0) + feeOf(sale);
 
     // Acumular ventas por bolsillo (Bar / Restaurante) en el turno activo
     const tba = sale.totalsByArea || { bar: 0, restaurante: 0 };

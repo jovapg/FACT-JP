@@ -127,8 +127,9 @@ async function buildMovements(id) {
     });
     for (const e of (s.expenses || [])) moves.push({
       id: `ex-${e.id}`, date: e.date || when, type: 'egreso', area: 'general',
-      bucket: 'efectivo', amount: e.amount || 0, label: `Caja menor${e.description ? ': ' + e.description : ''}`,
-      kind: 'cajamenor', source: 'shift', locked: true
+      bucket: 'efectivo', amount: e.amount || 0,
+      label: e.kind === 'domicilio' ? `Bolsillo Domicilios${e.description ? ': ' + e.description : ''}` : `Caja menor${e.description ? ': ' + e.description : ''}`,
+      kind: e.kind || 'cajamenor', source: 'shift', locked: true
     });
   }
 
@@ -219,10 +220,10 @@ async function buildMovements(id) {
 
   // 6. Domicilios: pago al domiciliario y gastos de la moto (salidas reales de dinero).
   // El valor del domicilio YA entra con la venta; aquí solo salen los pagos.
-  for (const d of await loadDomicilios(id)) moves.push({
+  for (const d of await loadDomicilios(id)) if (!d.shiftId) moves.push({ // los pagados en efectivo con turno abierto ya salen por el turno (caja menor)
     id: `dom-${d.id}`, date: d.date, type: 'egreso', area: 'general',
     bucket: d.bucket === 'banco' ? 'banco' : 'efectivo', amount: d.amount || 0,
-    label: d.kind === 'moto' ? `Moto: ${d.note || 'gasto'}` : `Domiciliario${d.note ? ': ' + d.note : ''}`,
+    label: d.kind === 'moto' ? `Bolsillo Domicilios · moto: ${d.note || 'gasto'}` : `Bolsillo Domicilios · pago al domiciliario${d.note ? ': ' + d.note : ''}`,
     kind: 'domicilio', source: 'domicilios', locked: true
   });
 
@@ -257,16 +258,19 @@ router.get('/finance/domicilios', authenticate, adminOnly, async (req, res) => {
     const payouts = await loadDomicilios(id);
 
     let inAll = 0, outAll = 0, inDay = 0, outDay = 0, delivs = 0, free = 0;
+    const sal = { efectivo: 0, banco: 0 }, dayIn = { efectivo: 0, banco: 0 };
     for (const s of sales) {
       const fee = feeOfSale(s);
-      inAll += fee;
+      inAll += fee; sal[bucketOfMethod(s.paymentMethod)] += fee;
+      if (cotDay(s.createdAt) === day) dayIn[bucketOfMethod(s.paymentMethod)] += fee;
       const isDelivery = s.source === 'carta' && (s.notes || '').includes('domicilio');
       if (cotDay(s.createdAt) === day) { inDay += fee; if (isDelivery) { delivs++; if (!fee) free++; } }
     }
-    for (const p of payouts) { outAll += p.amount || 0; if (cotDay(p.date) === day) outDay += p.amount || 0; }
+    for (const p of payouts) { outAll += p.amount || 0; sal[p.bucket === 'banco' ? 'banco' : 'efectivo'] -= p.amount || 0; if (cotDay(p.date) === day) outDay += p.amount || 0; }
 
     res.json({
       date: day, ingresosDia: inDay, salidasDia: outDay, saldo: inAll - outAll,
+      saldoEfectivo: sal.efectivo, saldoBanco: sal.banco, ingresosDiaEfectivo: dayIn.efectivo, ingresosDiaBanco: dayIn.banco,
       domiciliosDia: delivs, gratisDia: free,
       salidas: payouts.filter(p => cotDay(p.date) === day).sort((a, b) => new Date(b.date) - new Date(a.date))
     });
@@ -294,6 +298,19 @@ router.post('/finance/domicilios', authenticate, adminOnly, async (req, res) => 
       bucket: req.body.bucket === 'banco' ? 'banco' : 'efectivo',
       by: req.user.name || req.user.username
     };
+    // Pago en EFECTIVO con un turno abierto: sale físicamente de la caja, así que se anota como gasto del turno
+    // (baja el efectivo esperado y el cuadre del cierre coincide). Finanzas lo toma desde el turno.
+    if (rec.bucket === 'efectivo') {
+      const shifts = await readJSON(shiftsPath(id)) || [];
+      const sh = shifts.find(x => x.status === 'open');
+      if (sh) {
+        sh.expenses = [...(sh.expenses || []), { id: uuidv4(), amount: rec.amount, category: 'domicilio', kind: 'domicilio', domicilioId: rec.id,
+          description: (rec.kind === 'moto' ? 'moto' : 'pago al domiciliario') + (rec.note ? ': ' + rec.note : ''), date: rec.date, registeredBy: rec.by }];
+        sh.totalExpenses = (sh.totalExpenses || 0) + rec.amount;
+        rec.shiftId = sh.id;
+        await writeJSON(shiftsPath(id), shifts);
+      }
+    }
     list.push(rec);
     await writeJSON(domiciliosPath(id), list);
     await logAudit(id, { user: req.user.name || req.user.username, role: req.user.role, action: 'domicilio_salida',
@@ -311,6 +328,16 @@ router.delete('/finance/domicilios/:id', authenticate, adminOnly, async (req, re
     const gone = list.find(x => x.id === req.params.id);
     const next = list.filter(x => x.id !== req.params.id);
     if (!gone) return res.status(404).json({ error: 'No encontrado' });
+    if (gone.shiftId) {
+      const shifts = await readJSON(shiftsPath(id)) || [];
+      const sh = shifts.find(x => x.id === gone.shiftId);
+      if (sh && sh.status !== 'open') return res.status(409).json({ error: 'Este pago ya quedó en un turno cerrado; no se puede borrar.' });
+      if (sh) {
+        sh.expenses = (sh.expenses || []).filter(e => e.domicilioId !== gone.id);
+        sh.totalExpenses = Math.max(0, (sh.totalExpenses || 0) - (gone.amount || 0));
+        await writeJSON(shiftsPath(id), shifts);
+      }
+    }
     await writeJSON(domiciliosPath(id), next);
     await logAudit(id, { user: req.user.name || req.user.username, role: req.user.role, action: 'delete_domicilio_salida',
       summary: 'Bolsillo Domicilios: borró una salida de ' + cop(gone.amount) + (gone.kind === 'moto' ? ' (moto)' : ' (domiciliario)') });
@@ -384,7 +411,18 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
     }
     periodTotals.neto = periodTotals.ingresos - periodTotals.egresos;
 
-    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, reference: cfg.reference, costTarget: cfg.costTarget, balances, totals, movements, periodTotals });
+    // Cuánto del efectivo y del banco de este periodo es del bolsillo Domicilios (ya está incluido en los saldos)
+    const domi = { efectivo: 0, banco: 0 };
+    for (const s of await readJSON(salesPath(id)) || []) {
+      const t = new Date(s.createdAt).getTime(), fee = feeOfSale(s);
+      if (fee && t >= fromTime && t <= toTime) domi[bucketOfMethod(s.paymentMethod)] += fee;
+    }
+    for (const p of await loadDomicilios(id)) {
+      const t = new Date(p.date).getTime();
+      if (t >= fromTime && t <= toTime) domi[p.bucket === 'banco' ? 'banco' : 'efectivo'] -= p.amount || 0;
+    }
+
+    res.json({ opening: cfg.opening, openingDate: cfg.openingDate, reference: cfg.reference, costTarget: cfg.costTarget, balances, totals, movements, periodTotals, domicilios: domi });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }

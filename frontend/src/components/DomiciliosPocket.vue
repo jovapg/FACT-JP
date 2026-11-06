@@ -10,11 +10,12 @@
 
     <div v-if="d" class="dp-grid">
       <div class="dp-box in"><span>Ingresos del día</span><b>{{ money(d.ingresosDia) }}</b>
-        <small>{{ d.domiciliosDia }} domicilio(s)<template v-if="d.gratisDia"> · {{ d.gratisDia }} gratis</template></small></div>
+        <small>{{ d.domiciliosDia }} domicilio(s)<template v-if="d.gratisDia"> · {{ d.gratisDia }} gratis</template> · 💵 {{ money(d.ingresosDiaEfectivo) }} · 🏦 {{ money(d.ingresosDiaBanco) }}</small></div>
       <div class="dp-box out"><span>Salidas del día</span><b>{{ money(d.salidasDia) }}</b></div>
       <div :class="['dp-box', d.saldo < 0 ? 'neg' : 'ok']"><span>Saldo acumulado</span><b>{{ money(d.saldo) }}</b>
         <small v-if="d.saldo < 0">Negativo: hubo domicilios gratis o pagos mayores a lo cobrado</small>
-        <small v-else>Lo que va quedando para la moto</small></div>
+        <small v-else>Lo que va quedando para la moto</small>
+        <small>💵 efectivo {{ money(d.saldoEfectivo) }} · 🏦 banco {{ money(d.saldoBanco) }}</small></div>
     </div>
 
     <div class="dp-actions">

@@ -36,10 +36,12 @@
         <div class="fcard efectivo">
           <p class="fcard-label">💵 Efectivo</p>
           <p class="fcard-value">{{ formatCOP(sel.efectivo) }}</p>
+          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.efectivo) }}</span></div>
         </div>
         <div class="fcard banco">
           <p class="fcard-label">🏦 Banco</p>
           <p class="fcard-value">{{ formatCOP(sel.banco) }}</p>
+          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.banco) }}</span></div>
         </div>
         <div class="fcard total">
           <p class="fcard-label">💰 Dinero del mes</p>
@@ -430,6 +432,8 @@ const periods = [
 
 const emptyArea = () => ({ efectivo: 0, banco: 0 })
 
+// Parte del efectivo y del banco que pertenece al bolsillo Domicilios (ya está sumada en los saldos)
+const domi = computed(() => finance.data?.domicilios || null)
 const movsAll = computed(() => finance.data?.movements || [])
 const movs = computed(() => area.value === 'total' ? movsAll.value : movsAll.value.filter(m => m.area === area.value))
 
@@ -469,7 +473,7 @@ const KIND_LABELS = {
   credito: '💳 Crédito',
   retiro: '🏧 Retiros de caja',
   cajamenor: '🧾 Caja menor',
-  domicilio: '🛵 Domiciliario y moto',
+  domicilio: '🛵 Bolsillo Domicilios (domiciliario y moto)',
   manual: '✏️ Otros (manual)'
 }
 const KIND_ORDER = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'credito', 'retiro', 'cajamenor', 'domicilio', 'manual']
