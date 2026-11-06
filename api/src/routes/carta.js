@@ -220,8 +220,6 @@ router.put('/pedidos/:id', authenticate, async (req, res) => {
         if (unbilled) return res.status(409).json({ error: 'Ya fue entregado: factúralo' });
         p.status = 'cancelado';
       } else if (!unbilled) {
-        // Confirmar un pedido nuevo exige turno de caja abierto (el domiciliario solo registra su salida y entrega)
-        if (!isDomi(req) && ['por_confirmar', 'vencido'].includes(p.status) && !carta.hasOpenShift(bid)) return res.status(409).json({ error: carta.NO_SHIFT_MSG });
         if (p.status === 'vencido') { p.status = 'por_confirmar'; p.expiresAt = new Date(Date.now() + carta.EXPIRE_MIN * 60000).toISOString(); } // reactivar un vencido
         if (!FLOW.includes(b.status)) return res.status(400).json({ error: 'Estado no válido' });
         if (FLOW.indexOf(b.status) < FLOW.indexOf(p.status)) return res.status(400).json({ error: 'No se puede devolver el estado' });

@@ -13,9 +13,9 @@
         </div>
       </div>
 
-      <!-- Sin turno de caja abierto no se recibe, confirma ni factura nada -->
+      <!-- Sin turno de caja abierto los pedidos entran, pero no se pueden facturar -->
       <div v-if="shiftOpen === false && !readOnly" class="pv-noshift">
-        <span>⚠️ <b>No hay turno de caja abierto.</b> La carta aparece <b>cerrada</b> para los clientes y no se pueden confirmar ni facturar pedidos.</span>
+        <span>⚠️ <b>No hay turno de caja abierto.</b> Los pedidos siguen entrando y se pueden confirmar y entregar, pero <b>no se pueden facturar</b> hasta que abras el turno.</span>
         <router-link to="/shifts" class="pv-btn main">Abrir turno</router-link>
       </div>
 
