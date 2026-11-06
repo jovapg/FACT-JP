@@ -30,7 +30,7 @@ async function findBusiness(slug) {
 }
 
 /** Quita lo interno de la carta antes de mostrarla al público */
-function publicView(biz, c, profile = {}) {
+function publicView(biz, c, profile = {}, isOut = () => false) {
   const { whatsapp, open, paused, pickup, freeDeliveryFrom, hours, welcome, address, bankInfo, deliveryNote, openFrom, openTo } = c.settings;
   const inHours = carta.withinHours(c.settings);
   const cats = [...c.categories].sort((a, b) => a.order - b.order);
@@ -42,9 +42,9 @@ function publicView(biz, c, profile = {}) {
     categories: cats.map(({ id, name, order }) => ({ id, name, order })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
-      soldOut: !!p.soldOut, alcohol: !!p.alcohol,
+      soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol,
       groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0, collapsed: !!g.collapsed,
-        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '' })) }))
+        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '', soldOut: g.type === 'qty' && isOut(o.name) })) }))
     }))
   };
 }
@@ -55,7 +55,7 @@ router.get('/carta/:slug', readLimiter, async (req, res) => {
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
     res.set('Cache-Control', 'no-store');
-    res.json(publicView(biz, c, await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}));
+    res.json(publicView(biz, c, await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}, await carta.stockCheck(biz.id)));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Error del servidor' }); }
 });
 
@@ -82,7 +82,7 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
     const cashFor = payment === 'efectivo' ? carta.num(b.cashFor) : 0;
 
     let priced;
-    try { priced = carta.priceOrder(c, b.items); }
+    try { priced = carta.priceOrder(c, b.items, await carta.stockCheck(biz.id)); }
     catch (e) { return res.status(400).json({ error: e.message }); }
 
     if (priced.lines.some(l => l.alcohol) && b.adult !== true) {

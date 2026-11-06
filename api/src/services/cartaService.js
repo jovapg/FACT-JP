@@ -242,6 +242,16 @@ async function syncInventory(businessId) {
   return { created, linked, total: c.products.length };
 }
 
+/**
+ * Disponibilidad según el INVENTARIO: devuelve una función out(nombre) que dice si un producto está agotado
+ * (existe en inventario, controla stock y tiene 0 o menos). Lo que no esté en el inventario no se ve afectado.
+ */
+async function stockCheck(businessId) {
+  const inv = await readJSON(path.join(getBusinessPath(businessId), 'inventory.json')) || [];
+  const out = new Set(inv.filter(i => !i.noStock && (Number(i.stock) || 0) <= 0).map(i => String(i.name).toLowerCase().trim()));
+  return (name) => out.has(String(name).toLowerCase().trim());
+}
+
 async function readCarta(businessId) {
   const c = await readJSON(cartaPath(businessId));
   if (c && Array.isArray(c.products)) {
@@ -340,7 +350,7 @@ function newCode(list) {
  * @returns { lines, subtotal } o lanza Error con mensaje para el cliente.
  * Cada línea: { productId, name, qty, unitPrice, total, choices:[texto], note, kind:'producto'|'adicion' }
  */
-function priceOrder(carta, rawItems) {
+function priceOrder(carta, rawItems, isOut = () => false) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error('El pedido está vacío');
   if (rawItems.length > 40) throw new Error('Demasiados productos en el pedido');
   const byId = new Map(carta.products.map(p => [p.id, p]));
@@ -349,7 +359,7 @@ function priceOrder(carta, rawItems) {
   for (const it of rawItems) {
     const p = byId.get(String(it.productId));
     if (!p || !p.active) throw new Error('Un producto de tu pedido ya no está disponible');
-    if (p.soldOut) throw new Error(`"${p.name}" está agotado`);
+    if (p.soldOut || isOut(p.name)) throw new Error(`"${p.name}" está agotado`);
     const qty = Math.min(50, Math.max(1, Math.floor(Number(it.qty) || 1)));
     let unit = p.price;
     const picked = [];
@@ -379,6 +389,7 @@ function priceOrder(carta, rawItems) {
           const o = g.options.find(x => x.id === String(c.optionId));
           const q = Math.min(20, Math.floor(Number(c.qty) || 0));
           if (!o || q <= 0) continue;
+          if (isOut(o.name)) throw new Error(`"${o.name}" está agotado`);
           extras.push({ productId: p.id, name: o.name, qty: q * qty, unitPrice: o.price, total: o.price * q * qty,
             kind: 'adicion', alcohol: !!o.alcohol, parentName: p.name });
         }
@@ -395,5 +406,5 @@ function priceOrder(carta, rawItems) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, syncInventory, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
+  defaultCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
 };

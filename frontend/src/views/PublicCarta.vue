@@ -90,12 +90,13 @@
             <template v-else-if="isOpen(g)">
               <template v-for="(o, i) in g.options" :key="o.id">
                 <div v-if="o.section && (i === 0 || g.options[i - 1].section !== o.section)" class="pc-sec">{{ o.section }}</div>
-                <div class="pc-row qty">
-                  <span>{{ o.name }}<small v-if="o.note" class="pc-onote">{{ o.note }}</small></span><em>{{ money(o.price) }}</em>
+                <div :class="['pc-row', 'qty', o.soldOut && 'off']">
+                  <span>{{ o.name }}<small v-if="o.note" class="pc-onote">{{ o.note }}</small></span>
+                  <em v-if="!o.soldOut">{{ money(o.price) }}</em><em v-else class="pc-soldtag">Agotado</em>
                   <div class="pc-step">
                     <button :disabled="!sel.pick[g.id][o.id]" @click="step(g, o, -1)">−</button>
                     <b>{{ sel.pick[g.id][o.id] || 0 }}</b>
-                    <button @click="step(g, o, 1)">+</button>
+                    <button :disabled="o.soldOut" @click="step(g, o, 1)">+</button>
                   </div>
                 </div>
               </template>
@@ -311,6 +312,7 @@ function toggleMany(g, id, ev) {
   arr.push(id); sel.value.err = ''
 }
 function step(g, o, d) {
+  if (o.soldOut && d > 0) return
   const m = sel.value.pick[g.id]
   const n = Math.max(0, Math.min(20, (m[o.id] || 0) + d))
   if (n) m[o.id] = n; else delete m[o.id]
@@ -439,6 +441,8 @@ function waLink(d) {
 .pc-prod-price { display: flex; align-items: center; gap: 10px; flex: none; }
 .pc-prod-price strong { font-size: 15px; }
 .pc-add { width: 28px; height: 28px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 18px; font-weight: 700; }
+.pc-row.off { opacity: .45; }
+.pc-soldtag { font-style: normal; font-weight: 700; font-size: 12px; color: #b91c1c; }
 .pc-sold { font-size: 12px; font-weight: 700; color: #b91c1c; }
 .pc-foot { text-align: center; color: var(--mut); font-size: 12px; margin: 18px 0; }
 .pc-bar { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; max-width: 696px; margin: 0 auto; display: flex; align-items: center; gap: 10px;
