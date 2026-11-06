@@ -136,6 +136,12 @@
           <button class="pv-btn main" @click="saveSettings">Guardar ajustes</button>
         </section>
 
+        <section v-if="isAdmin" class="pv-set">
+          <h3>Inventario</h3>
+          <small class="pv-hint">Crea en el inventario todos los productos de la carta (bebidas y comidas) con <b>stock 0</b>, para que tú lo cuadres. Al facturar un pedido, el stock de cada producto baja solo. No duplica los que ya existan.</small>
+          <button class="pv-btn main" :disabled="syncing" @click="syncInventory">{{ syncing ? 'Registrando…' : '📦 Registrar productos en inventario' }}</button>
+        </section>
+
         <h3 class="pv-h">Productos</h3>
         <p class="pv-hint">Marca <b>Agotado</b> lo que se acabó: desaparece del pedido al instante.<template v-if="isAdmin"> Toca el precio para cambiarlo.</template></p>
         <div v-for="c in carta.categories" :key="c.id" class="pv-cat">
@@ -359,6 +365,16 @@ async function loadCarta() {
 async function setSetting(body) {
   try { const { data } = await api.put(`${base()}/carta/settings`, body); carta.value.settings = data }
   catch (e) { toast(e.response?.data?.error || 'No se pudo guardar', 'error'); await loadCarta() }
+}
+const syncing = ref(false)
+async function syncInventory() {
+  if (!window.confirm('¿Registrar en el inventario todos los productos de la carta con stock 0?')) return
+  syncing.value = true
+  try {
+    const { data } = await api.post(`${base()}/carta/sync-inventory`)
+    toast(`Inventario listo: ${data.created} productos nuevos, ${data.linked} enlazados`, 'success')
+  } catch (e) { toast(e.response?.data?.error || 'No se pudo registrar en inventario', 'error') }
+  finally { syncing.value = false }
 }
 async function saveSettings() {
   try {

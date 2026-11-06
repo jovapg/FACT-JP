@@ -19,6 +19,7 @@ const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorag
 const { authenticate } = require('../middleware/auth');
 const carta = require('../services/cartaService');
 const { updateActiveShift } = require('../services/shiftSales');
+const { deductFromSale } = require('../services/inventoryService');
 const { logAudit, cop } = require('../services/audit');
 
 const who = (req) => ({ user: req.user.name || req.user.username, role: req.user.role });
@@ -52,6 +53,17 @@ router.post('/carta/load-default', authenticate, async (req, res) => {
     await writeJSON(profilePath(req.params.businessId), profile);
     res.status(201).json({ ok: true, products: c.products.length });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+/** Registra los productos de la carta en el inventario (stock 0) y los enlaza para descontar al facturar */
+router.post('/carta/sync-inventory', authenticate, async (req, res) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
+    const r = await carta.syncInventory(req.params.businessId);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_inventario',
+      summary: `Carta → inventario: ${r.created} producto(s) nuevos creados con stock 0, ${r.linked} enlazados (de ${r.total})` });
+    res.json(r);
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message || 'Internal server error' }); }
 });
 
 router.put('/carta/settings', authenticate, async (req, res) => {
@@ -154,9 +166,12 @@ router.get('/pedidos', authenticate, async (req, res) => {
 
 /** Convierte un pedido entregado en una venta normal */
 async function pedidoToSale(businessId, p, user) {
+  // Cada línea se enlaza con su ítem de inventario (por el nombre del producto de la carta)
+  const cartaData = await carta.readCarta(businessId);
+  const invOf = new Map((cartaData?.products || []).filter(x => x.inventoryId).map(x => [x.name, x.inventoryId]));
   const items = p.lines.map(l => {
     const detail = l.choices && l.choices.length ? ` (${l.choices.join(', ')})` : '';
-    return { name: l.name + detail, price: l.unitPrice, qty: l.qty, discount: 0, area: 'bar',
+    return { ...(invOf.get(l.name) ? { inventoryId: invOf.get(l.name) } : {}), name: l.name + detail, price: l.unitPrice, qty: l.qty, discount: 0, area: 'bar',
       kind: l.kind === 'adicion' ? 'adicion' : 'producto', ...(l.note ? { note: l.note } : {}) };
   });
   const fee = Number(p.deliveryFee) || 0;
@@ -184,6 +199,8 @@ async function pedidoToSale(businessId, p, user) {
   profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
   await writeJSON(profilePath(businessId), profile);
   await updateActiveShift(businessId, sale);
+  // Baja el stock de los productos enlazados (nunca bloquea ni cancela la factura)
+  try { await deductFromSale(businessId, items.filter(i => i.inventoryId)); } catch (e) { console.error('[pedidos] descuento de inventario:', e.message); }
   return sale;
 }
 
