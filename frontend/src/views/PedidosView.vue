@@ -23,11 +23,14 @@
       <template v-if="tab === 'pedidos'">
         <!-- Mini tablero (pedidos de hoy). Toca una tarjeta para filtrar la lista. -->
         <div class="pv-stats">
-          <button v-for="s in stats" :key="s.key" :class="['pv-stat', 'k-' + s.key, { on: statusFilter === s.key }]" @click="statusFilter = statusFilter === s.key ? '' : s.key">
+          <button v-for="s in stats" :key="s.key" type="button" :class="['pv-stat', 'k-' + s.key, { on: statusFilter === s.key }]" @click="toggleFilter(s.key)">
             <b>{{ s.n }}</b><span>{{ s.label }}</span><small v-if="s.sum !== undefined">{{ money(s.sum) }}</small>
           </button>
         </div>
-        <p v-if="statusFilter" class="pv-hint">Filtrando: <b>{{ stats.find(s => s.key === statusFilter)?.label }}</b>. <button class="pv-link" @click="statusFilter = ''">Quitar filtro</button></p>
+        <div v-if="statusFilter" class="pv-filterbar">
+          <span>Filtrando: <b>{{ stats.find(s => s.key === statusFilter)?.label }}</b></span>
+          <button type="button" class="pv-chip on" @click="clearFilter">✕ Ver todos</button>
+        </div>
 
         <h3 class="pv-h">Pedidos en curso ({{ shown.length }})</h3>
         <p v-if="loaded && !shown.length" class="pv-empty">No hay pedidos en curso. Cuando llegue uno, suena aquí.</p>
@@ -195,7 +198,10 @@ function bucketOf(p) {
   if (p.status === 'pendiente') return 'confirmado'
   return 'porconfirmar'
 }
-const isToday = (iso) => new Date(iso).toDateString() === new Date(now.value).toDateString()
+const todayStr = ref(new Date().toDateString())   // cambia solo al pasar la medianoche
+const isToday = (iso) => new Date(iso).toDateString() === todayStr.value
+function toggleFilter(k) { statusFilter.value = statusFilter.value === k ? '' : k }
+function clearFilter() { statusFilter.value = '' }
 // Mini tablero: pedidos de hoy (lo que sigue en curso se cuenta aunque venga de ayer)
 const stats = computed(() => {
   const rows = [
@@ -352,7 +358,7 @@ async function copyLink() {
 onMounted(() => {
   pend.start()
   if (!readOnly.value) loadCarta()
-  tick = setInterval(() => { now.value = Date.now() }, 1000)
+  tick = setInterval(() => { now.value = Date.now(); todayStr.value = new Date().toDateString() }, 1000)
 })
 onUnmounted(() => clearInterval(tick))
 </script>
@@ -407,6 +413,7 @@ onUnmounted(() => clearInterval(tick))
 .pv-stat.k-porconfirmar b { color: #ef4444; } .pv-stat.k-confirmado b { color: #f59e0b; } .pv-stat.k-preparacion b { color: #3b82f6; }
 .pv-stat.k-camino b { color: #8b5cf6; } .pv-stat.k-porfacturar b { color: #06b6d4; } .pv-stat.k-facturado b { color: #22c55e; }
 .pv-card.s-porfact { border-left-color: #06b6d4; }
+.pv-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid #f59e0b; border-radius: 12px; background: var(--surface); font-size: 14px; }
 .pv-link { background: none; border: 0; color: #f59e0b; font-weight: 700; cursor: pointer; padding: 0; }
 .pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
 .pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
