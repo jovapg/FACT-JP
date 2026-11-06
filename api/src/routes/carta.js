@@ -166,7 +166,7 @@ async function pedidoToSale(businessId, p, user) {
     paymentMethod: p.payment, cashier: user.name || user.username,
     client: p.customer.name,
     notes: `Pedido ${p.code} (${p.mode === 'domicilio' ? 'domicilio' : 'recoger en el local'})`,
-    source: 'carta', pedidoId: p.id, deliveryFee: fee,
+    source: 'carta', mode: p.mode, pedidoId: p.id, deliveryFee: fee,
     createdAt: new Date().toISOString()
   };
   const sales = await readJSON(salesPath(businessId)) || [];

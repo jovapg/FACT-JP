@@ -89,13 +89,13 @@
         </article>
 
         <!-- ── HISTORIAL ── -->
-        <h3 class="pv-h">Historial</h3>
+        <h3 class="pv-h">Historial<small v-if="domisHoy" class="pv-hcount"> · 🛵 {{ domisHoy }} domicilio{{ domisHoy === 1 ? '' : 's' }} entregado{{ domisHoy === 1 ? '' : 's' }} hoy</small></h3>
         <p v-if="loaded && !history.length" class="pv-empty">Todavía no hay pedidos facturados, cancelados o vencidos.</p>
         <div v-if="history.length" class="pv-hist">
           <div v-for="p in history" :key="p.id" class="pv-hrow">
             <div class="pv-hmain">
               <b>#{{ p.code }}</b> {{ p.customer.name }}
-              <small>{{ dateTime(p.createdAt) }} · {{ p.mode === 'recoger' ? 'Recoger' : 'Domicilio' }}<template v-if="p.status === 'entregado'"> · {{ p.payment === 'efectivo' ? '💵' : '🏦' }} {{ p.payment }}</template></small>
+              <small>{{ dateTime(p.createdAt) }} · {{ p.mode === 'recoger' ? '🏪 Recoger' : '🛵 Domicilio' + (domiNum[p.id] ? ' #' + domiNum[p.id] : '') }}<template v-if="p.status === 'entregado'"> · {{ p.payment === 'efectivo' ? '💵' : '🏦' }} {{ p.payment }}</template></small>
             </div>
             <div class="pv-hside">
               <b>{{ money(p.subtotal + (Number(p.deliveryFee) || 0)) }}</b>
@@ -235,6 +235,14 @@ function actionLabel(p) {
   if (n === 'en_camino') return p.mode === 'domicilio' ? 'Sale a domicilio' : 'Listo para recoger'
   return 'Entregado'
 }
+// Domicilios entregados, numerados dentro de su día (1 = el primero del día)
+const domiNum = computed(() => {
+  const byDay = {}, out = {}
+  const list = pedidos.value.filter(p => p.status === 'entregado' && p.mode === 'domicilio').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  for (const p of list) { const d = new Date(p.createdAt).toDateString(); byDay[d] = (byDay[d] || 0) + 1; out[p.id] = byDay[d] }
+  return out
+})
+const domisHoy = computed(() => pedidos.value.filter(p => p.status === 'entregado' && p.mode === 'domicilio' && isToday(p.createdAt)).length)
 const dateTime = (iso) => new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 function ago(iso) {
@@ -414,6 +422,7 @@ onUnmounted(() => clearInterval(tick))
 .pv-stat.k-camino b { color: #8b5cf6; } .pv-stat.k-porfacturar b { color: #06b6d4; } .pv-stat.k-facturado b { color: #22c55e; }
 .pv-card.s-porfact { border-left-color: #06b6d4; }
 .pv-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid #f59e0b; border-radius: 12px; background: var(--surface); font-size: 14px; }
+.pv-hcount { font-weight: 600; color: var(--text-secondary); font-size: 13px; }
 .pv-link { background: none; border: 0; color: #f59e0b; font-weight: 700; cursor: pointer; padding: 0; }
 .pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
 .pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }

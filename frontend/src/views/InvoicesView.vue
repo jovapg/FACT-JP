@@ -3,7 +3,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Historial de Facturas</h1>
-            <p class="page-subtitle">{{ invoices.length }} facturas registradas</p>
+            <p class="page-subtitle">{{ invoices.length }} facturas registradas<template v-if="domisHoy"> · 🛵 {{ domisHoy }} domicilio{{ domisHoy === 1 ? '' : 's' }} hoy</template></p>
           </div>
         </div>
 
@@ -35,7 +35,11 @@
                 <tr v-for="inv in filteredInvoices" :key="inv.id">
                   <td><code style="font-size:12px">{{ inv.invoiceNumber }}</code></td>
                   <td>{{ formatDateTime(inv.createdAt) }}</td>
-                  <td>{{ inv.tableNumber ? spaces.label + ' ' + inv.tableNumber : '-' }}</td>
+                  <td>
+                    <template v-if="inv.tableNumber">{{ spaces.label + ' ' + inv.tableNumber }}</template>
+                    <span v-else-if="orderKind(inv)" :class="['kind-tag', orderKind(inv) === 'Recoger' && 'pick']">{{ orderKind(inv) === 'Recoger' ? '🏪' : '🛵' }} {{ orderKind(inv) }}<b v-if="orderKind(inv) === 'Domicilio'"> #{{ domiNumber[inv.id] }}</b></span>
+                    <template v-else>-</template>
+                  </td>
                   <td>{{ inv.cashier }}</td>
                   <td>{{ inv.items?.length || 0 }} items</td>
                   <td>
@@ -301,6 +305,21 @@ const editTotal = computed(() =>
  * Filtra las facturas según el texto de búsqueda.
  * Busca en número de factura, nombre del cajero y número de mesa.
  */
+// Pedidos en línea: Domicilio / Recoger (las facturas viejas lo traen en la nota)
+function orderKind(inv) {
+  if (inv.source !== 'carta') return ''
+  const recoger = inv.mode ? inv.mode === 'recoger' : /recoger/i.test(inv.notes || '')
+  return recoger ? 'Recoger' : 'Domicilio'
+}
+// Número de domicilio dentro de su día (1 = el primero del día)
+const domiNumber = computed(() => {
+  const byDay = {}, out = {}
+  const list = invoices.value.filter(i => orderKind(i) === 'Domicilio').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  for (const i of list) { const d = new Date(i.createdAt).toDateString(); byDay[d] = (byDay[d] || 0) + 1; out[i.id] = byDay[d] }
+  return out
+})
+const domisHoy = computed(() => invoices.value.filter(i => orderKind(i) === 'Domicilio' && new Date(i.createdAt).toDateString() === new Date().toDateString()).length)
+
 const filteredInvoices = computed(() => {
   if (!search.value) return invoices.value
   const s = search.value.toLowerCase()
@@ -486,6 +505,8 @@ onMounted(async () => {
 .edit-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ei-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ei-name { font-size: 13px; font-weight: 600; }
+.kind-tag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #8b5cf6; white-space: nowrap; }
+.kind-tag.pick { color: #06b6d4; }
 .ei-unit { font-size: 11px; color: var(--text-light); }
 .ei-fee { width: 90px; margin-left: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--accent); background: var(--surface-2); color: var(--text); font-weight: 700; }
 .ei-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
