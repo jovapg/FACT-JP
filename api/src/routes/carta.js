@@ -73,11 +73,20 @@ router.put('/carta/settings', authenticate, async (req, res) => {
         s.whatsapp = w.slice(0, 15);
       }
       if (b.freeDeliveryFrom !== undefined) s.freeDeliveryFrom = carta.num(b.freeDeliveryFrom);
-      if (b.hours !== undefined) s.hours = carta.txt(b.hours, 120);
+      if (b.hours !== undefined) s.hours = carta.txt(b.hours, 220);
+      for (const k of ['openFrom', 'openTo']) if (b[k] !== undefined) {
+        const v = String(b[k]).trim();
+        if (v && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(v)) return res.status(400).json({ error: 'La hora debe ser como 07:00 o 20:00' });
+        s[k] = v;
+      }
+      if (b.address !== undefined) s.address = carta.txt(b.address, 160);
+      if (b.bankInfo !== undefined) s.bankInfo = carta.txt(b.bankInfo, 160);
+      if (b.deliveryNote !== undefined) s.deliveryNote = carta.txt(b.deliveryNote, 220);
+      if (b.deliveryPerKm !== undefined) s.deliveryPerKm = carta.num(b.deliveryPerKm);
       if (b.welcome !== undefined) s.welcome = carta.txt(b.welcome, 200);
     }
     await carta.writeCarta(req.params.businessId, c);
-    const changed = Object.keys(b).filter(k => ['open', 'paused', 'whatsapp', 'freeDeliveryFrom', 'hours', 'pickup', 'enabled'].includes(k));
+    const changed = Object.keys(b).filter(k => ['open', 'paused', 'whatsapp', 'freeDeliveryFrom', 'hours', 'openFrom', 'openTo', 'address', 'bankInfo', 'deliveryNote', 'deliveryPerKm', 'pickup', 'enabled'].includes(k));
     if (changed.length) await logAudit(req.params.businessId, { ...who(req), action: 'carta_ajustes', summary: 'Carta en línea: cambió ' + changed.map(k => k + ' = ' + (typeof b[k] === 'boolean' ? (b[k] ? 'sí' : 'no') : b[k])).join(', ') });
     res.json(s);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }

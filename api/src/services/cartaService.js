@@ -17,6 +17,7 @@
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
+const drinksLib = require('./drinks');
 
 const cartaPath   = (id) => path.join(getBusinessPath(id), 'carta.json');
 const pedidosPath = (id) => path.join(getBusinessPath(id), 'pedidos.json');
@@ -32,6 +33,61 @@ const num = (v) => Math.max(0, Math.round(Number(v) || 0));
 
 const opt = (name, price = 0) => ({ id: uuidv4(), name, price });
 
+// ───────────────────────── Datos de Deli-Combos y actualizaciones de la carta ─────────────────────────
+
+const DRINKS_VERSION = 2;     // 2 = lista real de bebidas
+const SETTINGS_VERSION = 1;   // 1 = datos reales del negocio (WhatsApp, horario, dirección, transferencia, domicilio por km)
+
+const DEFAULT_SETTINGS = {
+  whatsapp: '573225660214',
+  address: 'Barro Blanco, sector Juancho Polo, Santa Elena',
+  hours: 'Todos los días de 7:00 am a 8:00 pm. No abrimos el primer día hábil de la semana (el lunes; si es festivo, cerramos el martes).',
+  openFrom: '07:00',
+  openTo: '20:00',
+  bankInfo: 'BBVA · Llave: @bbva3012767185',
+  deliveryNote: 'Domicilio a todas las veredas de Santa Elena: $2.500 por kilómetro recorrido.',
+  deliveryPerKm: 2500
+};
+
+/** Reemplaza las bebidas por la lista real: categorías, productos sueltos y el desplegable de los combos */
+function applyDrinks(c) {
+  const oldCats = c.categories.filter(x => ['Gaseosas y cervezas', ...drinksLib.SECTIONS].includes(x.name));
+  const oldIds = new Set(oldCats.map(x => x.id));
+  c.categories = c.categories.filter(x => !oldIds.has(x.id));
+  c.products = c.products.filter(p => !oldIds.has(p.categoryId));
+  let order = c.categories.reduce((m, x) => Math.max(m, x.order), -1) + 1;
+  const catId = {};
+  for (const s of drinksLib.SECTIONS) { catId[s] = uuidv4(); c.categories.push({ id: catId[s], name: s, order: order++, extras: false }); }
+  let pOrder = c.products.reduce((m, p) => Math.max(m, p.order), -1) + 1;
+  for (const d of drinksLib.drinks()) c.products.push({
+    id: uuidv4(), categoryId: catId[d.section], order: pOrder++, name: d.name, description: d.note || (d.alcohol ? 'Solo mayores de 18 años' : ''),
+    price: d.price, active: true, soldOut: false, ...(d.alcohol ? { alcohol: true } : {}), groups: []
+  });
+  // El desplegable "Bebidas" de cada combo
+  for (const p of c.products) for (const g of p.groups || []) if (g.type === 'qty' && g.name === 'Bebidas') {
+    g.options = drinksLib.drinkOptions(); g.collapsed = true;
+  }
+  c.drinksVersion = DRINKS_VERSION;
+}
+
+/** Pone al día una carta guardada. Devuelve true si cambió algo (y entonces se guarda). */
+function migrateCarta(c) {
+  let changed = false;
+  if (c.drinksVersion !== DRINKS_VERSION) { applyDrinks(c); changed = true; }
+  if (c.settingsVersion !== SETTINGS_VERSION) {
+    const s = c.settings || (c.settings = {});
+    // Solo se reemplaza el número de PRUEBA; lo demás se llena si estaba vacío (no pisa lo que el admin ya escribió)
+    if (!s.whatsapp || s.whatsapp === '573012408505') s.whatsapp = DEFAULT_SETTINGS.whatsapp;
+    for (const k of ['address', 'hours', 'openFrom', 'openTo', 'bankInfo', 'deliveryNote', 'deliveryPerKm']) {
+      if (s[k] === undefined || s[k] === '' || s[k] === null) s[k] = DEFAULT_SETTINGS[k];
+    }
+    c.settingsVersion = SETTINGS_VERSION;
+    changed = true;
+  }
+  return changed;
+}
+
+
 function defaultCarta() {
   const prep   = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true, options: [opt('Asado'), opt('Apanado')] });
   const prepEntero = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true,
@@ -40,11 +96,7 @@ function defaultCarta() {
     options: [opt('BBQ dulce'), opt('Miel mostaza dulce'), opt('Rosada'), opt('Roja')] });
   const adiciones = () => ({ id: uuidv4(), name: 'Adiciones', type: 'qty', options: [
     opt('Papa francesa', 6000), opt('Ensalada', 6000), opt('Papa al vapor x5', 2000), opt('Arepa x5', 2000), opt('Arroz', 3000)] });
-  const bebidas = () => ({ id: uuidv4(), name: 'Bebidas', type: 'qty', options: [
-    opt('Coca-Cola 400 ml', 6000), opt('Manzana 400 ml', 6000),
-    { ...opt('Cerveza Águila 330 ml', 6000), alcohol: true },
-    { ...opt('Cerveza Pilsen 330 ml', 6000), alcohol: true },
-    { ...opt('Cerveza Míticas 330 ml', 6000), alcohol: true }] });
+  const bebidas = () => ({ id: uuidv4(), name: 'Bebidas', type: 'qty', collapsed: true, options: drinksLib.drinkOptions() });
 
   const cats = [
     { key: 'presa',   name: 'Presa, papa y arepa',     extras: true },
@@ -56,7 +108,7 @@ function defaultCarta() {
     { key: 'adicion', name: 'Adiciones',               extras: false },
     { key: 'fritos',  name: 'Fritos',                  extras: false },
     { key: 'calientes',name: 'Calientes y jugos',      extras: false },
-    { key: 'bebidas', name: 'Gaseosas y cervezas',     extras: false }
+    ...drinksLib.SECTIONS.map(n => ({ key: 'bb:' + n, name: n, extras: false }))
   ].map((c, i) => ({ id: uuidv4(), order: i, ...c }));
   const cid = Object.fromEntries(cats.map(c => [c.key, c.id]));
 
@@ -122,25 +174,20 @@ function defaultCarta() {
     ['calientes', 'Chocolate en agua', '', 3000, ''],
     ['calientes', 'Chocolate en leche', '', 3500, ''],
     ['calientes', 'Jugo en agua', '', 4500, ''],
-    ['calientes', 'Jugo en leche', '', 6000, ''],
-
-    ['bebidas', 'Coca-Cola 400 ml', '', 6000, ''],
-    ['bebidas', 'Manzana 400 ml', '', 6000, ''],
-    ['bebidas', 'Cerveza Águila 330 ml', 'Solo mayores de 18 años', 6000, ''],
-    ['bebidas', 'Cerveza Pilsen 330 ml', 'Solo mayores de 18 años', 6000, ''],
-    ['bebidas', 'Cerveza Míticas 330 ml', 'Solo mayores de 18 años', 6000, '']
+    ['calientes', 'Jugo en leche', '', 6000, '']
   ];
 
+  for (const d of drinksLib.drinks()) rows.push(['bb:' + d.section, d.name, d.note || (d.alcohol ? 'Solo mayores de 18 años' : ''), d.price, '', d.alcohol]);
+
   const extrasOf = Object.fromEntries(cats.map(c => [c.key, c.extras]));
-  const products = rows.map(([cat, name, description, price, kind], i) => {
+  const products = rows.map(([cat, name, description, price, kind, alcohol], i) => {
     const groups = [];
     if (kind === 'p') groups.push(prep());
     if (kind === 'e') groups.push(prepEntero());
     if (/^s\d$/.test(kind)) groups.push(salsas(Number(kind.slice(1))));
     if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); }
-    const isBeer = /cerveza/i.test(name);
     return { id: uuidv4(), categoryId: cid[cat], order: i, name, description, price, active: true, soldOut: false,
-      ...(isBeer ? { alcohol: true } : {}), groups };
+      ...(alcohol ? { alcohol: true } : {}), groups };
   });
 
   return {
@@ -148,20 +195,47 @@ function defaultCarta() {
       enabled: true,
       open: true,            // abierto / cerrado (lo cambia quien atiende)
       paused: false,         // "pausar pedidos" temporalmente
-      whatsapp: '573012408505', // NÚMERO DE PRUEBA — cambiar por el real antes de lanzar
+      whatsapp: DEFAULT_SETTINGS.whatsapp,
       pickup: true,          // permite "recoger en el local"
       freeDeliveryFrom: 100000,
-      hours: '',
+      hours: DEFAULT_SETTINGS.hours,
+      openFrom: DEFAULT_SETTINGS.openFrom, openTo: DEFAULT_SETTINGS.openTo,   // horario de pedidos (hora de Colombia)
+      address: DEFAULT_SETTINGS.address,
+      bankInfo: DEFAULT_SETTINGS.bankInfo,
+      deliveryNote: DEFAULT_SETTINGS.deliveryNote, deliveryPerKm: DEFAULT_SETTINGS.deliveryPerKm,
       welcome: ''
     },
     categories: cats.map(({ key, ...c }) => c),
-    products
+    products,
+    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION
   };
 }
 
 // ───────────────────────── Lectura / escritura ─────────────────────────
 
-async function readCarta(businessId) { return await readJSON(cartaPath(businessId)); }
+async function readCarta(businessId) {
+  const c = await readJSON(cartaPath(businessId));
+  if (c && Array.isArray(c.products)) {
+    const needSettings = c.settingsVersion !== SETTINGS_VERSION;
+    if (migrateCarta(c)) {
+      await writeJSON(cartaPath(businessId), c);
+      // Dirección y teléfono del negocio salen en las facturas: se llenan solo si estaban vacíos
+      if (needSettings) {
+        try {
+          const pPath = path.join(getBusinessPath(businessId), 'profile.json');
+          const prof = await readJSON(pPath);
+          if (prof) {
+            if (!prof.address) prof.address = DEFAULT_SETTINGS.address;
+            if (!prof.phone) prof.phone = DEFAULT_SETTINGS.whatsapp.replace(/^57/, '');
+            await writeJSON(pPath, prof);
+          }
+        } catch { /* no es crítico */ }
+      }
+    }
+  }
+  return c;
+}
+
 async function writeCarta(businessId, carta) { await writeJSON(cartaPath(businessId), carta); }
 
 /** Lee pedidos aplicando vencimiento (15 min) y limpieza (vencidos > 1 día). Guarda si cambió algo. */
@@ -190,6 +264,14 @@ function hasOpenShift(businessId) {
     const shifts = JSON.parse(fs.readFileSync(path.join(getBusinessPath(businessId), 'shifts.json'), 'utf8'));
     return Array.isArray(shifts) && shifts.some(s => s.status === 'open');
   } catch { return false; }
+}
+/** ¿Estamos dentro del horario de pedidos (hora de Colombia, UTC-5)? Sin horario configurado, siempre sí. */
+function withinHours(settings, now = Date.now()) {
+  const f = /^(\d{1,2}):(\d{2})$/.exec(settings.openFrom || ''), t = /^(\d{1,2}):(\d{2})$/.exec(settings.openTo || '');
+  if (!f || !t) return true;
+  const d = new Date(now - 5 * 3600 * 1000), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  const a = +f[1] * 60 + +f[2], b = +t[1] * 60 + +t[2];
+  return a <= b ? (m >= a && m < b) : (m >= a || m < b);
 }
 const NO_SHIFT_MSG = 'Primero abre el turno de caja: sin turno abierto no se puede facturar. El pedido queda guardado y lo facturas cuando abras turno.';
 
@@ -284,5 +366,5 @@ function priceOrder(carta, rawItems) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG
+  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
 };

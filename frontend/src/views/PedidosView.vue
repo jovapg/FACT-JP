@@ -69,6 +69,10 @@
             <div v-if="p.mode === 'domicilio'" class="pv-fee">
               <span>Domicilio<template v-if="p.freeDelivery"> (gratis, compra ≥ {{ money(carta?.settings.freeDeliveryFrom || 100000) }})</template></span>
               <template v-if="isOpen(p) && !readOnly">
+                <span v-if="carta?.settings.deliveryPerKm" class="pv-km" :title="'Tarifa: ' + money(carta.settings.deliveryPerKm) + ' por km'">
+                  <input type="number" min="0" step="0.1" placeholder="km" @input="setKm(p, $event.target.value)" /> km ×
+                  {{ money(carta.settings.deliveryPerKm) }} =
+                </span>
                 <input type="number" min="0" step="500" :value="feeInput[p.id] ?? (p.deliveryFee ?? '')" placeholder="$" @input="feeInput[p.id] = $event.target.value" />
               </template>
               <b v-else>{{ money(p.deliveryFee) }}</b>
@@ -117,7 +121,17 @@
           <h3>Ajustes</h3>
           <label>WhatsApp del negocio <input v-model="set.whatsapp" inputmode="tel" placeholder="3001234567" /></label>
           <label>Domicilio gratis desde ($) <input v-model.number="set.freeDeliveryFrom" type="number" min="0" step="1000" /></label>
-          <label>Horario (texto visible al cliente) <input v-model="set.hours" maxlength="120" placeholder="Lun a Dom 11 am – 10 pm" /></label>
+          <label>Dirección del negocio (la ve el cliente) <input v-model="set.address" maxlength="160" /></label>
+          <label>Horario (texto visible al cliente) <input v-model="set.hours" maxlength="220" placeholder="Todos los días de 7 am a 8 pm" /></label>
+          <div class="pv-two">
+            <label>Recibir pedidos desde <input v-model="set.openFrom" type="time" /></label>
+            <label>hasta <input v-model="set.openTo" type="time" /></label>
+          </div>
+          <small class="pv-hint">Fuera de esa hora la carta se ve cerrada sola. Déjalo vacío para no limitar por hora. Los días sin servicio (el primer día hábil de la semana, festivos) se manejan con el interruptor <b>Abierto</b> de arriba.</small>
+          <label>Tarifa por kilómetro del domicilio ($) <input v-model.number="set.deliveryPerKm" type="number" min="0" step="100" /></label>
+          <label>Texto del domicilio (lo ve el cliente) <input v-model="set.deliveryNote" maxlength="220" /></label>
+          <label>Datos para transferir (separa con ·) <input v-model="set.bankInfo" maxlength="160" placeholder="BBVA · Llave: @tullave" /></label>
+          <small class="pv-hint">El QR de pago se sube en Configuración y aparece solo en la carta cuando el cliente escoge transferencia.</small>
           <label class="chk"><input type="checkbox" v-model="set.pickup" /> Permitir “recoger en el local”</label>
           <button class="pv-btn main" @click="saveSettings">Guardar ajustes</button>
         </section>
@@ -169,7 +183,7 @@ const donePhone = ref('')
 const statusFilter = ref('')
 const payInput = reactive({})
 const carta = ref(null)
-const set = reactive({ whatsapp: '', freeDeliveryFrom: 0, hours: '', pickup: true })
+const set = reactive({ whatsapp: '', freeDeliveryFrom: 0, hours: '', pickup: true, address: '', bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '' })
 const feeInput = reactive({})
 const busy = ref('')
 const now = ref(Date.now())
@@ -262,6 +276,12 @@ function left(iso) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+/** Domicilio = kilómetros × tarifa por km (se puede ajustar a mano en el campo de valor) */
+function setKm(p, km) {
+  const n = Number(km)
+  if (!km || Number.isNaN(n)) { delete feeInput[p.id]; return }
+  feeInput[p.id] = String(Math.round(n * (carta.value?.settings.deliveryPerKm || 0)))
+}
 async function advance(p, forced) {
   const target = forced || nextOf(p)
   const body = { status: target }
@@ -331,7 +351,9 @@ async function loadCarta() {
     const { data } = await api.get(`${base()}/carta`)
     carta.value = data
     shiftOpen.value = data.shiftOpen
-    Object.assign(set, { whatsapp: data.settings.whatsapp.replace(/^57/, ''), freeDeliveryFrom: data.settings.freeDeliveryFrom, hours: data.settings.hours, pickup: data.settings.pickup })
+    Object.assign(set, { whatsapp: data.settings.whatsapp.replace(/^57/, ''), freeDeliveryFrom: data.settings.freeDeliveryFrom, hours: data.settings.hours, pickup: data.settings.pickup,
+      address: data.settings.address || '', bankInfo: data.settings.bankInfo || '', deliveryNote: data.settings.deliveryNote || '',
+      deliveryPerKm: data.settings.deliveryPerKm || 0, openFrom: data.settings.openFrom || '', openTo: data.settings.openTo || '' })
   } catch { toast('No se pudo cargar la carta', 'error') }
 }
 async function setSetting(body) {
@@ -340,7 +362,8 @@ async function setSetting(body) {
 }
 async function saveSettings() {
   try {
-    const { data } = await api.put(`${base()}/carta/settings`, { whatsapp: set.whatsapp, freeDeliveryFrom: set.freeDeliveryFrom, hours: set.hours, pickup: set.pickup })
+    const { data } = await api.put(`${base()}/carta/settings`, { whatsapp: set.whatsapp, freeDeliveryFrom: set.freeDeliveryFrom, hours: set.hours, pickup: set.pickup,
+      address: set.address, bankInfo: set.bankInfo, deliveryNote: set.deliveryNote, deliveryPerKm: set.deliveryPerKm, openFrom: set.openFrom, openTo: set.openTo })
     carta.value.settings = data; toast('Ajustes guardados', 'success')
   } catch (e) { toast(e.response?.data?.error || 'No se pudo guardar', 'error') }
 }
@@ -440,6 +463,9 @@ onUnmounted(() => { clearInterval(tick); clearInterval(shiftTimer) })
 .pv-hcount { font-weight: 600; color: var(--text-secondary); font-size: 13px; }
 .pv-noshift { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; border: 1px solid #f59e0b; background: rgba(245,158,11,.12); font-size: 14px; }
 .pv-noshift .pv-btn { flex: none; min-width: 0; }
+.pv-km { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.pv-km input { width: 62px; padding: 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.pv-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pv-link { background: none; border: 0; color: #f59e0b; font-weight: 700; cursor: pointer; padding: 0; }
 .pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
 .pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }

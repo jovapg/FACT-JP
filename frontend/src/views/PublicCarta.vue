@@ -16,14 +16,15 @@
           <div>
             <h1>{{ data.business.name }}</h1>
             <p v-if="data.settings.welcome">{{ data.settings.welcome }}</p>
-            <p v-else-if="data.settings.hours">{{ data.settings.hours }}</p>
+            <p v-if="data.settings.address">📍 {{ data.settings.address }}</p>
+            <p v-if="data.settings.hours" class="pc-hours">🕒 {{ data.settings.hours }}</p>
           </div>
         </div>
         <span :class="['pc-state', canOrder ? 'ok' : 'off']">{{ stateText }}</span>
       </header>
 
       <div v-if="!canOrder" class="pc-warn">
-        {{ data.settings.open ? 'Pausamos los pedidos por un momento.' : 'Estamos cerrados.' }}
+        {{ data.settings.outOfHours ? 'Estamos fuera del horario de pedidos (' + data.settings.openFrom + ' a ' + data.settings.openTo + ').' : data.settings.paused ? 'Pausamos los pedidos por un momento.' : 'Estamos cerrados.' }}
         Puedes ver la carta; los pedidos se reciben cuando estemos atendiendo.
       </div>
 
@@ -68,8 +69,8 @@
         </div>
         <div class="pc-sheet-body">
           <div v-for="g in sel.product.groups" :key="g.id" class="pc-group">
-            <div class="pc-group-h">
-              <b>{{ g.name }}</b>
+            <div :class="['pc-group-h', g.type === 'qty' && 'tap']" @click="g.type === 'qty' && toggleOpen(g)">
+              <b>{{ g.type === 'qty' ? (isOpen(g) ? '▾ ' : '▸ ') : '' }}{{ g.name }}<em v-if="g.type === 'qty' && qtyCount(g)" class="pc-count">{{ qtyCount(g) }} elegida{{ qtyCount(g) === 1 ? '' : 's' }}</em></b>
               <span v-if="g.type === 'one'" :class="['pc-tag', g.required && 'req']">{{ g.required ? 'Obligatorio · escoge 1' : 'Escoge 1' }}</span>
               <span v-else-if="g.type === 'many'" class="pc-tag">Hasta {{ g.max }}</span>
               <span v-else class="pc-tag">Opcional</span>
@@ -86,15 +87,18 @@
                 <span>{{ o.name }}</span><em v-if="o.price">+{{ money(o.price) }}</em>
               </label>
             </template>
-            <template v-else>
-              <div v-for="o in g.options" :key="o.id" class="pc-row qty">
-                <span>{{ o.name }}</span><em>{{ money(o.price) }}</em>
-                <div class="pc-step">
-                  <button :disabled="!sel.pick[g.id][o.id]" @click="step(g, o, -1)">−</button>
-                  <b>{{ sel.pick[g.id][o.id] || 0 }}</b>
-                  <button @click="step(g, o, 1)">+</button>
+            <template v-else-if="isOpen(g)">
+              <template v-for="(o, i) in g.options" :key="o.id">
+                <div v-if="o.section && (i === 0 || g.options[i - 1].section !== o.section)" class="pc-sec">{{ o.section }}</div>
+                <div class="pc-row qty">
+                  <span>{{ o.name }}<small v-if="o.note" class="pc-onote">{{ o.note }}</small></span><em>{{ money(o.price) }}</em>
+                  <div class="pc-step">
+                    <button :disabled="!sel.pick[g.id][o.id]" @click="step(g, o, -1)">−</button>
+                    <b>{{ sel.pick[g.id][o.id] || 0 }}</b>
+                    <button @click="step(g, o, 1)">+</button>
+                  </div>
                 </div>
-              </div>
+              </template>
             </template>
           </div>
           <label class="pc-group">
@@ -126,6 +130,11 @@
           <p class="pc-code">#{{ done.code }}</p>
           <p>Para confirmarlo, <b>envíanos tu pedido por WhatsApp</b>. Así te pedimos tu ubicación y te decimos el valor del domicilio.
             Si pasan 15 minutos sin confirmar, el pedido se cancela solo.</p>
+          <div v-if="done.payment === 'transferencia' && (bankLines.length || data.settings.paymentQr)" class="pc-bank">
+            <b>Datos para transferir</b>
+            <div v-for="l in bankLines" :key="l">{{ l }}</div>
+            <img v-if="data.settings.paymentQr" :src="data.settings.paymentQr" alt="QR para pagar" class="pc-qr" />
+          </div>
           <a class="pc-btn wa" :href="waLink(done)" target="_blank" rel="noopener">Enviar por WhatsApp</a>
           <button class="pc-link" @click="finish">Hacer otro pedido</button>
         </div>
@@ -159,6 +168,8 @@
               <template v-else><b>El valor de tu pedido no incluye el domicilio.</b> Te pediremos tu ubicación por WhatsApp para calcularlo.</template>
             </div>
 
+            <p v-if="form.mode === 'domicilio' && data.settings.deliveryNote" class="pc-dnote">🛵 {{ data.settings.deliveryNote }}</p>
+
             <!-- Datos -->
             <div v-if="data.settings.pickup" class="pc-seg">
               <button :class="{ on: form.mode === 'domicilio' }" @click="form.mode = 'domicilio'">🛵 Domicilio</button>
@@ -174,7 +185,12 @@
               <button :class="{ on: form.payment === 'transferencia' }" @click="form.payment = 'transferencia'">🏦 Transferencia</button>
             </div>
             <input v-if="form.payment === 'efectivo'" v-model="form.cashFor" class="pc-in" inputmode="numeric" maxlength="9" placeholder="¿Con cuánto pagas? (opcional)" />
-            <p v-else class="pc-hint">Te enviamos los datos de transferencia por WhatsApp al confirmar.</p>
+            <div v-else class="pc-bank">
+              <b>Datos para transferir</b>
+              <div v-for="l in bankLines" :key="l">{{ l }}</div>
+              <img v-if="data.settings.paymentQr" :src="data.settings.paymentQr" alt="QR para pagar" class="pc-qr" />
+              <small>Haz la transferencia al recibir tu pedido y envía el comprobante por WhatsApp.</small>
+            </div>
 
             <label v-if="hasAlcohol" class="pc-check"><input type="checkbox" v-model="form.adult" /> Confirmo que soy mayor de 18 años (licor).</label>
             <label class="pc-check"><input type="checkbox" v-model="form.privacy" />
@@ -266,6 +282,7 @@ const cats = computed(() => (data.value?.categories || []).filter(c => data.valu
 const productsOf = (id) => data.value.products.filter(p => p.categoryId === id)
 const canOrder = computed(() => !!data.value && data.value.settings.open && !data.value.settings.paused)
 const stateText = computed(() => !data.value.settings.open ? 'Cerrado' : data.value.settings.paused ? 'Pedidos en pausa' : 'Abierto')
+const bankLines = computed(() => String(data.value?.settings.bankInfo || '').split('·').map(x => x.trim()).filter(Boolean))
 const threshold = computed(() => data.value?.settings.freeDeliveryFrom || 0)
 
 function goCat(id) {
@@ -277,8 +294,12 @@ function goCat(id) {
 function openProduct(p) {
   const pick = {}
   for (const g of p.groups) pick[g.id] = g.type === 'one' ? '' : g.type === 'many' ? [] : {}
-  sel.value = { product: p, pick, qty: 1, note: '', err: '' }
+  sel.value = { product: p, pick, qty: 1, note: '', err: '', open: {} }
 }
+// Desplegables (bebidas, adiciones): cerrados o abiertos según la carta; el cliente los abre al tocarlos
+const isOpen = (g) => sel.value.open[g.id] ?? !g.collapsed
+const toggleOpen = (g) => { sel.value.open[g.id] = !isOpen(g) }
+const qtyCount = (g) => Object.values(sel.value.pick[g.id] || {}).reduce((a, n) => a + n, 0)
 function toggleMany(g, id, ev) {
   const arr = sel.value.pick[g.id]
   const i = arr.indexOf(id)
@@ -391,6 +412,15 @@ function waLink(d) {
 .pc-logo { width: 44px; height: 44px; border-radius: 12px; background: #fff3; display: grid; place-items: center; font-size: 24px; flex: none; }
 .pc-head h1 { font-size: 19px; margin: 0; line-height: 1.1; }
 .pc-head p { margin: 2px 0 0; font-size: 12px; opacity: .9; }
+.pc-hours { max-width: 340px; }
+.pc-group-h.tap { cursor: pointer; padding: 8px 10px; margin: 0 -4px 4px; border-radius: 10px; background: #f5f5f4; }
+.pc-count { font-style: normal; font-weight: 700; font-size: 11px; background: var(--red); color: #fff; border-radius: 999px; padding: 2px 8px; margin-left: 8px; }
+.pc-sec { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--red2); padding: 12px 4px 4px; }
+.pc-onote { display: block; color: var(--mut); font-size: 11px; }
+.pc-dnote { margin: 0; font-size: 13px; color: #7c2d12; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 8px 12px; }
+.pc-bank { border: 1px dashed var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; align-items: flex-start; text-align: left; width: 100%; }
+.pc-bank small { color: var(--mut); font-size: 12px; }
+.pc-qr { width: 200px; max-width: 100%; align-self: center; border-radius: 8px; margin: 6px 0; background: #fff; }
 .pc-state { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
 .pc-state.ok { background: #16a34a; } .pc-state.off { background: #44403c; }
 .pc-warn { background: #fef3c7; color: #78350f; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid #fde68a; }

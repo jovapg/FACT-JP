@@ -30,18 +30,21 @@ async function findBusiness(slug) {
 }
 
 /** Quita lo interno de la carta antes de mostrarla al público */
-function publicView(biz, c, shiftOpen = true) {
-  const { whatsapp, open, paused, pickup, freeDeliveryFrom, hours, welcome } = c.settings;
+function publicView(biz, c, profile = {}) {
+  const { whatsapp, open, paused, pickup, freeDeliveryFrom, hours, welcome, address, bankInfo, deliveryNote, openFrom, openTo } = c.settings;
+  const inHours = carta.withinHours(c.settings);
   const cats = [...c.categories].sort((a, b) => a.order - b.order);
   return {
     business: { name: biz.name, slug: biz.slug },
-    settings: { whatsapp, open: !!open, paused, pickup, freeDeliveryFrom, hours, welcome },
+    // Fuera del horario de pedidos la tienda se ve cerrada
+    settings: { whatsapp, open: !!open && inHours, paused, pickup, freeDeliveryFrom, hours, welcome, address, bankInfo, deliveryNote, openFrom, openTo, outOfHours: !inHours,
+      paymentQr: profile.paymentQr || '' },
     categories: cats.map(({ id, name, order }) => ({ id, name, order })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
       soldOut: !!p.soldOut, alcohol: !!p.alcohol,
-      groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0,
-        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol })) }))
+      groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0, collapsed: !!g.collapsed,
+        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '' })) }))
     }))
   };
 }
@@ -52,7 +55,7 @@ router.get('/carta/:slug', readLimiter, async (req, res) => {
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
     res.set('Cache-Control', 'no-store');
-    res.json(publicView(biz, c));
+    res.json(publicView(biz, c, await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Error del servidor' }); }
 });
 
@@ -61,7 +64,7 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
     const biz = await findBusiness(req.params.slug);
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
-    if (!c.settings.open || c.settings.paused) {
+    if (!c.settings.open || c.settings.paused || !carta.withinHours(c.settings)) {
       return res.status(409).json({ error: 'Por ahora no estamos recibiendo pedidos. Intenta más tarde.' });
     }
 
