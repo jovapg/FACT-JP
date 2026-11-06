@@ -111,8 +111,10 @@
               </label>
             </template>
             <template v-else-if="isOpen(g)">
-              <template v-for="(o, i) in g.options" :key="o.id">
-                <div v-if="o.section && (i === 0 || g.options[i - 1].section !== o.section)" class="pc-sec">{{ o.section }}</div>
+              <input v-if="g.options.length > 10" v-model="sel.search[g.id]" type="search" class="pc-dsearch" placeholder="🔍 Buscar bebida (ej: coca, agua, cerveza)" />
+              <p v-if="!optsOf(g).length" class="pc-empty">No encontramos esa bebida.</p>
+              <template v-for="(o, i) in optsOf(g)" :key="o.id">
+                <div v-if="o.section && (i === 0 || optsOf(g)[i - 1].section !== o.section)" class="pc-sec">{{ o.section }}</div>
                 <div :class="['pc-row', 'qty', o.soldOut && 'off']">
                   <span>{{ o.name }}<small v-if="o.note" class="pc-onote">{{ o.note }}</small></span>
                   <em v-if="!o.soldOut">{{ money(o.price) }}</em><em v-else class="pc-soldtag">Agotado</em>
@@ -377,9 +379,14 @@ const threshold = computed(() => data.value?.settings.freeDeliveryFrom || 0)
 function openProduct(p) {
   const pick = {}
   for (const g of p.groups) pick[g.id] = g.type === 'one' ? '' : g.type === 'many' ? [] : {}
-  sel.value = { product: p, pick, qty: 1, note: '', err: '', open: {} }
+  sel.value = { product: p, pick, qty: 1, note: '', err: '', open: {}, search: {} }
 }
 // Desplegables (bebidas, adiciones): cerrados o abiertos según la carta; el cliente los abre al tocarlos
+// Opciones de un desplegable (bebidas) filtradas por lo que se escribe en su buscador
+function optsOf(g) {
+  const words = norm(sel.value.search[g.id] || '').split(/s+/).filter(Boolean)
+  return words.length ? g.options.filter(o => words.every(w => norm(o.name + ' ' + (o.section || '')).includes(w))) : g.options
+}
 const isOpen = (g) => sel.value.open[g.id] ?? !g.collapsed
 const toggleOpen = (g) => { sel.value.open[g.id] = !isOpen(g) }
 const qtyCount = (g) => Object.values(sel.value.pick[g.id] || {}).reduce((a, n) => a + n, 0)
@@ -499,6 +506,8 @@ function waLink(d) {
 .pc-hours { max-width: 340px; }
 .pc-group-h.tap { cursor: pointer; padding: 8px 10px; margin: 0 -4px 4px; border-radius: 10px; background: #f5f5f4; }
 .pc-count { font-style: normal; font-weight: 700; font-size: 11px; background: var(--red); color: #fff; border-radius: 999px; padding: 2px 8px; margin-left: 8px; }
+.pc-dsearch { position: sticky; top: 0; z-index: 3; width: 100%; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 9px 12px; margin: 4px 0 2px; font: 400 14px Inter, system-ui, sans-serif; }
+.pc-dsearch:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
 .pc-sec { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--red2); padding: 12px 4px 4px; }
 .pc-onote { display: block; color: var(--mut); font-size: 11px; }
 .pc-dnote { margin: 0; font-size: 13px; color: #7c2d12; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 8px 12px; }
