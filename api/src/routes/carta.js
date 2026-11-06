@@ -19,6 +19,10 @@ const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorag
 const { authenticate } = require('../middleware/auth');
 const carta = require('../services/cartaService');
 const { updateActiveShift } = require('../services/shiftSales');
+const { logAudit, cop } = require('../services/audit');
+
+const who = (req) => ({ user: req.user.name || req.user.username, role: req.user.role });
+const PAGO = { efectivo: 'efectivo', transferencia: 'transferencia' };
 
 const salesPath   = (id) => path.join(getBusinessPath(id), 'sales.json');
 const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
@@ -73,6 +77,8 @@ router.put('/carta/settings', authenticate, async (req, res) => {
       if (b.welcome !== undefined) s.welcome = carta.txt(b.welcome, 200);
     }
     await carta.writeCarta(req.params.businessId, c);
+    const changed = Object.keys(b).filter(k => ['open', 'paused', 'whatsapp', 'freeDeliveryFrom', 'hours', 'pickup', 'enabled'].includes(k));
+    if (changed.length) await logAudit(req.params.businessId, { ...who(req), action: 'carta_ajustes', summary: 'Carta en línea: cambió ' + changed.map(k => k + ' = ' + (typeof b[k] === 'boolean' ? (b[k] ? 'sí' : 'no') : b[k])).join(', ') });
     res.json(s);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -83,6 +89,7 @@ router.put('/carta/products/:id', authenticate, async (req, res) => {
     const p = c && c.products.find(x => x.id === req.params.id);
     if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
     const b = req.body || {};
+    const before = { price: p.price, active: p.active, soldOut: p.soldOut, name: p.name };
     if (typeof b.soldOut === 'boolean') p.soldOut = b.soldOut; // cajero también puede marcar agotado
     if (isAdmin(req)) {
       if (typeof b.active === 'boolean') p.active = b.active;
@@ -98,6 +105,12 @@ router.put('/carta/products/:id', authenticate, async (req, res) => {
       }
     }
     await carta.writeCarta(req.params.businessId, c);
+    const diffs = [];
+    if (p.price !== before.price) diffs.push('precio ' + cop(before.price) + ' → ' + cop(p.price));
+    if (p.active !== before.active) diffs.push(p.active ? 'ahora visible' : 'ocultado');
+    if (p.soldOut !== before.soldOut) diffs.push(p.soldOut ? 'marcado AGOTADO' : 'ya disponible');
+    if (p.name !== before.name) diffs.push('nombre era "' + before.name + '"');
+    if (diffs.length) await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: 'Carta: "' + p.name + '" — ' + diffs.join(', ') });
     res.json(p);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -117,6 +130,7 @@ router.put('/carta/option-price', authenticate, async (req, res) => {
     // Y el producto suelto con ese nombre (adiciones / bebidas que se piden solas)
     for (const p of c.products) if (p.name === name && !(p.groups || []).length) { p.price = price; n++; }
     await carta.writeCarta(req.params.businessId, c);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: 'Carta: precio de "' + name + '" cambió a ' + cop(price) + ' en todos los combos' });
     res.json({ updated: n });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -182,6 +196,7 @@ router.put('/pedidos/:id', authenticate, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
     const b = req.body || {};
     const unbilled = p.status === 'entregado' && !p.saleId; // entregado, falta facturar
+    const before = { status: p.status, fee: p.deliveryFee, payment: p.payment };
 
     if (p.status === 'cancelado' || (p.status === 'entregado' && p.saleId)) return res.status(409).json({ error: 'Este pedido ya está cerrado' });
 
@@ -221,6 +236,16 @@ router.put('/pedidos/:id', authenticate, async (req, res) => {
     }
     p.updatedAt = new Date().toISOString();
     await carta.writePedidos(bid, list);
+
+    // Bitácora: qué cambió en el pedido y quién lo hizo
+    const LBL = { por_confirmar: 'por confirmar', pendiente: 'confirmado', en_preparacion: 'en preparación', en_camino: p.mode === 'recoger' ? 'listo para recoger' : 'en camino', entregado: 'entregado', cancelado: 'CANCELADO', vencido: 'vencido' };
+    const parts = [];
+    if (p.status !== before.status) parts.push(`${LBL[before.status] || before.status} → ${LBL[p.status] || p.status}`);
+    if (p.deliveryFee !== before.fee) parts.push(`domicilio ${before.fee == null ? 'sin definir' : cop(before.fee)} → ${cop(p.deliveryFee)}`);
+    if (p.payment !== before.payment) parts.push(`pago ${before.payment} → ${p.payment}`);
+    else if (p.status === 'entregado' && before.status !== 'entregado') parts.push(`cobrado en ${p.payment}`);
+    if (parts.length) await logAudit(bid, { ...who(req), action: 'pedido_' + (p.status === 'entregado' && before.status !== 'entregado' ? 'entrega' : 'estado'),
+      summary: `Pedido #${p.code} (${p.customer.name}, ${cop(p.subtotal + (Number(p.deliveryFee) || 0))}): ${parts.join('; ')}` });
     res.json({ pedido: p });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -238,6 +263,8 @@ router.post('/pedidos/:id/facturar', authenticate, async (req, res) => {
     const sale = await pedidoToSale(bid, p, req.user);
     p.saleId = sale.id; p.invoiceNumber = sale.invoiceNumber; p.updatedAt = new Date().toISOString();
     await carta.writePedidos(bid, list);
+    await logAudit(bid, { ...who(req), action: 'pedido_factura',
+      summary: `Facturó el pedido #${p.code} (${p.customer.name}) → factura ${sale.invoiceNumber} por ${cop(sale.total)}, pago ${sale.paymentMethod}${sale.deliveryFee ? ', domicilio ' + cop(sale.deliveryFee) : ''}` });
     res.status(201).json({ pedido: p, sale });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });

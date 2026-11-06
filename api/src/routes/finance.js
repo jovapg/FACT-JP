@@ -30,6 +30,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
+const { logAudit, cop } = require('../services/audit');
 
 const financePath   = (id) => path.join(getBusinessPath(id), 'finance.json');
 const shiftsPath    = (id) => path.join(getBusinessPath(id), 'shifts.json');
@@ -295,6 +296,9 @@ router.post('/finance/domicilios', authenticate, adminOnly, async (req, res) => 
     };
     list.push(rec);
     await writeJSON(domiciliosPath(id), list);
+    await logAudit(id, { user: req.user.name || req.user.username, role: req.user.role, action: 'domicilio_salida',
+      summary: rec.kind === 'moto' ? 'Bolsillo Domicilios: gasto de la moto ' + cop(rec.amount) + (rec.note ? ' (' + rec.note + ')' : '') + ', pagado en ' + rec.bucket
+        : 'Bolsillo Domicilios: pago al domiciliario ' + cop(rec.amount) + (rec.incentive ? ' (incluye incentivo ' + cop(rec.incentive) + ')' : '') + ', pagado en ' + rec.bucket });
     res.status(201).json(rec);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
@@ -304,9 +308,12 @@ router.delete('/finance/domicilios/:id', authenticate, adminOnly, async (req, re
   try {
     const id = req.params.businessId;
     const list = await loadDomicilios(id);
+    const gone = list.find(x => x.id === req.params.id);
     const next = list.filter(x => x.id !== req.params.id);
-    if (next.length === list.length) return res.status(404).json({ error: 'No encontrado' });
+    if (!gone) return res.status(404).json({ error: 'No encontrado' });
     await writeJSON(domiciliosPath(id), next);
+    await logAudit(id, { user: req.user.name || req.user.username, role: req.user.role, action: 'delete_domicilio_salida',
+      summary: 'Bolsillo Domicilios: borró una salida de ' + cop(gone.amount) + (gone.kind === 'moto' ? ' (moto)' : ' (domiciliario)') });
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });

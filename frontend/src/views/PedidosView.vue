@@ -134,6 +134,8 @@
         </section>
       </template>
       <p v-else-if="tab === 'carta'" class="pv-empty">Cargando…</p>
+
+      <InvoiceDone v-if="doneSale" :sale="doneSale" :phone="donePhone" @close="doneSale = null" />
     </div>
   </PageLayout>
 </template>
@@ -141,6 +143,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, inject } from 'vue'
 import PageLayout from '../components/PageLayout.vue'
+import InvoiceDone from '../components/InvoiceDone.vue'
 import api from '../services/api.js'
 import { useAuthStore } from '../stores/auth.js'
 import { usePedidos } from '../composables/usePedidos.js'
@@ -150,6 +153,8 @@ const toast = inject('toast', () => {})
 const pend = usePedidos()
 const { pedidos, pending, active, loaded, soundOn } = pend
 const tab = ref('pedidos')
+const doneSale = ref(null)   // factura recién creada (se muestra para enviarla)
+const donePhone = ref('')
 const statusFilter = ref('')
 const payInput = reactive({})
 const carta = ref(null)
@@ -263,7 +268,9 @@ async function facturar(p) {
     }
     const { data } = await api.post(`${base()}/pedidos/${p.id}/facturar`)
     await pend.refresh()
-    toast(`Factura ${data.sale.invoiceNumber} creada`, 'success')
+    // Igual que al facturar una venta normal: se abre la factura para enviarla por WhatsApp / PDF
+    doneSale.value = data.sale
+    donePhone.value = p.customer.phone
   } catch (e) { toast(e.response?.data?.error || 'No se pudo facturar', 'error') }
   finally { busy.value = '' }
 }

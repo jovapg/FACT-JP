@@ -321,11 +321,21 @@ router.put('/sales/:id', authenticate, async (req, res) => {
     await writeJSON(salesPath(req.params.businessId), sales);
 
     // Ajustar los totales del turno (efectivo/banco/área) por el cambio de la venta
+    // Valor del domicilio de la factura = suma de sus líneas "Domicilio" (lo lee el bolsillo Domicilios)
+    const feeOf = (list) => (list || []).filter(i => i.kind === 'domicilio').reduce((a, i) => a + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+    const oldFee = feeOf(oldSale.items), newFee = feeOf(normItems);
+    if (oldSale.source === 'carta' || oldFee || newFee) {
+      sales[idx].deliveryFee = newFee;
+      await writeJSON(salesPath(req.params.businessId), sales);
+    }
+
     await adjustShiftForSaleEdit(req.params.businessId, oldSale, sales[idx]);
 
     await logAudit(req.params.businessId, {
       user: req.user.name || req.user.username, role: req.user.role, action: 'edit_invoice',
-      summary: `Editó la factura ${oldSale.invoiceNumber} (total ${cop(oldSale.total)} → ${cop(finalTotal)})`
+      summary: `Editó la factura ${oldSale.invoiceNumber} (total ${cop(oldSale.total)} → ${cop(finalTotal)}` +
+        (oldFee !== newFee ? `; domicilio ${cop(oldFee)} → ${cop(newFee)}` : '') +
+        (paymentMethod && paymentMethod !== oldSale.paymentMethod ? `; pago ${oldSale.paymentMethod} → ${paymentMethod}` : '') + ')'
     });
 
     res.json({ sale: sales[idx], inventoryAlerts });

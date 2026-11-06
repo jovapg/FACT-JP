@@ -151,7 +151,11 @@
                 <div class="edit-item" v-for="item in editItems" :key="item._itemId">
                   <div class="ei-info">
                     <span class="ei-name">{{ item.name }}</span>
-                    <span class="ei-unit">{{ formatCOP(item.price) }} c/u</span>
+                    <span v-if="item.kind !== 'domicilio'" class="ei-unit">{{ formatCOP(item.price) }} c/u</span>
+                    <!-- El valor del domicilio se puede corregir directamente -->
+                    <span v-else class="ei-unit">Valor del domicilio:
+                      <input v-model.number="item.price" type="number" min="0" step="500" class="ei-fee" />
+                    </span>
                   </div>
                   <div class="ei-controls">
                     <button class="qty-btn" @click="decEditItem(item)">−</button>
@@ -335,7 +339,8 @@ function openEditInvoice(inv) {
     price: Number(i.price) || 0,
     qty: i.qty || i.quantity || 1,
     area: i.area || 'bar',
-    discount: Number(i.discount) || 0
+    discount: Number(i.discount) || 0,
+    kind: i.kind // "domicilio" / "adicion" de los pedidos en línea: se conserva al guardar
   }))
   editPayment.value = inv.paymentMethod || 'efectivo'
   editClient.value = inv.client || ''
@@ -375,7 +380,8 @@ async function saveEditInvoice() {
         price: i.price,
         qty: i.qty,
         area: i.area || 'bar',
-        discount: Number(i.discount) || 0
+        discount: Number(i.discount) || 0,
+        ...(i.kind ? { kind: i.kind } : {})
       })),
       paymentMethod: editPayment.value,
       client: editClient.value
@@ -481,6 +487,7 @@ onMounted(async () => {
 .ei-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ei-name { font-size: 13px; font-weight: 600; }
 .ei-unit { font-size: 11px; color: var(--text-light); }
+.ei-fee { width: 90px; margin-left: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--accent); background: var(--surface-2); color: var(--text); font-weight: 700; }
 .ei-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .qty-btn {
   width: 26px; height: 26px;

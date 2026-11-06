@@ -104,6 +104,9 @@ function formatDateTime(iso) {
 function icon(action) {
   if ((action || '').startsWith('delete')) return '🗑️'
   if ((action || '').startsWith('edit')) return '✏️'
+  if ((action || '').startsWith('pedido_')) return '📦'
+  if ((action || '').includes('domicilio')) return '🛵'
+  if ((action || '').startsWith('carta_')) return '🍗'
   return '•'
 }
 
