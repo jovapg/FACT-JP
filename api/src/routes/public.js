@@ -42,7 +42,7 @@ function publicView(biz, c, profile = {}, isOut = () => false) {
     categories: cats.map(({ id, name, order }) => ({ id, name, order })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
-      soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol,
+      soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol, image: isOut.image ? isOut.image(p.name) : '',
       groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0, collapsed: !!g.collapsed,
         options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '', soldOut: g.type === 'qty' && isOut(o.name) })) }))
     }))

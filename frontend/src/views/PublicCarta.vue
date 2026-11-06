@@ -15,40 +15,63 @@
           <div class="pc-logo">🍗</div>
           <div>
             <h1>{{ data.business.name }}</h1>
-            <p v-if="data.settings.welcome">{{ data.settings.welcome }}</p>
             <p v-if="data.settings.address">📍 {{ data.settings.address }}</p>
-            <p v-if="data.settings.hours" class="pc-hours">🕒 {{ data.settings.hours }}</p>
+            <p v-if="shortHours || data.settings.hours">🕒 {{ shortHours || 'Horarios' }}
+              <button v-if="data.settings.hours" class="pc-more" @click="showInfo = !showInfo">{{ showInfo ? 'Ocultar' : 'Ver más' }}</button></p>
           </div>
         </div>
         <span :class="['pc-state', canOrder ? 'ok' : 'off']">{{ stateText }}</span>
       </header>
+
+      <div v-if="showInfo" class="pc-info">
+        <p v-if="data.settings.welcome">{{ data.settings.welcome }}</p>
+        <p>{{ data.settings.hours }}</p>
+        <p v-if="data.settings.deliveryNote">🛵 {{ data.settings.deliveryNote }}</p>
+      </div>
 
       <div v-if="!canOrder" class="pc-warn">
         {{ data.settings.outOfHours ? 'Estamos fuera del horario de pedidos (' + data.settings.openFrom + ' a ' + data.settings.openTo + ').' : data.settings.paused ? 'Pausamos los pedidos por un momento.' : 'Estamos cerrados.' }}
         Puedes ver la carta; los pedidos se reciben cuando estemos atendiendo.
       </div>
 
-      <!-- Categorías -->
-      <nav class="pc-cats">
-        <button v-for="c in cats" :key="c.id" :class="{ on: c.id === activeCat }" @click="goCat(c.id)">{{ c.name }}</button>
-      </nav>
+      <!-- Buscador -->
+      <div class="pc-searchbar">
+        <input v-model="q" class="pc-search" type="search" placeholder="🔍 Buscar en la carta (ej: coca, alitas, desayuno)" />
+      </div>
 
-      <!-- Productos -->
       <main class="pc-list">
-        <section v-for="c in cats" :key="c.id" :id="'cat-' + c.id">
-          <h2>{{ c.name }}</h2>
-          <button v-for="p in productsOf(c.id)" :key="p.id" class="pc-prod" :disabled="p.soldOut" @click="openProduct(p)">
-            <div class="pc-prod-info">
-              <b>{{ p.name }}</b>
-              <small v-if="p.description">{{ p.description }}</small>
-              <small v-if="p.groups.some(g => g.type !== 'qty')" class="pc-opt">Con opciones</small>
-            </div>
-            <div class="pc-prod-price">
-              <span v-if="p.soldOut" class="pc-sold">Agotado</span>
-              <template v-else><strong>{{ money(p.price) }}</strong><span class="pc-add">+</span></template>
-            </div>
-          </button>
-        </section>
+        <!-- Inicio: categorías como botones grandes -->
+        <template v-if="!q.trim() && !cur">
+          <h2 class="pc-h">¿Qué se te antoja?</h2>
+          <div class="pc-tiles">
+            <button v-for="(g, i) in groups" :key="g.id" class="pc-tile" :style="tileStyle(g, i)" @click="openGroup(g)">
+              <span class="pc-tile-emoji">{{ g.emoji }}</span>
+              <b>{{ g.name }}</b>
+              <small>{{ g.count }} producto{{ g.count === 1 ? '' : 's' }}</small>
+            </button>
+          </div>
+        </template>
+
+        <!-- Dentro de una categoría o con búsqueda -->
+        <template v-else>
+          <button v-if="!q.trim()" class="pc-back" @click="backHome">← Categorías</button>
+          <h2 class="pc-h">{{ q.trim() ? results + ' resultado' + (results === 1 ? '' : 's') : cur.emoji + ' ' + cur.name }}</h2>
+          <p v-if="q.trim() && !results" class="pc-empty">No encontramos eso. Prueba con otra palabra.</p>
+          <section v-for="sec in sections" :key="sec.title">
+            <h3 v-if="sec.title" class="pc-subh">{{ sec.title }}</h3>
+            <button v-for="p in sec.products" :key="p.id" class="pc-prod" :disabled="p.soldOut" @click="openProduct(p)">
+              <span :class="['pc-thumb', p.image && 'photo']" :style="p.image ? { backgroundImage: 'url(' + p.image + ')' } : null">{{ p.image ? '' : emojiOf(p) }}</span>
+              <div class="pc-prod-info">
+                <b>{{ p.name }}</b>
+                <small v-if="p.description" class="pc-desc">{{ p.description }}</small>
+              </div>
+              <div class="pc-prod-price">
+                <span v-if="p.soldOut" class="pc-sold">Agotado</span>
+                <template v-else><strong>{{ money(p.price) }}</strong><span class="pc-add">+</span></template>
+              </div>
+            </button>
+          </section>
+        </template>
         <p class="pc-foot">Precios con IVA e impuestos incluidos. El domicilio se cotiza aparte.</p>
       </main>
 
@@ -226,7 +249,9 @@ const API = '/api/public'
 const loading = ref(true)
 const error = ref('')
 const data = ref(null)
-const activeCat = ref('')
+const q = ref('')            // buscador
+const cur = ref(null)         // categoría abierta (null = menú de inicio)
+const showInfo = ref(false)
 const sel = ref(null)
 const showCart = ref(false)
 const sending = ref(false)
@@ -246,13 +271,12 @@ async function load() {
     const r = await fetch(`${API}/carta/${encodeURIComponent(slug)}`, { cache: 'no-store' })
     if (!r.ok) throw new Error(r.status === 404 ? 'Esta carta no existe o no está disponible.' : 'Intenta de nuevo en un momento.')
     data.value = await r.json()
-    activeCat.value = cats.value[0]?.id || ''
     restore()
   } catch (e) { error.value = e.message } finally { loading.value = false }
 }
 let timer = null
-onMounted(() => { load(); timer = setInterval(refreshState, 60000) })
-onUnmounted(() => clearInterval(timer))
+onMounted(() => { load(); timer = setInterval(refreshState, 60000); window.addEventListener('popstate', onPop) })
+onUnmounted(() => { clearInterval(timer); window.removeEventListener('popstate', onPop) })
 
 /** Cada minuto actualiza abierto/pausado/agotados sin recargar la página */
 async function refreshState() {
@@ -281,15 +305,73 @@ function persist() {
 // ── Derivados ──
 const cats = computed(() => (data.value?.categories || []).filter(c => data.value.products.some(p => p.categoryId === c.id)))
 const productsOf = (id) => data.value.products.filter(p => p.categoryId === id)
+
+// ── Menú de categorías ──
+const DRINK_CATS = ['Aguas', 'Gaseosas y jugos', 'Gaseosas grandes', 'Energizantes, té e hidratantes', 'Cervezas']
+function emojiFor(name) {
+  const n = String(name).toLowerCase()
+  if (/bebida|gaseosa|jugo/.test(n)) return '🥤'
+  if (/agua/.test(n)) return '💧'
+  if (/cerveza/.test(n)) return '🍺'
+  if (/energ/.test(n)) return '⚡'
+  if (/desayuno/.test(n)) return '🍳'
+  if (/consom/.test(n)) return '🍲'
+  if (/alita/.test(n)) return '🔥'
+  if (/adicion/.test(n)) return '🍟'
+  if (/frito/.test(n)) return '🥟'
+  if (/caliente/.test(n)) return '☕'
+  if (/combo|compartir/.test(n)) return '🍱'
+  return '🍗'
+}
+const groups = computed(() => {
+  const out = [], drink = []
+  for (const c of cats.value) {
+    const count = productsOf(c.id).length
+    if (DRINK_CATS.includes(c.name)) { drink.push({ ...c, count }); if (drink.length === 1) out.push({ id: 'bebidas', name: 'Bebidas', emoji: '🥤', cats: drink, count: 0 }); continue }
+    out.push({ id: c.id, name: c.name, emoji: emojiFor(c.name), cats: [c], count })
+  }
+  for (const g of out) if (g.id === 'bebidas') g.count = g.cats.reduce((a, c) => a + c.count, 0)
+  return out
+})
+const catEmoji = computed(() => Object.fromEntries(cats.value.map(c => [c.id, DRINK_CATS.includes(c.name) ? emojiFor(c.name) : emojiFor(c.name)])))
+const emojiOf = (p) => catEmoji.value[p.categoryId] || '🍗'
+const TILE = [['#ffedd5', '#7c2d12'], ['#fef3c7', '#78350f'], ['#fee2e2', '#7f1d1d'], ['#dcfce7', '#14532d'], ['#fef9c3', '#713f12'], ['#e0f2fe', '#0c4a6e'], ['#fae8ff', '#701a75'], ['#ccfbf1', '#134e4a']]
+function tileStyle(g, i) {
+  const photo = g.cats.flatMap(c => productsOf(c.id)).find(p => p.image)?.image
+  if (photo) return { backgroundImage: `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url(${photo})`, backgroundSize: 'cover', backgroundPosition: 'center', color: '#fff' }
+  const [bg, fg] = TILE[i % TILE.length]
+  return { background: bg, color: fg }
+}
+// Lo que se muestra: resultados de búsqueda o los productos de la categoría abierta
+const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const sections = computed(() => {
+  if (q.value.trim()) {
+    const words = norm(q.value).split(/\s+/).filter(Boolean)
+    return [{ title: '', products: data.value.products.filter(p => words.every(w => norm(p.name + ' ' + (p.description || '')).includes(w))) }]
+  }
+  return cur.value ? cur.value.cats.map(c => ({ title: cur.value.cats.length > 1 ? c.name : '', products: productsOf(c.id) })) : []
+})
+const results = computed(() => sections.value.reduce((a, s2) => a + s2.products.length, 0))
+function openGroup(g) {
+  cur.value = g; q.value = ''
+  try { history.pushState({ ...(history.state || {}), pcCat: g.id }, '') } catch { /* sin historial */ }
+  window.scrollTo(0, 0)
+}
+function backHome() {
+  if (history.state && history.state.pcCat) history.back()
+  else cur.value = null
+}
+const onPop = () => { cur.value = null; window.scrollTo(0, 0) }   // el botón "atrás" del celular vuelve al menú
+// "7:00 am – 8:00 pm" a partir del horario de pedidos
+const shortHours = computed(() => {
+  const f = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ''); if (!m) return ''; const h = +m[1]; return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'am' : 'pm'}` }
+  const a = f(data.value?.settings.openFrom), b = f(data.value?.settings.openTo)
+  return a && b ? `${a} – ${b}` : ''
+})
 const canOrder = computed(() => !!data.value && data.value.settings.open && !data.value.settings.paused)
 const stateText = computed(() => !data.value.settings.open ? 'Cerrado' : data.value.settings.paused ? 'Pedidos en pausa' : 'Abierto')
 const bankLines = computed(() => String(data.value?.settings.bankInfo || '').split('·').map(x => x.trim()).filter(Boolean))
 const threshold = computed(() => data.value?.settings.freeDeliveryFrom || 0)
-
-function goCat(id) {
-  activeCat.value = id
-  document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
 
 // ── Producto ──
 function openProduct(p) {
@@ -426,16 +508,32 @@ function waLink(d) {
 .pc-state { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
 .pc-state.ok { background: #16a34a; } .pc-state.off { background: #44403c; }
 .pc-warn { background: #fef3c7; color: #78350f; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid #fde68a; }
+.pc-more { background: none; border: 0; color: #fff; text-decoration: underline; font: 600 11px Inter, system-ui, sans-serif; cursor: pointer; padding: 0 0 0 6px; opacity: .95; }
+.pc-info { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px; font-size: 13px; color: #44403c; line-height: 1.5; }
+.pc-info p { margin: 0 0 4px; }
+.pc-searchbar { padding: 10px 12px 0; max-width: 720px; margin: 0 auto; }
+.pc-search { width: 100%; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 12px; padding: 11px 14px; font: 400 15px Inter, system-ui, sans-serif; }
+.pc-search:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
+.pc-h { font-size: 18px; margin: 16px 4px 10px; }
+.pc-subh { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--red2); margin: 16px 4px 6px; }
+.pc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pc-tile { border: 0; border-radius: 16px; padding: 14px 12px; min-height: 108px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; text-align: left; cursor: pointer; font-family: inherit; }
+.pc-tile-emoji { font-size: 30px; line-height: 1; margin-bottom: 6px; }
+.pc-tile b { font-size: 15px; line-height: 1.2; } .pc-tile small { font-size: 12px; opacity: .85; }
+.pc-back { background: none; border: 0; color: var(--red); font: 700 14px Inter, system-ui, sans-serif; cursor: pointer; padding: 12px 4px 0; }
+.pc-empty { color: var(--mut); text-align: center; padding: 24px 0; }
+.pc-thumb { width: 46px; height: 46px; border-radius: 12px; background: #ffedd5; display: grid; place-items: center; font-size: 22px; flex: none; background-size: cover; background-position: center; }
+.pc-desc { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .pc-cats { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px; background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: none; }
 .pc-cats::-webkit-scrollbar { display: none; }
 .pc-cats button { flex: none; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 7px 14px; font: 600 13px Inter, system-ui, sans-serif; cursor: pointer; }
 .pc-cats button.on { background: var(--red); border-color: var(--red); color: #fff; }
 .pc-list { max-width: 720px; margin: 0 auto; padding: 4px 12px; }
 .pc-list h2 { font-size: 16px; margin: 20px 4px 8px; scroll-margin-top: 64px; }
-.pc-prod { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; background: #fff; color: var(--ink);
+.pc-prod { width: 100%; display: flex; justify-content: flex-start; align-items: center; gap: 12px; text-align: left; background: #fff; color: var(--ink);
   border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font-family: inherit; }
 .pc-prod:disabled { opacity: .55; cursor: not-allowed; }
-.pc-prod-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pc-prod-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .pc-prod-info b { font-size: 15px; } .pc-prod-info small { color: var(--mut); font-size: 12px; }
 .pc-opt { color: var(--red) !important; font-weight: 600; }
 .pc-prod-price { display: flex; align-items: center; gap: 10px; flex: none; }

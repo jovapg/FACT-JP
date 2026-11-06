@@ -248,8 +248,12 @@ async function syncInventory(businessId) {
  */
 async function stockCheck(businessId) {
   const inv = await readJSON(path.join(getBusinessPath(businessId), 'inventory.json')) || [];
-  const out = new Set(inv.filter(i => !i.noStock && (Number(i.stock) || 0) <= 0).map(i => String(i.name).toLowerCase().trim()));
-  return (name) => out.has(String(name).toLowerCase().trim());
+  const key = (n) => String(n).toLowerCase().trim();
+  const out = new Set(inv.filter(i => !i.noStock && (Number(i.stock) || 0) <= 0).map(i => key(i.name)));
+  const img = new Map(inv.filter(i => i.imageUrl).map(i => [key(i.name), i.imageUrl]));
+  const fn = (name) => out.has(key(name));
+  fn.image = (name) => img.get(key(name)) || ''; // foto del producto, la que se sube en Inventario
+  return fn;
 }
 
 async function readCarta(businessId) {
