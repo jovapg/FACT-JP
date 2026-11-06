@@ -29,6 +29,9 @@
               <button class="btn btn-sm btn-outline" @click="toggleRecipes(biz)" title="Activar o quitar la pantalla de Recetas">
                 🍳 Recetas: {{ biz.usesRecipes === false ? 'No' : 'Sí' }}
               </button>
+              <button class="btn btn-sm btn-outline" @click="loadCarta(biz)" title="Activa pedidos en línea y carga la carta de Deli-Combos">
+                🛵 Pedidos en línea
+              </button>
               <button class="btn btn-sm btn-outline" @click="toggleActive(biz)">
                 {{ biz.active ? '🔴 Desactivar' : '🟢 Activar' }}
               </button>
@@ -400,6 +403,16 @@ async function toggleRecipes(biz) {
     toast(`Recetas ${next ? 'activadas' : 'desactivadas'} en "${biz.name}"`, 'success')
   } catch (err) {
     toast(err.response?.data?.error || 'Error al cambiar', 'error')
+  }
+}
+
+async function loadCarta(biz) {
+  if (!window.confirm(`¿Activar pedidos en línea en "${biz.name}" y cargar la carta de Deli-Combos?`)) return
+  try {
+    const res = await api.post(`/api/${biz.id}/carta/load-default`, {})
+    toast(`Carta cargada (${res.data.products} productos). Link: /carta/${biz.slug}`, 'success')
+  } catch (err) {
+    toast(err.response?.status === 409 ? 'Este negocio ya tiene carta cargada' : (err.response?.data?.error || 'No se pudo cargar la carta'), 'error')
   }
 }
 
