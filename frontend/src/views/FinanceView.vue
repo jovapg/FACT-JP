@@ -48,6 +48,9 @@
         </div>
       </div>
 
+      <!-- Bolsillo Domicilios (solo negocios con pedidos en línea) -->
+      <DomiciliosPocket v-if="businessStore.profile?.cartaOnline" @changed="load" />
+
       <!-- Resumen del mes (referencia, no afecta saldos) -->
       <div class="card ref-card mb-3">
         <div class="ref-head">
@@ -385,7 +388,10 @@ import { ref, computed, onMounted, inject } from 'vue'
 import { useFinanceStore } from '../stores/finance.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
+import DomiciliosPocket from '../components/DomiciliosPocket.vue'
+import { useBusinessStore } from '../stores/business.js'
 
+const businessStore = useBusinessStore()
 const finance = useFinanceStore()
 const auth = useAuthStore()
 const toast = inject('toast')
@@ -463,9 +469,10 @@ const KIND_LABELS = {
   credito: '💳 Crédito',
   retiro: '🏧 Retiros de caja',
   cajamenor: '🧾 Caja menor',
+  domicilio: '🛵 Domiciliario y moto',
   manual: '✏️ Otros (manual)'
 }
-const KIND_ORDER = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'credito', 'retiro', 'cajamenor', 'manual']
+const KIND_ORDER = ['reponer', 'gasto', 'proveedor', 'nomina', 'arriendo', 'credito', 'retiro', 'cajamenor', 'domicilio', 'manual']
 
 const salidasSummary = computed(() => {
   const rows = {}

@@ -32,7 +32,8 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Cachea rutas /api/* sin importar el host — funciona en local, VPS con IP o con dominio
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            // La carta pública NO se cachea: precios y "agotado" deben ser siempre los de ahora
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/public/'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

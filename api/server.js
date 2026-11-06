@@ -192,6 +192,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/backups', require('./src/routes/backups'));   // respaldos (solo superadmin)
 app.use('/api/system-events', require('./src/routes/systemEvents')); // problemas del sistema (solo superadmin)
+app.use('/api/public', require('./src/routes/public'));      // carta y pedidos públicos (sin login, con límites por IP)
 
 // Rutas de negocio: authenticate + requireBusinessAccess aplicados a nivel de mount.
 // Esto garantiza que cualquier usuario no-superadmin solo pueda acceder a su propio negocio.
@@ -233,6 +234,7 @@ app.use('/api/:businessId', bizAccess, debtorsRoutes);
 app.use('/api/:businessId', bizAccess, financeRoutes);
 app.use('/api/:businessId', bizAccess, payrollRoutes);
 app.use('/api/:businessId', bizAccess, auditRoutes);
+app.use('/api/:businessId', bizAccess, require('./src/routes/carta')); // carta y pedidos en línea
 app.use('/api/:businessId', bizAccess, shortlinksRouter);
 
 // Ruta pública para links cortos de PDF — no requiere autenticación
@@ -286,7 +288,7 @@ app.put('/api/:businessId/profile', ...bizAccess, async (req, res) => {
     if (req.body.name !== undefined && !String(req.body.name).trim()) updated.name = existing.name;
     // Recetas, ícono y forma de trabajo de los espacios los define solo el superadmin (desde Franquicias)
     if (req.user.role !== 'superadmin') {
-      for (const k of ['usesRecipes', 'icon', 'spaceLabel', 'spaceLabelPlural', 'recipesLabel', 'multiOrders', 'spaceNames', 'modules']) {
+      for (const k of ['usesRecipes', 'icon', 'spaceLabel', 'spaceLabelPlural', 'recipesLabel', 'multiOrders', 'spaceNames', 'modules', 'cartaOnline']) {
         if (existing[k] === undefined) delete updated[k];
         else updated[k] = existing[k];
       }

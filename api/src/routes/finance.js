@@ -216,8 +216,100 @@ async function buildMovements(id) {
     });
   }
 
+  // 6. Domicilios: pago al domiciliario y gastos de la moto (salidas reales de dinero).
+  // El valor del domicilio YA entra con la venta; aquí solo salen los pagos.
+  for (const d of await loadDomicilios(id)) moves.push({
+    id: `dom-${d.id}`, date: d.date, type: 'egreso', area: 'general',
+    bucket: d.bucket === 'banco' ? 'banco' : 'efectivo', amount: d.amount || 0,
+    label: d.kind === 'moto' ? `Moto: ${d.note || 'gasto'}` : `Domiciliario${d.note ? ': ' + d.note : ''}`,
+    kind: 'domicilio', source: 'domicilios', locked: true
+  });
+
   return moves;
 }
+
+// ───────────────────────── Bolsillo Domicilios ─────────────────────────
+const domiciliosPath = (id) => path.join(getBusinessPath(id), 'domicilios.json');
+async function loadDomicilios(id) {
+  const d = await readJSON(domiciliosPath(id));
+  return Array.isArray(d) ? d : [];
+}
+/** Día calendario colombiano (UTC-5) de una fecha ISO: 'yyyy-mm-dd' */
+const cotDay = (iso) => new Date(new Date(iso).getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+
+/** Valor de domicilio cobrado en una venta (suma de sus líneas "domicilio") */
+function feeOfSale(s) {
+  const fromItems = (s.items || []).filter(i => i.kind === 'domicilio').reduce((a, i) => a + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
+  return fromItems || Number(s.deliveryFee) || 0;
+}
+
+/**
+ * GET /finance/domicilios?date=yyyy-mm-dd — Bolsillo Domicilios.
+ * Entra: el domicilio cobrado en cada venta. Sale: pago al domiciliario (con incentivos) y gastos de la moto.
+ * Devuelve el día pedido (hoy por defecto) y el saldo acumulado (puede quedar negativo si hubo domicilios gratis).
+ */
+router.get('/finance/domicilios', authenticate, adminOnly, async (req, res) => {
+  try {
+    const id = req.params.businessId;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : cotDay(new Date().toISOString());
+    const sales = (await readJSON(salesPath(id)) || []).filter(s => s.source === 'carta' || feeOfSale(s) > 0);
+    const payouts = await loadDomicilios(id);
+
+    let inAll = 0, outAll = 0, inDay = 0, outDay = 0, delivs = 0, free = 0;
+    for (const s of sales) {
+      const fee = feeOfSale(s);
+      inAll += fee;
+      const isDelivery = s.source === 'carta' && (s.notes || '').includes('domicilio');
+      if (cotDay(s.createdAt) === day) { inDay += fee; if (isDelivery) { delivs++; if (!fee) free++; } }
+    }
+    for (const p of payouts) { outAll += p.amount || 0; if (cotDay(p.date) === day) outDay += p.amount || 0; }
+
+    res.json({
+      date: day, ingresosDia: inDay, salidasDia: outDay, saldo: inAll - outAll,
+      domiciliosDia: delivs, gratisDia: free,
+      salidas: payouts.filter(p => cotDay(p.date) === day).sort((a, b) => new Date(b.date) - new Date(a.date))
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+/**
+ * POST /finance/domicilios — Registra una salida del bolsillo.
+ * Body: { kind: 'pago'|'moto', amount, incentive?, note?, bucket?: 'efectivo'|'banco' }
+ *   pago → pago del día al domiciliario; el incentivo se SUMA al pago (queda guardado aparte para verlo).
+ *   moto → gasto de la moto (gasolina, mantenimiento…).
+ */
+router.post('/finance/domicilios', authenticate, adminOnly, async (req, res) => {
+  try {
+    const id = req.params.businessId;
+    const kind = req.body.kind === 'moto' ? 'moto' : 'pago';
+    const base = Math.round(Number(req.body.amount) || 0);
+    const incentive = kind === 'pago' ? Math.max(0, Math.round(Number(req.body.incentive) || 0)) : 0;
+    if (base < 0 || base + incentive <= 0) return res.status(400).json({ error: 'Escribe un valor mayor a cero' });
+    const list = await loadDomicilios(id);
+    const rec = {
+      id: uuidv4(), date: new Date().toISOString(), kind,
+      amount: base + incentive, base, incentive,
+      note: String(req.body.note || '').trim().slice(0, 120),
+      bucket: req.body.bucket === 'banco' ? 'banco' : 'efectivo',
+      by: req.user.name || req.user.username
+    };
+    list.push(rec);
+    await writeJSON(domiciliosPath(id), list);
+    res.status(201).json(rec);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+/** DELETE /finance/domicilios/:id — Borra una salida registrada por error */
+router.delete('/finance/domicilios/:id', authenticate, adminOnly, async (req, res) => {
+  try {
+    const id = req.params.businessId;
+    const list = await loadDomicilios(id);
+    const next = list.filter(x => x.id !== req.params.id);
+    if (next.length === list.length) return res.status(404).json({ error: 'No encontrado' });
+    await writeJSON(domiciliosPath(id), next);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
 
 /** Aplica un movimiento sobre el objeto de saldos */
 function applyMovement(bal, m) {

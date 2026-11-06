@@ -23,6 +23,13 @@ const routes = [
     meta: { public: true } // Accesible sin sesión; redirige al dashboard si ya hay sesión
   },
   {
+    // Carta pública para clientes (sin login, ni menú de la app)
+    path: '/carta/:slug',
+    name: 'carta-publica',
+    component: () => import('../views/PublicCarta.vue'),
+    meta: { openToAll: true }
+  },
+  {
     path: '/select-business',
     name: 'select-business',
     component: () => import('../views/BusinessSelector.vue'),
@@ -43,6 +50,12 @@ const routes = [
     name: 'tables',
     component: () => import('../views/TablesView.vue'),
     meta: { requiresAuth: true, requiresBusiness: true }
+  },
+  {
+    path: '/pedidos',
+    name: 'pedidos',
+    component: () => import('../views/PedidosView.vue'),
+    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin', 'cajero'] }
   },
   {
     path: '/inventory',
@@ -149,6 +162,8 @@ const MODULE_ROUTES = { '/debtors': 'debtors', '/payroll': 'payroll', '/finance'
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
+
+  if (to.meta.openToAll) return next() // la carta pública se ve con o sin sesión
 
   const moduleKey = MODULE_ROUTES[to.path]
   if (moduleKey && authStore.currentBusiness?.modules?.[moduleKey] === false) {

@@ -62,12 +62,13 @@ import { useInventoryStore } from '../stores/inventory.js'
 import { usePayrollStore } from '../stores/payroll.js'
 import { useBusinessStore } from '../stores/business.js'
 import { useMenu } from '../composables/useMenu.js'
+import { usePedidos } from '../composables/usePedidos.js'
 import { businessIconFor } from '../utils/businessIcons.js'
 import { useSpaces } from '../composables/useSpaces.js'
 import {
   LayoutDashboard, Store, Package, BookOpen,
   ShoppingCart, Truck, BarChart3, Receipt, Settings, Building2,
-  ChevronLeft, ChevronRight, Clock, Wallet, PiggyBank, History, CalendarClock
+  ChevronLeft, ChevronRight, Clock, Wallet, PiggyBank, History, CalendarClock, ShoppingBag
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -75,6 +76,7 @@ const businessStore = useBusinessStore()
 const spaces = useSpaces()
 // Ícono del negocio (si no tiene logo): el que eligió el superadmin, neutro por defecto
 const businessIcon = computed(() => businessIconFor(businessStore.profile?.icon))
+const pedidosState = usePedidos()
 const inventoryStore = useInventoryStore()
 const payrollStore = usePayrollStore()
 const route = useRoute()
@@ -85,6 +87,7 @@ const isMobile = ref(false)
 const menuItems = [
   { path: '/dashboard',        label: 'Dashboard',       icon: LayoutDashboard,  roles: ['superadmin','admin','cajero'] },
   { path: '/tables',           label: 'Registrar Venta', icon: Store,  roles: ['superadmin','admin','cajero'] },
+  { path: '/pedidos',          label: 'Pedidos en línea', icon: ShoppingBag,     roles: ['superadmin','admin','cajero'] },
   { path: '/inventory',        label: 'Inventario',      icon: Package,          roles: ['superadmin','admin','cajero'] },
   { path: '/recipes',          label: 'Recetas / Menú',  icon: BookOpen,         roles: ['superadmin','admin'] },
   { path: '/purchases',        label: 'Salidas',         icon: ShoppingCart,     roles: ['superadmin','admin'] },
@@ -108,12 +111,15 @@ const visibleMenuItems = computed(() => {
   return menuItems
     .filter(item => item.roles.includes(role))
     .filter(item => item.path !== '/recipes' || businessStore.usesRecipes)
+    .filter(item => item.path !== '/pedidos' || businessStore.profile?.cartaOnline)
     .filter(item => !MODULE_BY_PATH[item.path] || spaces.has(MODULE_BY_PATH[item.path]))
     .map(item => ({
     ...item,
     // El módulo de recetas puede llamarse Combos (u otro nombre) según el negocio
     label: item.path === '/recipes' && spaces.recipesLabel !== 'Recetas' ? spaces.recipesLabel : item.label,
     badge: item.path === '/inventory' ? inventoryStore.lowStockItems.length
+      // Pedidos en línea: pedidos nuevos por confirmar
+      : item.path === '/pedidos' ? pedidosState.pending.value.length
       // Badge rojo en Nómina: días pendientes por aprobar (solo lo ve el admin)
       : (item.path === '/payroll' && auth.isAdmin) ? payrollStore.pendingCount
       // Bitácora: problemas del sistema sin revisar (solo el superadmin)
@@ -155,6 +161,9 @@ watch(() => route.path, () => {
   if (isMobile.value) closeMenu()
   refreshSystemOpen()
 })
+
+// Si el negocio tiene carta en línea, se consultan los pedidos nuevos (contador + aviso sonoro) desde cualquier pantalla
+watch(() => businessStore.profile?.cartaOnline, (on) => { if (on) pedidosState.start() }, { immediate: true })
 
 onMounted(() => {
   handleResize(); window.addEventListener('resize', handleResize)

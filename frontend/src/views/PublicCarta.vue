@@ -1,0 +1,462 @@
+<template>
+  <div class="pc">
+    <!-- Cargando / error -->
+    <div v-if="loading" class="pc-center">Cargando la carta…</div>
+    <div v-else-if="error" class="pc-center">
+      <h2>No pudimos abrir la carta</h2>
+      <p>{{ error }}</p>
+      <button class="pc-btn" @click="load">Reintentar</button>
+    </div>
+
+    <template v-else>
+      <!-- Encabezado -->
+      <header class="pc-head">
+        <div class="pc-brand">
+          <div class="pc-logo">🍗</div>
+          <div>
+            <h1>{{ data.business.name }}</h1>
+            <p v-if="data.settings.welcome">{{ data.settings.welcome }}</p>
+            <p v-else-if="data.settings.hours">{{ data.settings.hours }}</p>
+          </div>
+        </div>
+        <span :class="['pc-state', canOrder ? 'ok' : 'off']">{{ stateText }}</span>
+      </header>
+
+      <div v-if="!canOrder" class="pc-warn">
+        {{ data.settings.open ? 'Pausamos los pedidos por un momento.' : 'Estamos cerrados.' }}
+        Puedes ver la carta; los pedidos se reciben cuando estemos atendiendo.
+      </div>
+
+      <!-- Categorías -->
+      <nav class="pc-cats">
+        <button v-for="c in cats" :key="c.id" :class="{ on: c.id === activeCat }" @click="goCat(c.id)">{{ c.name }}</button>
+      </nav>
+
+      <!-- Productos -->
+      <main class="pc-list">
+        <section v-for="c in cats" :key="c.id" :id="'cat-' + c.id">
+          <h2>{{ c.name }}</h2>
+          <button v-for="p in productsOf(c.id)" :key="p.id" class="pc-prod" :disabled="p.soldOut" @click="openProduct(p)">
+            <div class="pc-prod-info">
+              <b>{{ p.name }}</b>
+              <small v-if="p.description">{{ p.description }}</small>
+              <small v-if="p.groups.some(g => g.type !== 'qty')" class="pc-opt">Con opciones</small>
+            </div>
+            <div class="pc-prod-price">
+              <span v-if="p.soldOut" class="pc-sold">Agotado</span>
+              <template v-else><strong>{{ money(p.price) }}</strong><span class="pc-add">+</span></template>
+            </div>
+          </button>
+        </section>
+        <p class="pc-foot">Precios con IVA e impuestos incluidos. El domicilio se cotiza aparte.</p>
+      </main>
+
+      <!-- Barra del carrito -->
+      <button v-if="cart.length" class="pc-bar" @click="showCart = true">
+        <span class="pc-bar-n">{{ cartCount }}</span>
+        <span>Ver mi pedido</span>
+        <strong>{{ money(cartSubtotal) }}</strong>
+      </button>
+    </template>
+
+    <!-- Hoja de producto -->
+    <div v-if="sel" class="pc-sheet-bg" @click.self="sel = null">
+      <div class="pc-sheet" role="dialog" aria-modal="true">
+        <div class="pc-sheet-top">
+          <div><h3>{{ sel.product.name }}</h3><small>{{ sel.product.description }}</small></div>
+          <button class="pc-x" aria-label="Cerrar" @click="sel = null">✕</button>
+        </div>
+        <div class="pc-sheet-body">
+          <div v-for="g in sel.product.groups" :key="g.id" class="pc-group">
+            <div class="pc-group-h">
+              <b>{{ g.name }}</b>
+              <span v-if="g.type === 'one'" :class="['pc-tag', g.required && 'req']">{{ g.required ? 'Obligatorio · escoge 1' : 'Escoge 1' }}</span>
+              <span v-else-if="g.type === 'many'" class="pc-tag">Hasta {{ g.max }}</span>
+              <span v-else class="pc-tag">Opcional</span>
+            </div>
+            <template v-if="g.type === 'one'">
+              <label v-for="o in g.options" :key="o.id" class="pc-row">
+                <input type="radio" :name="g.id" :value="o.id" v-model="sel.pick[g.id]" />
+                <span>{{ o.name }}</span><em v-if="o.price">+{{ money(o.price) }}</em>
+              </label>
+            </template>
+            <template v-else-if="g.type === 'many'">
+              <label v-for="o in g.options" :key="o.id" class="pc-row">
+                <input type="checkbox" :checked="sel.pick[g.id].includes(o.id)" @change="toggleMany(g, o.id, $event)" />
+                <span>{{ o.name }}</span><em v-if="o.price">+{{ money(o.price) }}</em>
+              </label>
+            </template>
+            <template v-else>
+              <div v-for="o in g.options" :key="o.id" class="pc-row qty">
+                <span>{{ o.name }}</span><em>{{ money(o.price) }}</em>
+                <div class="pc-step">
+                  <button :disabled="!sel.pick[g.id][o.id]" @click="step(g, o, -1)">−</button>
+                  <b>{{ sel.pick[g.id][o.id] || 0 }}</b>
+                  <button @click="step(g, o, 1)">+</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <label class="pc-group">
+            <div class="pc-group-h"><b>Nota para este producto</b><span class="pc-tag">Opcional</span></div>
+            <input v-model="sel.note" class="pc-in" maxlength="140" placeholder="Ej: sin cebolla, bien doradito" />
+          </label>
+        </div>
+        <p v-if="sel.err" class="pc-err">{{ sel.err }}</p>
+        <div class="pc-sheet-foot">
+          <div class="pc-step big">
+            <button :disabled="sel.qty <= 1" @click="sel.qty--">−</button><b>{{ sel.qty }}</b><button @click="sel.qty = Math.min(50, sel.qty + 1)">+</button>
+          </div>
+          <button class="pc-btn grow" @click="addToCart">Agregar · {{ money(selTotal) }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hoja del pedido -->
+    <div v-if="showCart" class="pc-sheet-bg" @click.self="showCart = false">
+      <div class="pc-sheet tall" role="dialog" aria-modal="true">
+        <div class="pc-sheet-top">
+          <h3>Tu pedido</h3>
+          <button class="pc-x" aria-label="Cerrar" @click="showCart = false">✕</button>
+        </div>
+
+        <div v-if="done" class="pc-sheet-body pc-done">
+          <div class="pc-ok">✓</div>
+          <h3>¡Pedido recibido!</h3>
+          <p class="pc-code">#{{ done.code }}</p>
+          <p>Para confirmarlo, <b>envíanos tu pedido por WhatsApp</b>. Así te pedimos tu ubicación y te decimos el valor del domicilio.
+            Si pasan 15 minutos sin confirmar, el pedido se cancela solo.</p>
+          <a class="pc-btn wa" :href="waLink(done)" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+          <button class="pc-link" @click="finish">Hacer otro pedido</button>
+        </div>
+
+        <template v-else>
+          <div class="pc-sheet-body">
+            <div v-for="(l, i) in cart" :key="l.key" class="pc-line">
+              <div class="pc-line-main">
+                <b>{{ l.qty }} × {{ l.product.name }}</b>
+                <small v-if="lineChoices(l)">{{ lineChoices(l) }}</small>
+                <small v-for="x in lineExtras(l)" :key="x">+ {{ x }}</small>
+                <small v-if="l.note" class="note">“{{ l.note }}”</small>
+              </div>
+              <div class="pc-line-side">
+                <strong>{{ money(lineTotal(l)) }}</strong>
+                <button class="pc-link red" @click="cart.splice(i, 1)">Quitar</button>
+              </div>
+            </div>
+
+            <div class="pc-total"><span>Subtotal</span><strong>{{ money(cartSubtotal) }}</strong></div>
+
+            <!-- Domicilio -->
+            <div :class="['pc-dom', free && form.mode === 'domicilio' && 'free']">
+              <template v-if="form.mode === 'recoger'">Recoges en el local: sin costo de domicilio.</template>
+              <template v-else-if="free">🎉 ¡Domicilio gratis en este pedido!</template>
+              <template v-else-if="threshold">
+                <b>El valor de tu pedido no incluye el domicilio.</b> Te pediremos tu ubicación por WhatsApp para calcularlo.
+                Te faltan <b>{{ money(threshold - cartSubtotal) }}</b> para domicilio gratis.
+                <div class="pc-prog"><i :style="{ width: Math.min(100, cartSubtotal / threshold * 100) + '%' }"></i></div>
+              </template>
+              <template v-else><b>El valor de tu pedido no incluye el domicilio.</b> Te pediremos tu ubicación por WhatsApp para calcularlo.</template>
+            </div>
+
+            <!-- Datos -->
+            <div v-if="data.settings.pickup" class="pc-seg">
+              <button :class="{ on: form.mode === 'domicilio' }" @click="form.mode = 'domicilio'">🛵 Domicilio</button>
+              <button :class="{ on: form.mode === 'recoger' }" @click="form.mode = 'recoger'">🏪 Recoger</button>
+            </div>
+            <input v-model="form.name" class="pc-in" maxlength="60" placeholder="Tu nombre" autocomplete="name" />
+            <input v-model="form.phone" class="pc-in" inputmode="tel" maxlength="15" placeholder="Tu celular" autocomplete="tel" />
+            <input v-if="form.mode === 'domicilio'" v-model="form.address" class="pc-in" maxlength="160" placeholder="Dirección y barrio" autocomplete="street-address" />
+            <input v-model="form.notes" class="pc-in" maxlength="200" placeholder="Indicaciones (opcional)" />
+
+            <div class="pc-seg">
+              <button :class="{ on: form.payment === 'efectivo' }" @click="form.payment = 'efectivo'">💵 Efectivo</button>
+              <button :class="{ on: form.payment === 'transferencia' }" @click="form.payment = 'transferencia'">🏦 Transferencia</button>
+            </div>
+            <input v-if="form.payment === 'efectivo'" v-model="form.cashFor" class="pc-in" inputmode="numeric" maxlength="9" placeholder="¿Con cuánto pagas? (opcional)" />
+            <p v-else class="pc-hint">Te enviamos los datos de transferencia por WhatsApp al confirmar.</p>
+
+            <label v-if="hasAlcohol" class="pc-check"><input type="checkbox" v-model="form.adult" /> Confirmo que soy mayor de 18 años (licor).</label>
+            <label class="pc-check"><input type="checkbox" v-model="form.privacy" />
+              Autorizo el uso de mis datos (nombre, celular, dirección) solo para atender este pedido, según la Ley 1581 de 2012.</label>
+          </div>
+          <p v-if="formErr" class="pc-err">{{ formErr }}</p>
+          <div class="pc-sheet-foot">
+            <button class="pc-btn grow" :disabled="sending || !canOrder || !cart.length" @click="send">
+              {{ sending ? 'Enviando…' : canOrder ? 'Enviar pedido · ' + money(cartSubtotal) : 'No estamos recibiendo pedidos' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+/**
+ * PublicCarta.vue — Carta interactiva para clientes (sin login).
+ * Usa fetch directo (no el cliente `api`): esta página no debe mandar token ni
+ * redirigir al login si algo responde 401.
+ * Los precios que se ven aquí son solo informativos: el servidor los recalcula.
+ */
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const slug = route.params.slug
+const API = '/api/public'
+
+const loading = ref(true)
+const error = ref('')
+const data = ref(null)
+const activeCat = ref('')
+const sel = ref(null)
+const showCart = ref(false)
+const sending = ref(false)
+const formErr = ref('')
+const done = ref(null)
+const cart = ref([])
+const form = reactive({ mode: 'domicilio', name: '', phone: '', address: '', notes: '', payment: 'efectivo', cashFor: '', adult: false, privacy: false })
+
+const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+const lsGet = (k) => { try { return localStorage.getItem(k) } catch { return null } }
+const lsSet = (k, v) => { try { localStorage.setItem(k, v) } catch { /* sin almacenamiento: no pasa nada */ } }
+
+// ── Carga ──
+async function load() {
+  loading.value = true; error.value = ''
+  try {
+    const r = await fetch(`${API}/carta/${encodeURIComponent(slug)}`, { cache: 'no-store' })
+    if (!r.ok) throw new Error(r.status === 404 ? 'Esta carta no existe o no está disponible.' : 'Intenta de nuevo en un momento.')
+    data.value = await r.json()
+    activeCat.value = cats.value[0]?.id || ''
+    restore()
+  } catch (e) { error.value = e.message } finally { loading.value = false }
+}
+let timer = null
+onMounted(() => { load(); timer = setInterval(refreshState, 60000) })
+onUnmounted(() => clearInterval(timer))
+
+/** Cada minuto actualiza abierto/pausado/agotados sin recargar la página */
+async function refreshState() {
+  if (!data.value || sel.value || sending.value) return
+  try {
+    const r = await fetch(`${API}/carta/${encodeURIComponent(slug)}`, { cache: 'no-store' })
+    if (r.ok) data.value = await r.json()
+  } catch { /* sin internet: se queda con lo que tiene */ }
+}
+
+// Pedido en curso y datos del cliente se recuerdan en el teléfono
+function restore() {
+  try {
+    const saved = JSON.parse(lsGet('dc_form_' + slug) || '{}')
+    for (const k of ['name', 'phone', 'address']) if (saved[k]) form[k] = saved[k]
+    const c = JSON.parse(lsGet('dc_cart_' + slug) || '[]')
+    const ids = new Map(data.value.products.map(p => [p.id, p]))
+    cart.value = c.filter(l => ids.has(l.productId)).map(l => ({ ...l, product: ids.get(l.productId) }))
+  } catch { /* datos viejos o dañados: se ignoran */ }
+}
+function persist() {
+  lsSet('dc_cart_' + slug, JSON.stringify(cart.value.map(({ product, ...l }) => l)))
+  lsSet('dc_form_' + slug, JSON.stringify({ name: form.name, phone: form.phone, address: form.address }))
+}
+
+// ── Derivados ──
+const cats = computed(() => (data.value?.categories || []).filter(c => data.value.products.some(p => p.categoryId === c.id)))
+const productsOf = (id) => data.value.products.filter(p => p.categoryId === id)
+const canOrder = computed(() => !!data.value && data.value.settings.open && !data.value.settings.paused)
+const stateText = computed(() => !data.value.settings.open ? 'Cerrado' : data.value.settings.paused ? 'Pedidos en pausa' : 'Abierto')
+const threshold = computed(() => data.value?.settings.freeDeliveryFrom || 0)
+
+function goCat(id) {
+  activeCat.value = id
+  document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+// ── Producto ──
+function openProduct(p) {
+  const pick = {}
+  for (const g of p.groups) pick[g.id] = g.type === 'one' ? '' : g.type === 'many' ? [] : {}
+  sel.value = { product: p, pick, qty: 1, note: '', err: '' }
+}
+function toggleMany(g, id, ev) {
+  const arr = sel.value.pick[g.id]
+  const i = arr.indexOf(id)
+  if (i >= 0) { arr.splice(i, 1); sel.value.err = ''; return }
+  if (g.max && arr.length >= g.max) {
+    if (ev?.target) ev.target.checked = false // la casilla no debe quedar marcada si no se agregó
+    sel.value.err = `En ${g.name} puedes escoger hasta ${g.max}.`; return
+  }
+  arr.push(id); sel.value.err = ''
+}
+function step(g, o, d) {
+  const m = sel.value.pick[g.id]
+  const n = Math.max(0, Math.min(20, (m[o.id] || 0) + d))
+  if (n) m[o.id] = n; else delete m[o.id]
+}
+function choicesOf(product, pick) {
+  const out = {}
+  for (const g of product.groups) {
+    const v = pick[g.id]
+    if (g.type === 'one') out[g.id] = v ? [{ optionId: v }] : []
+    else if (g.type === 'many') out[g.id] = v.map(optionId => ({ optionId }))
+    else out[g.id] = Object.entries(v).map(([optionId, qty]) => ({ optionId, qty }))
+  }
+  return out
+}
+function priceOf(product, choices, qty) {
+  let unit = product.price, extras = 0
+  for (const g of product.groups) for (const c of choices[g.id] || []) {
+    const o = g.options.find(x => x.id === c.optionId)
+    if (!o) continue
+    if (g.type === 'qty') extras += o.price * c.qty
+    else unit += o.price
+  }
+  return (unit + extras) * qty
+}
+const selTotal = computed(() => sel.value ? priceOf(sel.value.product, choicesOf(sel.value.product, sel.value.pick), sel.value.qty) : 0)
+
+function addToCart() {
+  const s = sel.value
+  for (const g of s.product.groups) if (g.type === 'one' && g.required && !s.pick[g.id]) { s.err = `Escoge una opción de ${g.name}.`; return }
+  cart.value.push({ key: Date.now() + Math.random(), productId: s.product.id, product: s.product, qty: s.qty,
+    choices: choicesOf(s.product, s.pick), note: s.note.trim() })
+  sel.value = null
+  persist()
+}
+
+// ── Carrito ──
+const lineTotal = (l) => priceOf(l.product, l.choices, l.qty)
+const cartSubtotal = computed(() => cart.value.reduce((s, l) => s + lineTotal(l), 0))
+const cartCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0))
+const free = computed(() => threshold.value > 0 && cartSubtotal.value >= threshold.value)
+const hasAlcohol = computed(() => cart.value.some(l => l.product.alcohol || l.product.groups.some(g => (l.choices[g.id] || []).some(c => g.options.find(o => o.id === c.optionId)?.alcohol))))
+function optName(l, g, id) { return g.options.find(o => o.id === id)?.name }
+function lineChoices(l) {
+  return l.product.groups.filter(g => g.type !== 'qty').flatMap(g => (l.choices[g.id] || []).map(c => optName(l, g, c.optionId))).filter(Boolean).join(', ')
+}
+function lineExtras(l) {
+  return l.product.groups.filter(g => g.type === 'qty').flatMap(g => (l.choices[g.id] || []).map(c => `${c.qty * l.qty} ${optName(l, g, c.optionId)}`))
+}
+
+// ── Envío ──
+async function send() {
+  formErr.value = ''
+  if (form.name.trim().length < 2) return (formErr.value = 'Escribe tu nombre.')
+  if (form.phone.replace(/\D/g, '').length < 7) return (formErr.value = 'Escribe un celular válido.')
+  if (form.mode === 'domicilio' && form.address.trim().length < 5) return (formErr.value = 'Escribe tu dirección.')
+  if (hasAlcohol.value && !form.adult) return (formErr.value = 'Para pedir licor confirma que eres mayor de 18 años.')
+  if (!form.privacy) return (formErr.value = 'Debes aceptar el uso de tus datos para enviar el pedido.')
+  sending.value = true
+  persist() // recuerda nombre, celular y dirección para el próximo pedido
+  try {
+    const r = await fetch(`${API}/pedidos/${encodeURIComponent(slug)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: form.name, phone: form.phone, address: form.address, notes: form.notes, mode: form.mode,
+        payment: form.payment, cashFor: form.cashFor, adult: form.adult, privacyAccepted: form.privacy,
+        items: cart.value.map(l => ({ productId: l.productId, qty: l.qty, choices: l.choices, note: l.note }))
+      })
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { formErr.value = j.error || 'No pudimos enviar tu pedido.'; if (r.status === 400) refreshAfterError(); return }
+    done.value = { ...j, name: form.name, address: form.address, payment: form.payment, cashFor: form.cashFor, notes: form.notes }
+    cart.value = []; persist()
+  } catch { formErr.value = 'Sin conexión. Revisa tu internet e intenta de nuevo.' } finally { sending.value = false }
+}
+async function refreshAfterError() { sending.value = false; await refreshState() }
+function finish() { done.value = null; showCart.value = false }
+
+function waLink(d) {
+  const lines = (d.lines || []).map(l => `• ${l.qty} ${l.name}${l.choices?.length ? ' (' + l.choices.join(', ') + ')' : ''}${l.note ? ' — ' + l.note : ''}  ${money(l.total)}`)
+  const msg = [
+    `Hola, soy ${d.name}. Pedido #${d.code} en ${data.value.business.name}:`, ...lines,
+    `Subtotal: ${money(d.subtotal)}${d.freeDelivery ? ' (domicilio gratis)' : ' (sin domicilio)'}`,
+    d.mode === 'recoger' ? 'Recojo en el local.' : `Dirección: ${d.address}`,
+    `Pago: ${d.payment}${d.payment === 'efectivo' && d.cashFor ? ' (pago con ' + money(d.cashFor) + ')' : ''}`,
+    d.notes ? `Nota: ${d.notes}` : ''
+  ].filter(Boolean).join('\n')
+  return `https://wa.me/${data.value.settings.whatsapp}?text=${encodeURIComponent(msg)}`
+}
+</script>
+
+<style scoped>
+.pc { --red: #c2410c; --red2: #9a3412; --amber: #f59e0b; --ink: #1c1917; --mut: #78716c; --line: #e7e5e4; --bg: #faf7f2;
+  min-height: 100vh; background: var(--bg); color: var(--ink); font-family: Inter, system-ui, sans-serif; padding-bottom: 96px; }
+.pc * { box-sizing: border-box; }
+.pc-center { padding: 80px 24px; text-align: center; color: var(--mut); }
+.pc-center h2 { color: var(--ink); margin-bottom: 6px; }
+.pc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px; background: var(--red); color: #fff; }
+.pc-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pc-logo { width: 44px; height: 44px; border-radius: 12px; background: #fff3; display: grid; place-items: center; font-size: 24px; flex: none; }
+.pc-head h1 { font-size: 19px; margin: 0; line-height: 1.1; }
+.pc-head p { margin: 2px 0 0; font-size: 12px; opacity: .9; }
+.pc-state { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+.pc-state.ok { background: #16a34a; } .pc-state.off { background: #44403c; }
+.pc-warn { background: #fef3c7; color: #78350f; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid #fde68a; }
+.pc-cats { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px; background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.pc-cats::-webkit-scrollbar { display: none; }
+.pc-cats button { flex: none; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 7px 14px; font: 600 13px Inter, system-ui, sans-serif; cursor: pointer; }
+.pc-cats button.on { background: var(--red); border-color: var(--red); color: #fff; }
+.pc-list { max-width: 720px; margin: 0 auto; padding: 4px 12px; }
+.pc-list h2 { font-size: 16px; margin: 20px 4px 8px; scroll-margin-top: 64px; }
+.pc-prod { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; background: #fff; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font-family: inherit; }
+.pc-prod:disabled { opacity: .55; cursor: not-allowed; }
+.pc-prod-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pc-prod-info b { font-size: 15px; } .pc-prod-info small { color: var(--mut); font-size: 12px; }
+.pc-opt { color: var(--red) !important; font-weight: 600; }
+.pc-prod-price { display: flex; align-items: center; gap: 10px; flex: none; }
+.pc-prod-price strong { font-size: 15px; }
+.pc-add { width: 28px; height: 28px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 18px; font-weight: 700; }
+.pc-sold { font-size: 12px; font-weight: 700; color: #b91c1c; }
+.pc-foot { text-align: center; color: var(--mut); font-size: 12px; margin: 18px 0; }
+.pc-bar { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 20; max-width: 696px; margin: 0 auto; display: flex; align-items: center; gap: 10px;
+  background: var(--red); color: #fff; border: 0; border-radius: 14px; padding: 14px 16px; font: 700 15px Inter, system-ui, sans-serif; cursor: pointer; box-shadow: 0 8px 24px #0004; }
+.pc-bar span:nth-child(2) { flex: 1; text-align: left; }
+.pc-bar-n { background: #fff; color: var(--red); border-radius: 999px; min-width: 26px; height: 26px; display: grid; place-items: center; font-size: 13px; padding: 0 6px; }
+.pc-sheet-bg { position: fixed; inset: 0; z-index: 50; background: #0007; display: flex; align-items: flex-end; justify-content: center; }
+.pc-sheet { width: 100%; max-width: 560px; max-height: 92vh; background: #fff; color: var(--ink); border-radius: 20px 20px 0 0; display: flex; flex-direction: column; }
+.pc-sheet.tall { height: 92vh; }
+.pc-sheet-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 16px 8px; }
+.pc-sheet-top h3 { margin: 0; font-size: 18px; } .pc-sheet-top small { color: var(--mut); }
+.pc-x { border: 0; background: #f5f5f4; color: var(--ink); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 14px; flex: none; }
+.pc-sheet-body { overflow-y: auto; padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.pc-sheet-foot { display: flex; gap: 10px; align-items: center; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.pc-group { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.pc-group-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.pc-tag { font-size: 11px; font-weight: 700; background: #f5f5f4; color: var(--mut); border-radius: 999px; padding: 3px 9px; }
+.pc-tag.req { background: #ffedd5; color: var(--red2); }
+.pc-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid #f5f5f4; font-size: 14px; cursor: pointer; }
+.pc-row span { flex: 1; } .pc-row em { font-style: normal; color: var(--mut); font-size: 13px; }
+.pc-row input { width: 20px; height: 20px; accent-color: var(--red); }
+.pc-row.qty { cursor: default; } .pc-row.qty em { margin-right: 4px; }
+.pc-step { display: inline-flex; align-items: center; gap: 10px; }
+.pc-step button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 17px; cursor: pointer; }
+.pc-step button:disabled { opacity: .35; } .pc-step b { min-width: 18px; text-align: center; }
+.pc-step.big button { width: 36px; height: 36px; }
+.pc-in { width: 100%; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 11px 12px; font: 400 15px Inter, system-ui, sans-serif; }
+.pc-in:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
+.pc-btn { border: 0; background: var(--red); color: #fff; border-radius: 12px; padding: 13px 18px; font: 700 15px Inter, system-ui, sans-serif; cursor: pointer; text-align: center; text-decoration: none; display: inline-block; }
+.pc-btn.grow { flex: 1; } .pc-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pc-btn.wa { background: #16a34a; display: block; width: 100%; }
+.pc-link { background: none; border: 0; color: var(--mut); font: 600 13px Inter, system-ui, sans-serif; cursor: pointer; padding: 4px; }
+.pc-link.red { color: #b91c1c; }
+.pc-err { color: #b91c1c; font-size: 13px; font-weight: 600; margin: 0; padding: 0 16px 4px; }
+.pc-line { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f5f5f4; }
+.pc-line-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; } .pc-line-main small { color: var(--mut); font-size: 12px; } .pc-line-main .note { font-style: italic; }
+.pc-line-side { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.pc-total { display: flex; justify-content: space-between; font-size: 16px; padding: 6px 0; }
+.pc-dom { background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.4; }
+.pc-dom.free { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.pc-prog { height: 6px; background: #fed7aa; border-radius: 99px; margin-top: 8px; overflow: hidden; } .pc-prog i { display: block; height: 100%; background: var(--red); }
+.pc-seg { display: flex; gap: 8px; } .pc-seg button { flex: 1; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 10px; font: 600 14px Inter, system-ui, sans-serif; cursor: pointer; }
+.pc-seg button.on { border-color: var(--red); background: #fff7ed; color: var(--red2); }
+.pc-hint { font-size: 12px; color: var(--mut); margin: 0; }
+.pc-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--mut); line-height: 1.4; }
+.pc-check input { margin-top: 2px; accent-color: var(--red); }
+.pc-done { align-items: center; text-align: center; padding-top: 12px; gap: 12px; }
+.pc-ok { width: 56px; height: 56px; border-radius: 50%; background: #16a34a; color: #fff; display: grid; place-items: center; font-size: 28px; }
+.pc-code { font-size: 38px; font-weight: 800; color: var(--red); margin: 0; letter-spacing: 2px; }
+.pc-done p { font-size: 14px; color: #44403c; margin: 0; }
+</style>
