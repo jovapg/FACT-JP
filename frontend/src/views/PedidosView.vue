@@ -71,15 +71,15 @@
 
           <footer v-if="canAct(p)">
             <!-- ¿Cómo te pagaron? (obligatorio al entregar; al facturar ya viene fijado) -->
-            <div v-if="p.status === 'en_camino' || p.status === 'entregado' || (!readOnly && ['pendiente', 'en_preparacion'].includes(p.status))" class="pv-pay">
+            <div v-if="p.status === 'en_camino' || p.status === 'entregado' || !readOnly" :class="['pv-pay', needPay === p.id && 'warn']">
               <span>{{ p.status === 'entregado' ? 'Método de pago' : '¿Cómo te pagaron?' }}</span>
               <button :class="{ on: payOf(p) === 'efectivo' }" @click="payInput[p.id] = 'efectivo'">💵 Efectivo</button>
               <button :class="{ on: payOf(p) === 'transferencia' }" @click="payInput[p.id] = 'transferencia'">🏦 Transferencia</button>
             </div>
             <button v-if="p.status === 'entregado'" class="pv-btn main" :disabled="busy === p.id" @click="facturar(p)">Facturar · {{ money(totalOf(p)) }}</button>
-            <button v-else class="pv-btn main" :disabled="busy === p.id || (nextOf(p) === 'entregado' && !payOf(p))" @click="advance(p)">{{ actionLabel(p) }}</button>
+            <button v-else class="pv-btn main" :disabled="busy === p.id" @click="advance(p)">{{ actionLabel(p) }}</button>
             <!-- Atajo para admin/caja: marcar entregado sin pasar por los estados intermedios (exige método de pago) -->
-            <button v-if="!readOnly && ['pendiente', 'en_preparacion'].includes(p.status)" class="pv-btn ok" :disabled="busy === p.id || !payOf(p)" :title="payOf(p) ? '' : 'Escoge primero el método de pago'" @click="advance(p, 'entregado')">✓ Marcar entregado</button>
+            <button v-if="!readOnly && ['por_confirmar', 'pendiente', 'en_preparacion'].includes(p.status)" class="pv-btn ok" :disabled="busy === p.id" @click="advance(p, 'entregado')">✓ Marcar entregado</button>
             <a v-if="!readOnly && p.status !== 'entregado'" class="pv-btn wa" :href="waLink(p)" target="_blank" rel="noopener">WhatsApp al cliente</a>
             <button v-if="!readOnly && p.status !== 'entregado'" class="pv-btn danger" :disabled="busy === p.id" @click="cancel(p)">Cancelar</button>
           </footer>
@@ -153,7 +153,8 @@ const toast = inject('toast', () => {})
 const pend = usePedidos()
 const { pedidos, pending, active, loaded, soundOn } = pend
 const tab = ref('pedidos')
-const doneSale = ref(null)   // factura recién creada (se muestra para enviarla)
+const needPay = ref('')      // pedido al que le falta escoger el método de pago (se resalta)
+const doneSale = ref(null)  // factura recién creada (se muestra para enviarla)
 const donePhone = ref('')
 const statusFilter = ref('')
 const payInput = reactive({})
@@ -248,14 +249,18 @@ async function advance(p, forced) {
     body.deliveryFee = Number(v)
   }
   if (target === 'entregado') {
-    if (!payOf(p)) { toast('Escoge con qué método te pagaron.', 'warning'); return }
+    if (!payOf(p)) {
+      // Se resalta el selector para que se vea qué falta
+      needPay.value = p.id; setTimeout(() => { needPay.value = '' }, 2500)
+      toast('Primero toca cómo te pagaron: Efectivo o Transferencia.', 'warning'); return
+    }
     body.payment = payOf(p)
   }
   busy.value = p.id
   try {
     await pend.update(p.id, body)
     if (target === 'entregado') toast(readOnly.value ? 'Entrega registrada' : 'Entregado: ahora falta facturar', 'success')
-  } catch (e) { toast(e.response?.data?.error || 'No se pudo actualizar el pedido', 'error') }
+  } catch (e) { toast(e.response?.data?.error || 'No se pudo actualizar el pedido (' + (e.message || 'sin conexión') + ')', 'error') }
   finally { busy.value = '' }
 }
 /** Crea la factura con el método de pago fijado en la entrega (se puede corregir antes de facturar) */
@@ -406,6 +411,7 @@ onUnmounted(() => clearInterval(tick))
 .pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
 .pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
 .pv-pay button.on { background: #22c55e; border-color: #22c55e; color: #fff; }
+.pv-pay.warn { outline: 2px solid #ef4444; outline-offset: 4px; border-radius: 8px; }
 .pv-hist { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .pv-hrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
 .pv-hrow:last-child { border-bottom: 0; }
