@@ -362,7 +362,7 @@ app.get('/api/:businessId/users', ...bizAccess, async (req, res) => {
 
 // Roles que se pueden asignar a usuarios de un negocio. 'superadmin' nunca:
 // de lo contrario un admin podría darse acceso a todos los negocios.
-const ASSIGNABLE_ROLES = ['admin', 'cajero'];
+const ASSIGNABLE_ROLES = ['admin', 'cajero', 'domiciliario'];
 
 /**
  * ¿El nombre de usuario ya existe en algún negocio o es el del superadmin?

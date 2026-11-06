@@ -87,7 +87,7 @@ const isMobile = ref(false)
 const menuItems = [
   { path: '/dashboard',        label: 'Dashboard',       icon: LayoutDashboard,  roles: ['superadmin','admin','cajero'] },
   { path: '/tables',           label: 'Registrar Venta', icon: Store,  roles: ['superadmin','admin','cajero'] },
-  { path: '/pedidos',          label: 'Pedidos en línea', icon: ShoppingBag,     roles: ['superadmin','admin','cajero'] },
+  { path: '/pedidos',          label: 'Pedidos en línea', icon: ShoppingBag,     roles: ['superadmin','admin','cajero','domiciliario'] },
   { path: '/inventory',        label: 'Inventario',      icon: Package,          roles: ['superadmin','admin','cajero'] },
   { path: '/recipes',          label: 'Recetas / Menú',  icon: BookOpen,         roles: ['superadmin','admin'] },
   { path: '/purchases',        label: 'Salidas',         icon: ShoppingCart,     roles: ['superadmin','admin'] },
@@ -136,7 +136,7 @@ async function refreshSystemOpen() {
 }
 
 const roleLabel = computed(() => {
-  const labels = { superadmin: 'Super Admin', admin: 'Administrador', cajero: 'Cajero' }
+  const labels = { superadmin: 'Super Admin', admin: 'Administrador', cajero: 'Cajero', domiciliario: 'Domiciliario' }
   return labels[auth.user?.role] || auth.user?.role
 })
 

@@ -55,7 +55,7 @@ const routes = [
     path: '/pedidos',
     name: 'pedidos',
     component: () => import('../views/PedidosView.vue'),
-    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin', 'cajero'] }
+    meta: { requiresAuth: true, requiresBusiness: true, roles: ['superadmin', 'admin', 'cajero', 'domiciliario'] }
   },
   {
     path: '/inventory',
@@ -164,6 +164,11 @@ router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
 
   if (to.meta.openToAll) return next() // la carta pública se ve con o sin sesión
+
+  // El domiciliario solo tiene la pantalla de pedidos
+  if (authStore.user?.role === 'domiciliario' && authStore.isAuthenticated && to.path !== '/pedidos' && to.path !== '/login') {
+    return next('/pedidos')
+  }
 
   const moduleKey = MODULE_ROUTES[to.path]
   if (moduleKey && authStore.currentBusiness?.modules?.[moduleKey] === false) {

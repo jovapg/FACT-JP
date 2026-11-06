@@ -244,6 +244,7 @@
                 <select v-model="userForm.role" class="form-control">
                   <option value="cajero">Cajero</option>
                   <option value="admin">Admin</option>
+                  <option value="domiciliario">Domiciliario (solo ve pedidos)</option>
                 </select>
               </div>
             </div>

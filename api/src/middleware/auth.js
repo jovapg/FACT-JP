@@ -124,6 +124,13 @@ function requireBusinessAccess(req, res, next) {
   }
   // Para admin y cajero: el businessId de la URL debe coincidir con el del token
   if (req.user.businessId && req.user.businessId === req.params.businessId) {
+    // El domiciliario SOLO mira: lista de pedidos y perfil del negocio. Todo lo demás se bloquea aquí,
+    // porque muchas rutas solo excluyen al cajero y un rol nuevo pasaría de largo.
+    if (req.user.role === 'domiciliario') {
+      const p = (req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
+      const ok = req.method === 'GET' && /^\/api\/[^/]+\/(pedidos|profile)$/.test(p);
+      if (!ok) return res.status(403).json({ error: 'Forbidden' });
+    }
     return next();
   }
   return res.status(403).json({ error: 'Access denied to this business' });

@@ -5,16 +5,16 @@
       <div class="pv-top">
         <div class="pv-tabs">
           <button :class="{ on: tab === 'pedidos' }" @click="tab = 'pedidos'">Pedidos <span v-if="pending.length" class="pv-n">{{ pending.length }}</span></button>
-          <button :class="{ on: tab === 'carta' }" @click="tab = 'carta'; loadCarta()">Carta</button>
+          <button v-if="!readOnly" :class="{ on: tab === 'carta' }" @click="tab = 'carta'; loadCarta()">Carta</button>
         </div>
         <div class="pv-actions">
           <button class="pv-chip" :class="{ on: soundOn }" @click="pend.toggleSound()">{{ soundOn ? '🔔 Sonido' : '🔕 Sin sonido' }}</button>
-          <button class="pv-chip" @click="copyLink">🔗 Copiar link de la carta</button>
+          <button v-if="!readOnly" class="pv-chip" @click="copyLink">🔗 Copiar link de la carta</button>
         </div>
       </div>
 
       <!-- Estado de la tienda -->
-      <div v-if="carta" class="pv-store">
+      <div v-if="carta && !readOnly" class="pv-store">
         <label class="pv-sw"><input type="checkbox" :checked="carta.settings.open" @change="setSetting({ open: $event.target.checked })" /><span>{{ carta.settings.open ? 'Abierto' : 'Cerrado' }}</span></label>
         <label class="pv-sw"><input type="checkbox" :checked="carta.settings.paused" @change="setSetting({ paused: $event.target.checked })" /><span>Pausar pedidos</span></label>
       </div>
@@ -55,7 +55,7 @@
             <div><span>Subtotal</span><b>{{ money(p.subtotal) }}</b></div>
             <div v-if="p.mode === 'domicilio'" class="pv-fee">
               <span>Domicilio<template v-if="p.freeDelivery"> (gratis, compra ≥ {{ money(carta?.settings.freeDeliveryFrom || 100000) }})</template></span>
-              <template v-if="isOpen(p)">
+              <template v-if="isOpen(p) && !readOnly">
                 <input type="number" min="0" step="500" :value="feeInput[p.id] ?? (p.deliveryFee ?? '')" placeholder="$" @input="feeInput[p.id] = $event.target.value" />
               </template>
               <b v-else>{{ money(p.deliveryFee) }}</b>
@@ -64,13 +64,13 @@
             <small>{{ p.payment === 'efectivo' ? '💵 Efectivo' + (p.cashFor ? ' · paga con ' + money(p.cashFor) + (p.cashFor >= totalOf(p) ? ' · devuelve ' + money(p.cashFor - totalOf(p)) : '') : '') : '🏦 Transferencia' }}</small>
           </div>
 
-          <footer v-if="isOpen(p)">
+          <footer v-if="isOpen(p) && !readOnly">
             <button class="pv-btn main" :disabled="busy === p.id" @click="advance(p)">{{ NEXT[nextOf(p)] || '' }}</button>
             <a class="pv-btn wa" :href="waLink(p)" target="_blank" rel="noopener">WhatsApp al cliente</a>
             <button class="pv-btn danger" :disabled="busy === p.id" @click="cancel(p)">Cancelar</button>
           </footer>
           <footer v-else-if="p.invoiceNumber"><small>Factura {{ p.invoiceNumber }}</small></footer>
-          <footer v-else-if="p.status === 'vencido'">
+          <footer v-else-if="p.status === 'vencido' && !readOnly">
             <button class="pv-btn main" :disabled="busy === p.id" @click="advance(p, 'pendiente')">Confirmar igual</button>
           </footer>
         </article>
@@ -132,6 +132,8 @@ const busy = ref('')
 const now = ref(Date.now())
 let tick = null
 
+// El domiciliario solo mira: sin botones, sin carta, sin valores editables
+const readOnly = computed(() => auth.user?.role === 'domiciliario')
 const isAdmin = computed(() => auth.user?.role === 'admin' || auth.user?.role === 'superadmin')
 const base = () => `/api/${auth.currentBusiness.id}`
 const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
@@ -249,7 +251,7 @@ async function copyLink() {
 
 onMounted(() => {
   pend.start()
-  loadCarta()
+  if (!readOnly.value) loadCarta()
   tick = setInterval(() => { now.value = Date.now() }, 1000)
 })
 onUnmounted(() => clearInterval(tick))

@@ -410,6 +410,8 @@ async function loadCarta(biz) {
   if (!window.confirm(`¿Activar pedidos en línea en "${biz.name}" y cargar la carta de Deli-Combos?`)) return
   try {
     const res = await api.post(`/api/${biz.id}/carta/load-default`, {})
+    // Si es el negocio que tienes abierto, el menú se actualiza al instante
+    if (auth.currentBusiness?.id === biz.id) await businessStore.fetchProfile()
     toast(`Carta cargada (${res.data.products} productos). Link: /carta/${biz.slug}`, 'success')
   } catch (err) {
     toast(err.response?.status === 409 ? 'Este negocio ya tiene carta cargada' : (err.response?.data?.error || 'No se pudo cargar la carta'), 'error')
