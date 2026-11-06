@@ -183,6 +183,16 @@ async function readPedidos(businessId) {
 async function writePedidos(businessId, list) { await writeJSON(pedidosPath(businessId), list); }
 
 const fs = require('fs');
+
+/** ¿Hay un turno de caja abierto? Sin turno abierto no se reciben, confirman ni facturan pedidos en línea. */
+function hasOpenShift(businessId) {
+  try {
+    const shifts = JSON.parse(fs.readFileSync(path.join(getBusinessPath(businessId), 'shifts.json'), 'utf8'));
+    return Array.isArray(shifts) && shifts.some(s => s.status === 'open');
+  } catch { return false; }
+}
+const NO_SHIFT_MSG = 'Primero abre el turno de caja: sin turno abierto no se pueden recibir, confirmar ni facturar pedidos.';
+
 const counterPath = (id) => path.join(getBusinessPath(id), 'pedidos-counter.json');
 
 /**
@@ -274,5 +284,5 @@ function priceOrder(carta, rawItems) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath
+  defaultCarta, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG
 };

@@ -13,6 +13,12 @@
         </div>
       </div>
 
+      <!-- Sin turno de caja abierto no se recibe, confirma ni factura nada -->
+      <div v-if="shiftOpen === false && !readOnly" class="pv-noshift">
+        <span>⚠️ <b>No hay turno de caja abierto.</b> La carta aparece <b>cerrada</b> para los clientes y no se pueden confirmar ni facturar pedidos.</span>
+        <router-link to="/shifts" class="pv-btn main">Abrir turno</router-link>
+      </div>
+
       <!-- Estado de la tienda -->
       <div v-if="carta && !readOnly" class="pv-store">
         <label class="pv-sw"><input type="checkbox" :checked="carta.settings.open" @change="setSetting({ open: $event.target.checked })" /><span>{{ carta.settings.open ? 'Abierto' : 'Cerrado' }}</span></label>
@@ -157,6 +163,7 @@ const pend = usePedidos()
 const { pedidos, pending, active, loaded, soundOn } = pend
 const tab = ref('pedidos')
 const needPay = ref('')      // pedido al que le falta escoger el método de pago (se resalta)
+const shiftOpen = ref(null)  // null = aún no se sabe; false = no hay turno abierto
 const doneSale = ref(null)  // factura recién creada (se muestra para enviarla)
 const donePhone = ref('')
 const statusFilter = ref('')
@@ -167,6 +174,7 @@ const feeInput = reactive({})
 const busy = ref('')
 const now = ref(Date.now())
 let tick = null
+let shiftTimer = null
 
 // El domiciliario solo mira: sin botones, sin carta, sin valores editables
 const readOnly = computed(() => auth.user?.role === 'domiciliario')
@@ -322,6 +330,7 @@ async function loadCarta() {
   try {
     const { data } = await api.get(`${base()}/carta`)
     carta.value = data
+    shiftOpen.value = data.shiftOpen
     Object.assign(set, { whatsapp: data.settings.whatsapp.replace(/^57/, ''), freeDeliveryFrom: data.settings.freeDeliveryFrom, hours: data.settings.hours, pickup: data.settings.pickup })
   } catch { toast('No se pudo cargar la carta', 'error') }
 }
@@ -363,12 +372,18 @@ async function copyLink() {
   catch { window.prompt('Copia este link:', url) }
 }
 
+// Revisa cada 20 s si el turno sigue abierto (no toca los ajustes que estén en edición)
+async function refreshShift() {
+  if (readOnly.value) return
+  try { shiftOpen.value = (await api.get(`${base()}/carta`)).data.shiftOpen } catch { /* sin conexión */ }
+}
 onMounted(() => {
+  shiftTimer = setInterval(refreshShift, 20000)
   pend.start()
   if (!readOnly.value) loadCarta()
   tick = setInterval(() => { now.value = Date.now(); todayStr.value = new Date().toDateString() }, 1000)
 })
-onUnmounted(() => clearInterval(tick))
+onUnmounted(() => { clearInterval(tick); clearInterval(shiftTimer) })
 </script>
 
 <style scoped>
@@ -423,6 +438,8 @@ onUnmounted(() => clearInterval(tick))
 .pv-card.s-porfact { border-left-color: #06b6d4; }
 .pv-filterbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid #f59e0b; border-radius: 12px; background: var(--surface); font-size: 14px; }
 .pv-hcount { font-weight: 600; color: var(--text-secondary); font-size: 13px; }
+.pv-noshift { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; border: 1px solid #f59e0b; background: rgba(245,158,11,.12); font-size: 14px; }
+.pv-noshift .pv-btn { flex: none; min-width: 0; }
 .pv-link { background: none; border: 0; color: #f59e0b; font-weight: 700; cursor: pointer; padding: 0; }
 .pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
 .pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }

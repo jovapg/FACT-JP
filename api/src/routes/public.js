@@ -30,12 +30,13 @@ async function findBusiness(slug) {
 }
 
 /** Quita lo interno de la carta antes de mostrarla al público */
-function publicView(biz, c) {
+function publicView(biz, c, shiftOpen = true) {
   const { whatsapp, open, paused, pickup, freeDeliveryFrom, hours, welcome } = c.settings;
   const cats = [...c.categories].sort((a, b) => a.order - b.order);
   return {
     business: { name: biz.name, slug: biz.slug },
-    settings: { whatsapp, open, paused, pickup, freeDeliveryFrom, hours, welcome },
+    // Sin turno de caja abierto la tienda se ve CERRADA y no recibe pedidos
+    settings: { whatsapp, open: !!open && shiftOpen, paused, pickup, freeDeliveryFrom, hours, welcome },
     categories: cats.map(({ id, name, order }) => ({ id, name, order })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
@@ -52,7 +53,7 @@ router.get('/carta/:slug', readLimiter, async (req, res) => {
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
     res.set('Cache-Control', 'no-store');
-    res.json(publicView(biz, c));
+    res.json(publicView(biz, c, carta.hasOpenShift(biz.id)));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Error del servidor' }); }
 });
 
@@ -61,7 +62,7 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
     const biz = await findBusiness(req.params.slug);
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
-    if (!c.settings.open || c.settings.paused) {
+    if (!c.settings.open || c.settings.paused || !carta.hasOpenShift(biz.id)) {
       return res.status(409).json({ error: 'Por ahora no estamos recibiendo pedidos. Intenta más tarde.' });
     }
 

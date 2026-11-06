@@ -35,7 +35,7 @@ router.get('/carta', authenticate, async (req, res) => {
   try {
     const c = await carta.readCarta(req.params.businessId);
     if (!c) return res.json({ enabled: false });
-    res.json({ enabled: true, ...c });
+    res.json({ enabled: true, ...c, shiftOpen: carta.hasOpenShift(req.params.businessId) });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
@@ -220,6 +220,8 @@ router.put('/pedidos/:id', authenticate, async (req, res) => {
         if (unbilled) return res.status(409).json({ error: 'Ya fue entregado: factúralo' });
         p.status = 'cancelado';
       } else if (!unbilled) {
+        // Confirmar un pedido nuevo exige turno de caja abierto (el domiciliario solo registra su salida y entrega)
+        if (!isDomi(req) && ['por_confirmar', 'vencido'].includes(p.status) && !carta.hasOpenShift(bid)) return res.status(409).json({ error: carta.NO_SHIFT_MSG });
         if (p.status === 'vencido') { p.status = 'por_confirmar'; p.expiresAt = new Date(Date.now() + carta.EXPIRE_MIN * 60000).toISOString(); } // reactivar un vencido
         if (!FLOW.includes(b.status)) return res.status(400).json({ error: 'Estado no válido' });
         if (FLOW.indexOf(b.status) < FLOW.indexOf(p.status)) return res.status(400).json({ error: 'No se puede devolver el estado' });
@@ -255,6 +257,7 @@ router.post('/pedidos/:id/facturar', authenticate, async (req, res) => {
   try {
     if (isDomi(req)) return res.status(403).json({ error: 'Forbidden' });
     const bid = req.params.businessId;
+    if (!carta.hasOpenShift(bid)) return res.status(409).json({ error: carta.NO_SHIFT_MSG });
     const list = await carta.readPedidos(bid);
     const p = list.find(x => x.id === req.params.id);
     if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
