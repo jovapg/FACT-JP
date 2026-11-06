@@ -21,14 +21,18 @@
 
       <!-- ── PEDIDOS ── -->
       <template v-if="tab === 'pedidos'">
-        <div class="pv-filter">
-          <button :class="{ on: view === 'activos' }" @click="view = 'activos'">Activos ({{ active.length }})</button>
-          <button :class="{ on: view === 'cerrados' }" @click="view = 'cerrados'">Entregados / cerrados</button>
+        <!-- Mini tablero (pedidos de hoy). Toca una tarjeta para filtrar la lista. -->
+        <div class="pv-stats">
+          <button v-for="s in stats" :key="s.key" :class="['pv-stat', 'k-' + s.key, { on: statusFilter === s.key }]" @click="statusFilter = statusFilter === s.key ? '' : s.key">
+            <b>{{ s.n }}</b><span>{{ s.label }}</span><small v-if="s.sum !== undefined">{{ money(s.sum) }}</small>
+          </button>
         </div>
+        <p v-if="statusFilter" class="pv-hint">Filtrando: <b>{{ stats.find(s => s.key === statusFilter)?.label }}</b>. <button class="pv-link" @click="statusFilter = ''">Quitar filtro</button></p>
 
-        <p v-if="loaded && !shown.length" class="pv-empty">{{ view === 'activos' ? 'No hay pedidos activos. Cuando llegue uno, suena aquí.' : 'Todavía no hay pedidos cerrados.' }}</p>
+        <h3 class="pv-h">Pedidos en curso ({{ shown.length }})</h3>
+        <p v-if="loaded && !shown.length" class="pv-empty">No hay pedidos en curso. Cuando llegue uno, suena aquí.</p>
 
-        <article v-for="p in shown" :key="p.id" :class="['pv-card', 's-' + p.status]">
+        <article v-for="p in shown" :key="p.id" :class="['pv-card', 's-' + p.status, p.status === 'entregado' && 's-porfact']">
           <header>
             <div>
               <b class="pv-code">#{{ p.code }}</b>
@@ -61,19 +65,39 @@
               <b v-else>{{ money(p.deliveryFee) }}</b>
             </div>
             <div class="tot"><span>Total</span><b>{{ money(totalOf(p)) }}</b></div>
-            <small>{{ p.payment === 'efectivo' ? '💵 Efectivo' + (p.cashFor ? ' · paga con ' + money(p.cashFor) + (p.cashFor >= totalOf(p) ? ' · devuelve ' + money(p.cashFor - totalOf(p)) : '') : '') : '🏦 Transferencia' }}</small>
+            <small v-if="p.status !== 'entregado'">{{ p.payment === 'efectivo' ? '💵 Dice que paga en efectivo' + (p.cashFor ? ' · con ' + money(p.cashFor) + (p.cashFor >= totalOf(p) ? ' · devuelve ' + money(p.cashFor - totalOf(p)) : '') : '') : '🏦 Dice que paga por transferencia' }}</small>
+            <small v-else>Entregado {{ ago(p.deliveredAt || p.updatedAt) }}<template v-if="p.deliveredBy"> por {{ p.deliveredBy }}</template></small>
           </div>
 
-          <footer v-if="isOpen(p) && !readOnly">
-            <button class="pv-btn main" :disabled="busy === p.id" @click="advance(p)">{{ NEXT[nextOf(p)] || '' }}</button>
-            <a class="pv-btn wa" :href="waLink(p)" target="_blank" rel="noopener">WhatsApp al cliente</a>
-            <button class="pv-btn danger" :disabled="busy === p.id" @click="cancel(p)">Cancelar</button>
-          </footer>
-          <footer v-else-if="p.invoiceNumber"><small>Factura {{ p.invoiceNumber }}</small></footer>
-          <footer v-else-if="p.status === 'vencido' && !readOnly">
-            <button class="pv-btn main" :disabled="busy === p.id" @click="advance(p, 'pendiente')">Confirmar igual</button>
+          <footer v-if="canAct(p)">
+            <!-- ¿Cómo te pagaron? (obligatorio al entregar; al facturar ya viene fijado) -->
+            <div v-if="p.status === 'en_camino' || p.status === 'entregado'" class="pv-pay">
+              <span>{{ p.status === 'entregado' ? 'Método de pago' : '¿Cómo te pagaron?' }}</span>
+              <button :class="{ on: payOf(p) === 'efectivo' }" @click="payInput[p.id] = 'efectivo'">💵 Efectivo</button>
+              <button :class="{ on: payOf(p) === 'transferencia' }" @click="payInput[p.id] = 'transferencia'">🏦 Transferencia</button>
+            </div>
+            <button v-if="p.status === 'entregado'" class="pv-btn main" :disabled="busy === p.id" @click="facturar(p)">Facturar · {{ money(totalOf(p)) }}</button>
+            <button v-else class="pv-btn main" :disabled="busy === p.id || (nextOf(p) === 'entregado' && !payOf(p))" @click="advance(p)">{{ actionLabel(p) }}</button>
+            <a v-if="!readOnly && p.status !== 'entregado'" class="pv-btn wa" :href="waLink(p)" target="_blank" rel="noopener">WhatsApp al cliente</a>
+            <button v-if="!readOnly && p.status !== 'entregado'" class="pv-btn danger" :disabled="busy === p.id" @click="cancel(p)">Cancelar</button>
           </footer>
         </article>
+
+        <!-- ── HISTORIAL ── -->
+        <h3 class="pv-h">Historial</h3>
+        <p v-if="loaded && !history.length" class="pv-empty">Todavía no hay pedidos facturados, cancelados o vencidos.</p>
+        <div v-if="history.length" class="pv-hist">
+          <div v-for="p in history" :key="p.id" class="pv-hrow">
+            <div class="pv-hmain">
+              <b>#{{ p.code }}</b> {{ p.customer.name }}
+              <small>{{ dateTime(p.createdAt) }} · {{ p.mode === 'recoger' ? 'Recoger' : 'Domicilio' }}<template v-if="p.status === 'entregado'"> · {{ p.payment === 'efectivo' ? '💵' : '🏦' }} {{ p.payment }}</template></small>
+            </div>
+            <div class="pv-hside">
+              <b>{{ money(p.subtotal + (Number(p.deliveryFee) || 0)) }}</b>
+              <span :class="['pv-badge', 'h-' + p.status]">{{ p.status === 'entregado' ? 'Facturado ' + (p.invoiceNumber || '') : STATE[p.status] }}</span>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- ── CARTA ── -->
@@ -124,7 +148,8 @@ const toast = inject('toast', () => {})
 const pend = usePedidos()
 const { pedidos, pending, active, loaded, soundOn } = pend
 const tab = ref('pedidos')
-const view = ref('activos')
+const statusFilter = ref('')
+const payInput = reactive({})
 const carta = ref(null)
 const set = reactive({ whatsapp: '', freeDeliveryFrom: 0, hours: '', pickup: true })
 const feeInput = reactive({})
@@ -138,20 +163,65 @@ const isAdmin = computed(() => auth.user?.role === 'admin' || auth.user?.role ==
 const base = () => `/api/${auth.currentBusiness.id}`
 const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
 
-const STATE = { por_confirmar: 'Por confirmar', pendiente: 'Pendiente', en_preparacion: 'En preparación', en_camino: 'En camino', entregado: 'Entregado', cancelado: 'Cancelado', vencido: 'Vencido' }
-const NEXT = { pendiente: 'Confirmar pedido', en_preparacion: 'Empezar a preparar', en_camino: 'Sale a domicilio', listo: 'Listo para recoger', entregado: 'Entregado y facturar' }
-const stateLabel = (p) => (p.mode === 'recoger' && p.status === 'en_camino') ? 'Listo para recoger' : STATE[p.status]
-const isOpen = (p) => ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'].includes(p.status)
+const STATE = { por_confirmar: 'Por confirmar', pendiente: 'Confirmado', en_preparacion: 'En preparación', en_camino: 'En camino', entregado: 'Entregado', cancelado: 'Cancelado', vencido: 'Vencido' }
+const stateLabel = (p) => {
+  if (p.status === 'entregado') return p.saleId ? 'Facturado' : 'Entregado · por facturar'
+  return (p.mode === 'recoger' && p.status === 'en_camino') ? 'Listo para recoger' : STATE[p.status]
+}
+// En curso = en proceso + entregados que faltan por facturar
+const isOpen = (p) => ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'].includes(p.status) || (p.status === 'entregado' && !p.saleId)
+// Qué puede hacer quien mira: el domiciliario solo "salí" y "entregado" en domicilios ya en preparación o en camino
+const canAct = (p) => readOnly.value ? (p.mode === 'domicilio' && ['en_preparacion', 'en_camino'].includes(p.status)) : isOpen(p)
 
-const shown = computed(() => pedidos.value.filter(p => view.value === 'activos' ? isOpen(p) : !isOpen(p)))
+const shown = computed(() => pedidos.value.filter(p => isOpen(p) && (!statusFilter.value || bucketOf(p) === statusFilter.value)))
+const history = computed(() => pedidos.value.filter(p => !isOpen(p) && (!statusFilter.value || bucketOf(p) === statusFilter.value)).slice(0, 60))
 const totalOf = (p) => p.subtotal + (Number(feeInput[p.id] ?? p.deliveryFee) || 0)
+const payOf = (p) => payInput[p.id] ?? (p.status === 'entregado' ? p.payment : '')
+
+// Grupo del tablero al que pertenece un pedido
+function bucketOf(p) {
+  if (p.status === 'entregado') return p.saleId ? 'facturado' : 'porfacturar'
+  if (p.status === 'cancelado' || p.status === 'vencido') return 'cerrado'
+  if (p.status === 'en_preparacion') return 'preparacion'
+  if (p.status === 'en_camino') return 'camino'
+  if (p.status === 'pendiente') return 'confirmado'
+  return 'porconfirmar'
+}
+const isToday = (iso) => new Date(iso).toDateString() === new Date(now.value).toDateString()
+// Mini tablero: pedidos de hoy (lo que sigue en curso se cuenta aunque venga de ayer)
+const stats = computed(() => {
+  const rows = [
+    { key: 'porconfirmar', label: 'Por confirmar' }, { key: 'confirmado', label: 'Confirmados' },
+    { key: 'preparacion', label: 'En preparación' }, { key: 'camino', label: 'En camino' },
+    { key: 'porfacturar', label: 'Por facturar' }, { key: 'facturado', label: 'Facturados hoy' },
+    { key: 'cerrado', label: 'Cancelados / vencidos' }
+  ].map(r => ({ ...r, n: 0, sum: undefined }))
+  const by = Object.fromEntries(rows.map(r => [r.key, r]))
+  for (const p of pedidos.value) {
+    const k = bucketOf(p)
+    const open = isOpen(p)
+    if (!open && !isToday(p.createdAt)) continue
+    by[k].n++
+    if (k === 'porfacturar' || k === 'facturado') by[k].sum = (by[k].sum || 0) + p.subtotal + (Number(p.deliveryFee) || 0)
+  }
+  return rows.filter(r => !(readOnly.value && ['porfacturar', 'facturado', 'cerrado'].includes(r.key)))
+})
 
 function nextOf(p) {
   if (p.status === 'por_confirmar') return 'pendiente'
   if (p.status === 'pendiente') return 'en_preparacion'
-  if (p.status === 'en_preparacion') return p.mode === 'domicilio' ? 'en_camino' : 'listo'
+  if (p.status === 'en_preparacion') return 'en_camino'
   return 'entregado'
 }
+function actionLabel(p) {
+  const n = nextOf(p)
+  if (readOnly.value) return n === 'en_camino' ? 'Salí con el pedido' : 'Entregado'
+  if (n === 'pendiente') return 'Confirmar pedido'
+  if (n === 'en_preparacion') return 'Empezar a preparar'
+  if (n === 'en_camino') return p.mode === 'domicilio' ? 'Sale a domicilio' : 'Listo para recoger'
+  return 'Entregado'
+}
+const dateTime = (iso) => new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 function ago(iso) {
   const m = Math.max(0, Math.round((now.value - new Date(iso).getTime()) / 60000))
@@ -163,23 +233,39 @@ function left(iso) {
 }
 
 async function advance(p, forced) {
-  let target = forced || nextOf(p)
-  // "Listo para recoger" es el paso anterior a entregado en pedidos para recoger
-  const body = {}
-  if (p.mode === 'domicilio') {
+  const target = forced || nextOf(p)
+  const body = { status: target }
+  if (!readOnly.value && p.mode === 'domicilio') {
     const v = feeInput[p.id] ?? p.deliveryFee
     if (v === '' || v === null || v === undefined) { toast('Escribe el valor del domicilio (0 si es gratis).', 'warning'); return }
     body.deliveryFee = Number(v)
   }
-  if (target === 'listo') target = 'en_camino'
-  body.status = target
+  if (target === 'entregado') {
+    if (!payOf(p)) { toast('Escoge con qué método te pagaron.', 'warning'); return }
+    body.payment = payOf(p)
+  }
   busy.value = p.id
   try {
-    const r = await pend.update(p.id, body)
-    if (r.sale) toast(`Factura ${r.sale.invoiceNumber} creada`, 'success')
+    await pend.update(p.id, body)
+    if (target === 'entregado') toast(readOnly.value ? 'Entrega registrada' : 'Entregado: ahora falta facturar', 'success')
   } catch (e) { toast(e.response?.data?.error || 'No se pudo actualizar el pedido', 'error') }
   finally { busy.value = '' }
 }
+/** Crea la factura con el método de pago fijado en la entrega (se puede corregir antes de facturar) */
+async function facturar(p) {
+  busy.value = p.id
+  try {
+    const fee = feeInput[p.id], pay = payOf(p)
+    if ((fee !== undefined && fee !== '' && Number(fee) !== Number(p.deliveryFee)) || pay !== p.payment) {
+      await api.put(`${base()}/pedidos/${p.id}`, { ...(fee !== undefined && fee !== '' ? { deliveryFee: Number(fee) } : {}), payment: pay })
+    }
+    const { data } = await api.post(`${base()}/pedidos/${p.id}/facturar`)
+    await pend.refresh()
+    toast(`Factura ${data.sale.invoiceNumber} creada`, 'success')
+  } catch (e) { toast(e.response?.data?.error || 'No se pudo facturar', 'error') }
+  finally { busy.value = '' }
+}
+
 async function cancel(p) {
   if (!window.confirm(`¿Cancelar el pedido #${p.code} de ${p.customer.name}?`)) return
   busy.value = p.id
@@ -300,4 +386,21 @@ onUnmounted(() => clearInterval(tick))
 .pv-prow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
 .pv-prow > span { flex: 1; min-width: 0; } .pv-prow .off { text-decoration: line-through; opacity: .6; }
 .pv-price { width: 90px; text-align: right; }
+.pv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; }
+.pv-stat { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; font-family: inherit; }
+.pv-stat b { font-size: 24px; line-height: 1; } .pv-stat span { font-size: 11px; color: var(--text-secondary); text-align: center; } .pv-stat small { font-size: 11px; font-weight: 700; color: var(--success); }
+.pv-stat.on { outline: 2px solid #f59e0b; }
+.pv-stat.k-porconfirmar b { color: #ef4444; } .pv-stat.k-confirmado b { color: #f59e0b; } .pv-stat.k-preparacion b { color: #3b82f6; }
+.pv-stat.k-camino b { color: #8b5cf6; } .pv-stat.k-porfacturar b { color: #06b6d4; } .pv-stat.k-facturado b { color: #22c55e; }
+.pv-card.s-porfact { border-left-color: #06b6d4; }
+.pv-link { background: none; border: 0; color: #f59e0b; font-weight: 700; cursor: pointer; padding: 0; }
+.pv-pay { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--text-secondary); }
+.pv-pay button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.pv-pay button.on { background: #22c55e; border-color: #22c55e; color: #fff; }
+.pv-hist { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.pv-hrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.pv-hrow:last-child { border-bottom: 0; }
+.pv-hmain small { display: block; color: var(--text-secondary); font-size: 12px; }
+.pv-hside { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.pv-badge.h-entregado { background: #166534; color: #fff; } .pv-badge.h-cancelado, .pv-badge.h-vencido { background: #7f1d1d; color: #fff; }
 </style>

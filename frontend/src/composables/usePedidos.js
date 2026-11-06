@@ -39,7 +39,8 @@ export function usePedidos() {
   const base = () => `/api/${auth.currentBusiness?.id}`
 
   const pending = computed(() => pedidos.value.filter(p => p.status === 'por_confirmar'))
-  const active = computed(() => pedidos.value.filter(p => ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'].includes(p.status)))
+  // Activos = en proceso + entregados que aún no se han facturado
+  const active = computed(() => pedidos.value.filter(p => ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'].includes(p.status) || (p.status === 'entregado' && !p.saleId)))
 
   async function refresh() {
     if (!auth.currentBusiness?.id) return

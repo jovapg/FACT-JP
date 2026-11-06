@@ -164,43 +164,81 @@ async function pedidoToSale(businessId, p, user) {
   return sale;
 }
 
+const isDomi = (req) => req.user.role === 'domiciliario';
+const PAYS = ['efectivo', 'transferencia'];
+
+/**
+ * PUT /pedidos/:id — cambia el estado y/o el valor del domicilio y el método de pago.
+ *
+ * "Entregado" YA NO factura: deja el pedido "por facturar" con el método de pago con que le pagaron
+ * (obligatorio, lo escoge quien entrega). La factura se crea después con POST /pedidos/:id/facturar.
+ * El domiciliario solo puede: salir con el pedido (en_camino) y marcarlo entregado con su método de pago.
+ */
 router.put('/pedidos/:id', authenticate, async (req, res) => {
   try {
     const bid = req.params.businessId;
     const list = await carta.readPedidos(bid);
     const p = list.find(x => x.id === req.params.id);
     if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
-    if (['entregado', 'cancelado'].includes(p.status)) return res.status(409).json({ error: 'Este pedido ya está cerrado' });
-
     const b = req.body || {};
-    if (b.deliveryFee !== undefined && b.deliveryFee !== null && b.deliveryFee !== '') {
+    const unbilled = p.status === 'entregado' && !p.saleId; // entregado, falta facturar
+
+    if (p.status === 'cancelado' || (p.status === 'entregado' && p.saleId)) return res.status(409).json({ error: 'Este pedido ya está cerrado' });
+
+    if (isDomi(req)) {
+      // Solo domicilios, y solo estos dos pasos
+      if (p.mode !== 'domicilio') return res.status(403).json({ error: 'Forbidden' });
+      if (!['en_camino', 'entregado'].includes(b.status)) return res.status(403).json({ error: 'Forbidden' });
+      if (b.status === 'en_camino' && p.status !== 'en_preparacion') return res.status(400).json({ error: 'El pedido todavía no está listo para salir' });
+      if (b.status === 'entregado' && p.status !== 'en_camino') return res.status(400).json({ error: 'Primero marca que saliste con el pedido' });
+    }
+
+    if (b.deliveryFee !== undefined && b.deliveryFee !== null && b.deliveryFee !== '' && !isDomi(req)) {
       if (p.mode !== 'domicilio') return res.status(400).json({ error: 'Este pedido es para recoger' });
       p.deliveryFee = carta.num(b.deliveryFee);
     }
-    if (b.payment === 'efectivo' || b.payment === 'transferencia') p.payment = b.payment;
+    if (PAYS.includes(b.payment)) p.payment = b.payment;
 
-    let sale = null;
     if (b.status) {
       if (!carta.STATES.includes(b.status)) return res.status(400).json({ error: 'Estado no válido' });
       if (b.status === 'cancelado') {
+        if (unbilled) return res.status(409).json({ error: 'Ya fue entregado: factúralo' });
         p.status = 'cancelado';
-      } else {
+      } else if (!unbilled) {
         if (p.status === 'vencido') { p.status = 'por_confirmar'; p.expiresAt = new Date(Date.now() + carta.EXPIRE_MIN * 60000).toISOString(); } // reactivar un vencido
         if (!FLOW.includes(b.status)) return res.status(400).json({ error: 'Estado no válido' });
         if (FLOW.indexOf(b.status) < FLOW.indexOf(p.status)) return res.status(400).json({ error: 'No se puede devolver el estado' });
         if (b.status !== 'por_confirmar' && p.mode === 'domicilio' && (p.deliveryFee === null || p.deliveryFee === undefined)) {
           return res.status(400).json({ error: 'Escribe el valor del domicilio (0 si es gratis) antes de confirmar' });
         }
-        p.status = b.status;
         if (b.status === 'entregado') {
-          sale = await pedidoToSale(bid, p, req.user);
-          p.saleId = sale.id; p.invoiceNumber = sale.invoiceNumber;
+          if (!PAYS.includes(b.payment)) return res.status(400).json({ error: 'Escoge el método de pago con que te pagaron' });
+          p.deliveredAt = new Date().toISOString();
+          p.deliveredBy = req.user.name || req.user.username;
         }
+        p.status = b.status;
       }
     }
     p.updatedAt = new Date().toISOString();
     await carta.writePedidos(bid, list);
-    res.json({ pedido: p, sale });
+    res.json({ pedido: p });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+/** POST /pedidos/:id/facturar — crea la factura de un pedido entregado, con el método de pago ya fijado */
+router.post('/pedidos/:id/facturar', authenticate, async (req, res) => {
+  try {
+    if (isDomi(req)) return res.status(403).json({ error: 'Forbidden' });
+    const bid = req.params.businessId;
+    const list = await carta.readPedidos(bid);
+    const p = list.find(x => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (p.status !== 'entregado') return res.status(400).json({ error: 'Primero hay que marcarlo como entregado' });
+    if (p.saleId) return res.status(409).json({ error: 'Este pedido ya está facturado' });
+    const sale = await pedidoToSale(bid, p, req.user);
+    p.saleId = sale.id; p.invoiceNumber = sale.invoiceNumber; p.updatedAt = new Date().toISOString();
+    await carta.writePedidos(bid, list);
+    res.status(201).json({ pedido: p, sale });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 

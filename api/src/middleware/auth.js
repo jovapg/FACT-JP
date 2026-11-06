@@ -128,7 +128,9 @@ function requireBusinessAccess(req, res, next) {
     // porque muchas rutas solo excluyen al cajero y un rol nuevo pasaría de largo.
     if (req.user.role === 'domiciliario') {
       const p = (req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
-      const ok = req.method === 'GET' && /^\/api\/[^/]+\/(pedidos|profile)$/.test(p);
+      // Puede ver pedidos/perfil y actualizar UN pedido (la ruta limita a "salí" y "entregado" con método de pago)
+      const ok = (req.method === 'GET' && /^\/api\/[^/]+\/(pedidos|profile)$/.test(p))
+        || (req.method === 'PUT' && /^\/api\/[^/]+\/pedidos\/[^/]+$/.test(p));
       if (!ok) return res.status(403).json({ error: 'Forbidden' });
     }
     return next();
