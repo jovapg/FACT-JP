@@ -227,6 +227,20 @@ app.use('/api/:businessId/payroll', bizAccess, moduleGuard('payroll'));
 app.use('/api/:businessId/finance', bizAccess, moduleGuard('finance'));
 app.use('/api/:businessId/audit', bizAccess, moduleGuard('audit'));
 
+// Carta y pedidos en línea: solo las franquicias que tienen ese módulo prendido (lo prende el superadmin)
+function cartaGuard() {
+  return async (req, res, next) => {
+    try {
+      const { readJSON: rj, getBusinessPath: gp } = require('./src/services/fileStorage');
+      const profile = await rj(path.join(gp(req.params.businessId), 'profile.json')) || {};
+      if (profile.cartaOnline !== true) return res.status(403).json({ error: 'Este módulo no está habilitado para este negocio' });
+    } catch { /* si no se puede leer el perfil, no se bloquea */ }
+    next();
+  };
+}
+app.use('/api/:businessId/carta', bizAccess, cartaGuard());
+app.use('/api/:businessId/pedidos', bizAccess, cartaGuard());
+
 app.use('/api/:businessId/inventory/:id/image', bizAccess, uploadProductImg.single('image'));
 app.use('/api/:businessId', bizAccess, inventoryRoutes);
 app.use('/api/:businessId', bizAccess, recipesRoutes);
@@ -376,17 +390,7 @@ const ASSIGNABLE_ROLES = ['admin', 'cajero', 'domiciliario'];
  * El login busca el usuario en todos los negocios, así que debe ser único
  * en todo el sistema para que un cliente no entre al negocio de otro.
  */
-async function usernameTaken(username, exceptUserId = null) {
-  const wanted = String(username || '').trim().toLowerCase();
-  const superadmin = await readJSON(path.join(getDataPath(), 'superadmin.json'));
-  if (superadmin && String(superadmin.username).toLowerCase() === wanted) return true;
-  const businesses = await readJSON(path.join(getDataPath(), 'businesses.json')) || [];
-  for (const b of businesses) {
-    const list = await readJSON(path.join(getBusinessPath(b.id), 'users.json'));
-    if (Array.isArray(list) && list.some(u => u.id !== exceptUserId && String(u.username).toLowerCase() === wanted)) return true;
-  }
-  return false;
-}
+const { usernameTaken } = require('./src/services/users'); // único en todo el sistema (ver services/users.js)
 
 app.post('/api/:businessId/users', ...bizAccess, async (req, res) => {
   try {

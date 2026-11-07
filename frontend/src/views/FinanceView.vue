@@ -36,12 +36,12 @@
         <div class="fcard efectivo">
           <p class="fcard-label">💵 Efectivo</p>
           <p class="fcard-value">{{ formatCOP(sel.efectivo) }}</p>
-          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.efectivo) }}</span></div>
+          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && businessStore.profile?.modules?.domicilios !== false && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.efectivo) }}</span></div>
         </div>
         <div class="fcard banco">
           <p class="fcard-label">🏦 Banco</p>
           <p class="fcard-value">{{ formatCOP(sel.banco) }}</p>
-          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.banco) }}</span></div>
+          <div class="fcard-sub" v-if="businessStore.profile?.cartaOnline && businessStore.profile?.modules?.domicilios !== false && domi"><span>incluye 🛵 bolsillo Domicilios: {{ formatCOP(domi.banco) }}</span></div>
         </div>
         <div class="fcard total">
           <p class="fcard-label">💰 Dinero del mes</p>
@@ -51,7 +51,7 @@
       </div>
 
       <!-- Bolsillo Domicilios (solo negocios con pedidos en línea) -->
-      <DomiciliosPocket v-if="businessStore.profile?.cartaOnline" @changed="load" />
+      <DomiciliosPocket v-if="businessStore.profile?.cartaOnline && businessStore.profile?.modules?.domicilios !== false" @changed="load" />
 
       <!-- Resumen del mes (referencia, no afecta saldos) -->
       <div class="card ref-card mb-3">

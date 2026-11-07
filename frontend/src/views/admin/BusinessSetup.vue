@@ -10,6 +10,9 @@
           </button>
         </div>
 
+        <!-- Módulos de la franquicia (solo lectura: los cambia el superadmin) -->
+        <ModulesInfo v-if="activeTab === 'modules'" />
+
         <!-- Business Profile -->
         <div class="card" v-if="activeTab === 'profile'">
           <h3 class="section-title">Información del Negocio</h3>
@@ -276,6 +279,7 @@ import { useBusinessStore } from '../../stores/business.js'
 import { useSpaces } from '../../composables/useSpaces.js'
 import { useTablesStore } from '../../stores/tables.js'
 import PageLayout from '../../components/PageLayout.vue'
+import ModulesInfo from '../../components/ModulesInfo.vue'
 import api from '../../services/api.js'
 import { useAuthStore } from '../../stores/auth.js'
 
@@ -292,6 +296,7 @@ const tabs = computed(() => [
   { id: 'categories', label: 'Categorías' },
   { id: 'tables', label: spaces.plural },
   { id: 'users', label: 'Usuarios' },
+  { id: 'modules', label: 'Módulos' },
   { id: 'backup', label: '⬇️ Backup' }
 ])
 const activeTab = ref('profile')

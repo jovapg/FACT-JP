@@ -256,6 +256,15 @@ function feeOfSale(s) {
  * Entra: el domicilio cobrado en cada venta. Sale: pago al domiciliario (con incentivos) y gastos de la moto.
  * Devuelve el día pedido (hoy por defecto) y el saldo acumulado (puede quedar negativo si hubo domicilios gratis).
  */
+// El bolsillo Domicilios necesita el módulo prendido (Carta + Finanzas + Bolsillo)
+router.use('/finance/domicilios', async (req, res, next) => {
+  try {
+    const profile = await readJSON(path.join(getBusinessPath(req.params.businessId), 'profile.json')) || {};
+    if (!require('../services/modules').isOn(profile, 'bol')) return res.status(403).json({ error: 'Este módulo no está habilitado para este negocio' });
+  } catch { /* si no se puede leer el perfil, no se bloquea */ }
+  next();
+});
+
 router.get('/finance/domicilios', authenticate, adminOnly, async (req, res) => {
   try {
     const id = req.params.businessId;

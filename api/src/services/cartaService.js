@@ -323,6 +323,24 @@ async function writePedidos(businessId, list) { await writeJSON(pedidosPath(busi
 
 const fs = require('fs');
 
+/**
+ * Carta de EJEMPLO para otra franquicia: los mismos productos de Deli-Combos (se editan precios, agotados y
+ * visibilidad), pero SIN sus datos de contacto: WhatsApp, dirección, horario, datos del banco, domicilio.
+ */
+function sampleCarta(settings = {}) {
+  const c = defaultCarta();
+  c.settings = { ...c.settings, whatsapp: '', address: '', hours: '', bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings };
+  return c;
+}
+/** Carta vacía (todavía no hay editor de productos: se llena cargando una de ejemplo) */
+function blankCarta(settings = {}) {
+  return {
+    settings: { enabled: true, open: true, paused: false, pickup: true, freeDeliveryFrom: 0, welcome: '', whatsapp: '', address: '', hours: '',
+      bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings },
+    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION
+  };
+}
+
 /** ¿Hay un turno de caja abierto? Los pedidos entran siempre, pero SIN turno abierto no se pueden facturar. */
 function hasOpenShift(businessId) {
   try {
@@ -432,5 +450,5 @@ function priceOrder(carta, rawItems, isOut = () => false) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
+  defaultCarta, sampleCarta, blankCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
 };

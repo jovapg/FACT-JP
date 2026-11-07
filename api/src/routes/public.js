@@ -26,7 +26,11 @@ const BUSINESSES = () => path.join(require('../services/fileStorage').getDataPat
 async function findBusiness(slug) {
   const list = await readJSON(BUSINESSES()) || [];
   const s = String(slug || '').toLowerCase();
-  return list.find(b => b.active !== false && String(b.slug || '').toLowerCase() === s) || null;
+  const biz = list.find(b => b.active !== false && String(b.slug || '').toLowerCase() === s) || null;
+  if (!biz) return null;
+  // Si el superadmin apagó el módulo "Carta pública y pedidos", la carta deja de existir para el público
+  const prof = await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {};
+  return prof.cartaOnline === true ? biz : null;
 }
 
 /** Quita lo interno de la carta antes de mostrarla al público */
