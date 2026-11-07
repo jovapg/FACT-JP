@@ -18,6 +18,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
 const drinksLib = require('./drinks');
+const { SNACK_SECTIONS } = require('./snacks');
 
 const cartaPath   = (id) => path.join(getBusinessPath(id), 'carta.json');
 const pedidosPath = (id) => path.join(getBusinessPath(id), 'pedidos.json');
@@ -70,10 +71,29 @@ function applyDrinks(c) {
   c.drinksVersion = DRINKS_VERSION;
 }
 
+const SNACKS_VERSION = 1;    // 1 = papas, snacks, pasteles, galletas y chicles
+
+/** Agrega las categorías de snacks (antes de las bebidas) sin tocar nada de lo que ya existe */
+function applySnacks(c) {
+  const have = new Set(c.categories.map(x => x.name));
+  const drinkOrders = c.categories.filter(x => drinksLib.SECTIONS.includes(x.name)).map(x => x.order);
+  let order = (drinkOrders.length ? Math.min(...drinkOrders) : c.categories.reduce((m, x) => Math.max(m, x.order), -1) + 1) - 0.5;
+  let pOrder = c.products.reduce((m, p) => Math.max(m, p.order), -1) + 1;
+  for (const [name, items] of SNACK_SECTIONS) {
+    if (have.has(name)) continue; // ya estaba: no se duplica
+    const id = uuidv4();
+    c.categories.push({ id, name, order: order, extras: false });
+    order += 0.1;
+    for (const [pn, price] of items) c.products.push({ id: uuidv4(), categoryId: id, order: pOrder++, name: pn, description: '', price, active: true, soldOut: false, groups: [] });
+  }
+  c.snacksVersion = SNACKS_VERSION;
+}
+
 /** Pone al día una carta guardada. Devuelve true si cambió algo (y entonces se guarda). */
 function migrateCarta(c) {
   let changed = false;
   if (c.drinksVersion !== DRINKS_VERSION) { applyDrinks(c); changed = true; }
+  if (c.snacksVersion !== SNACKS_VERSION) { applySnacks(c); changed = true; }
   if (c.settingsVersion !== SETTINGS_VERSION) {
     const s = c.settings || (c.settings = {});
     // Solo se reemplaza el número de PRUEBA; lo demás se llena si estaba vacío (no pisa lo que el admin ya escribió)
@@ -190,7 +210,7 @@ function defaultCarta() {
       ...(alcohol ? { alcohol: true } : {}), groups };
   });
 
-  return {
+  const carta = {
     settings: {
       enabled: true,
       open: true,            // abierto / cerrado (lo cambia quien atiende)
@@ -209,6 +229,8 @@ function defaultCarta() {
     products,
     drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION
   };
+  applySnacks(carta);
+  return carta;
 }
 
 // ───────────────────────── Lectura / escritura ─────────────────────────

@@ -322,6 +322,8 @@ function emojiFor(name) {
   if (/adicion/.test(n)) return '🍟'
   if (/frito/.test(n)) return '🥟'
   if (/caliente/.test(n)) return '☕'
+  if (/papa|snack/.test(n)) return '🥔'
+  if (/pastel|galleta|chicle|dulce/.test(n)) return '🍪'
   if (/combo|compartir/.test(n)) return '🍱'
   return '🍗'
 }
