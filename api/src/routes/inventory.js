@@ -18,6 +18,7 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true }); // mergeParams: true es CRÍTICO para recibir :businessId del router padre
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
@@ -190,7 +191,31 @@ router.post('/inventory/:id/image', authenticate, async (req, res) => {
     const idx = inventory.findIndex(i => i.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Producto no encontrado' });
 
-    const imageUrl = `/uploads/${req.params.businessId}/${req.file.filename}`;
+    // La foto se reduce a un tamaño de carta (máx. 560 px, WebP): la que sube el celular pesa 3-8 MB y
+    // el cliente la descargaría en su plan de datos. Si por algo no se puede reducir, solo se acepta si ya es pequeña.
+    let filename = req.file.filename;
+    try {
+      const sharp = require('sharp');
+      const dir = path.dirname(req.file.path);
+      const base = path.parse(req.file.filename).name;
+      const tmp = path.join(dir, base + '.tmp-' + Date.now() + '.webp');
+      await sharp(req.file.path).rotate().resize({ width: 560, height: 560, fit: 'inside', withoutEnlargement: true }).webp({ quality: 76 }).toFile(tmp);
+      const finalPath = path.join(dir, base + '.webp');
+      if (req.file.path !== finalPath) { try { fs.unlinkSync(req.file.path); } catch { /* ya no está */ } }
+      fs.renameSync(tmp, finalPath);
+      filename = base + '.webp';
+    } catch (e) {
+      console.error('[imagen] no se pudo reducir:', e.message);
+      // Si la librería no está disponible se acepta la foto original (solo si es pequeña); si el archivo
+      // no se puede leer como imagen, se rechaza.
+      const sinLibreria = e.code === 'MODULE_NOT_FOUND';
+      if (!sinLibreria || req.file.size > 2 * 1024 * 1024) {
+        try { fs.unlinkSync(req.file.path); } catch { /* ya no está */ }
+        return res.status(400).json({ error: sinLibreria ? 'La foto es muy pesada (máx 2 MB). Prueba con otra.' : 'Ese archivo no es una foto válida. Prueba con un JPG, PNG o WEBP.' });
+      }
+    }
+    // ?v= evita que el celular siga mostrando la foto vieja cuando se reemplaza
+    const imageUrl = `/uploads/${req.params.businessId}/${filename}?v=${Date.now()}`;
     inventory[idx].imageUrl = imageUrl;
     await writeJSON(inventoryPath(req.params.businessId), inventory);
     res.json({ imageUrl });

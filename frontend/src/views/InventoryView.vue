@@ -132,7 +132,7 @@
                 <div>
                   <label class="form-label">Foto del producto</label>
                   <input type="file" accept="image/*" class="form-control" @change="handleImageUpload" :disabled="uploadingImage" />
-                  <p class="form-hint" style="margin-top:4px">{{ uploadingImage ? 'Subiendo...' : 'JPG, PNG o WEBP. Máx 2 MB.' }}</p>
+                  <p class="form-hint" style="margin-top:4px">{{ uploadingImage ? 'Subiendo...' : 'JPG, PNG o WEBP. La app la reduce sola.' }}</p>
                 </div>
               </div>
 

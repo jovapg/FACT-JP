@@ -113,13 +113,17 @@ const productImgStorage = multer.diskStorage({
 });
 const uploadProductImg = multer({
   storage: productImgStorage,
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 12 * 1024 * 1024 }, // se reduce a ~50 KB al guardarla (ver routes/inventory.js)
   fileFilter: imageFileFilter
 });
 
 // Helmet: cabeceras de seguridad HTTP (HSTS, XSS protection, no-sniff, etc.)
 // crossOriginResourcePolicy: false para que las imágenes /uploads sean accesibles desde el frontend
 app.use(helmet({ crossOriginResourcePolicy: false }));
+
+// Comprime las respuestas (JSON, JS, CSS, HTML): la carta del cliente pasa de ~360 KB a ~60 KB.
+// Los PDF e imágenes ya vienen comprimidos y el middleware los deja tal cual.
+app.use(require('compression')());
 
 // Railway y otros proxies pasan el IP real en X-Forwarded-For
 // Sin esto, express-rate-limit lanza error y el login no funciona
