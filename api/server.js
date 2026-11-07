@@ -188,6 +188,11 @@ const auditRoutes = require('./src/routes/audit');
 const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shortlinks');
 
 // Mount routes
+// Health check (antes de las rutas /api/:businessId, que si no lo interceptan y pide sesión)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/backups', require('./src/routes/backups'));   // respaldos (solo superadmin)
@@ -541,10 +546,7 @@ app.post('/api/:businessId/reset-produccion', ...bizAccess, async (req, res) => 
   }
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+
 
 // Storage diagnostic — superadmin only
 // Muestra la ruta de datos activa y el contenido del volumen para verificar persistencia
