@@ -11,10 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// Advertencia si no hay JWT_SECRET configurado
-if (!process.env.JWT_SECRET) {
-  console.warn('[ADVERTENCIA] JWT_SECRET no está configurado. Usando clave por defecto — cámbiala en producción.');
-}
+// La clave de sesiones la resuelve src/middleware/auth.js (variable de entorno, o archivo aleatorio en el volumen,
+// o clave temporal). No existe ninguna clave por defecto: ese aviso viejo era engañoso y se quitó.
 
 // Directorio de datos: variable de entorno → volumen Railway → ruta local
 const dataPath = process.env.DATA_PATH ||
