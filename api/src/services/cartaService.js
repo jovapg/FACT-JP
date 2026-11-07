@@ -58,7 +58,7 @@ function applyDrinks(c) {
   c.products = c.products.filter(p => !oldIds.has(p.categoryId));
   let order = c.categories.reduce((m, x) => Math.max(m, x.order), -1) + 1;
   const catId = {};
-  for (const s of drinksLib.SECTIONS) { catId[s] = uuidv4(); c.categories.push({ id: catId[s], name: s, order: order++, extras: false }); }
+  for (const s of drinksLib.SECTIONS) { catId[s] = uuidv4(); c.categories.push({ id: catId[s], name: s, order: order++, extras: false, group: 'Bebidas' }); }
   let pOrder = c.products.reduce((m, p) => Math.max(m, p.order), -1) + 1;
   for (const d of drinksLib.drinks()) c.products.push({
     id: uuidv4(), categoryId: catId[d.section], order: pOrder++, name: d.name, description: d.note || (d.alcohol ? 'Solo mayores de 18 años' : ''),
@@ -94,6 +94,8 @@ function migrateCarta(c) {
   let changed = false;
   if (c.drinksVersion !== DRINKS_VERSION) { applyDrinks(c); changed = true; }
   if (c.snacksVersion !== SNACKS_VERSION) { applySnacks(c); changed = true; }
+  // Las categorías de bebidas se juntan en un solo botón del menú ("grupo"); las cartas viejas no lo tenían
+  for (const cat of c.categories) if (!cat.group && drinksLib.SECTIONS.includes(cat.name)) { cat.group = 'Bebidas'; changed = true; }
   if (c.settingsVersion !== SETTINGS_VERSION) {
     const s = c.settings || (c.settings = {});
     // Solo se reemplaza el número de PRUEBA; lo demás se llena si estaba vacío (no pisa lo que el admin ya escribió)
@@ -128,7 +130,7 @@ function defaultCarta() {
     { key: 'adicion', name: 'Adiciones',               extras: false },
     { key: 'fritos',  name: 'Fritos',                  extras: false },
     { key: 'calientes',name: 'Calientes y jugos',      extras: false },
-    ...drinksLib.SECTIONS.map(n => ({ key: 'bb:' + n, name: n, extras: false }))
+    ...drinksLib.SECTIONS.map(n => ({ key: 'bb:' + n, name: n, extras: false, group: 'Bebidas' }))
   ].map((c, i) => ({ id: uuidv4(), order: i, ...c }));
   const cid = Object.fromEntries(cats.map(c => [c.key, c.id]));
 
@@ -341,6 +343,73 @@ function blankCarta(settings = {}) {
   };
 }
 
+/**
+ * Grupos "desde la carta": un grupo de cantidades (bebidas, adiciones) puede armarse a partir de las categorías
+ * que se escojan (g.source.categories). Sus opciones se calculan AL MOMENTO con los productos de esas categorías:
+ * si cambias el precio o marcas agotada una bebida, cambia en todos los combos, sin repetir la lista en cada uno.
+ */
+function resolveCarta(c) {
+  const byCat = new Map(c.categories.map(x => [x.id, x]));
+  return { ...c, products: c.products.map(p => {
+    if (!(p.groups || []).some(g => g.source)) return p;
+    return { ...p, groups: p.groups.map(g => {
+      if (!g.source) return g;
+      const cats = (g.source.categories || []).map(id => byCat.get(id)).filter(Boolean).sort((a, b) => a.order - b.order);
+      const options = [];
+      for (const cat of cats) {
+        for (const q of c.products.filter(x => x.categoryId === cat.id && x.active && x.id !== p.id).sort((a, b) => a.order - b.order)) {
+          options.push({ id: q.id, name: q.name, price: q.price, section: cats.length > 1 ? cat.name : '', note: q.description || '',
+            ...(q.alcohol ? { alcohol: true } : {}), ...(q.soldOut ? { soldOut: true } : {}) });
+        }
+      }
+      return { ...g, options };
+    }) };
+  }) };
+}
+
+/** ¿Ya existe un producto con ese nombre? (el nombre une carta, inventario y precios, por eso no se repite) */
+function nameTaken(c, name, exceptId = null) {
+  const k = String(name).toLowerCase().trim();
+  return c.products.some(p => p.id !== exceptId && p.name.toLowerCase().trim() === k);
+}
+
+/** Valida y limpia los grupos de opciones que manda el editor. Lanza Error con un mensaje claro si algo no sirve. */
+function cleanGroups(input, c) {
+  if (!Array.isArray(input)) return [];
+  if (input.length > 8) throw new Error('Máximo 8 grupos de opciones por producto');
+  const catIds = new Set(c.categories.map(x => x.id));
+  const out = [];
+  for (const g of input) {
+    const name = txt(g.name, 40);
+    if (name.length < 2) throw new Error('Cada grupo de opciones necesita un nombre');
+    const type = ['one', 'many', 'qty'].includes(g.type) ? g.type : null;
+    if (!type) throw new Error(`El grupo "${name}" tiene un tipo no válido`);
+    const clean = { id: g.id && /^[\w-]{8,64}$/.test(String(g.id)) ? String(g.id) : uuidv4(), name, type };
+    if (type === 'one') clean.required = !!g.required;
+    if (type === 'many') clean.max = Math.min(20, Math.max(1, Math.floor(Number(g.max) || 1)));
+    if (type === 'qty' && g.collapsed) clean.collapsed = true;
+    if (g.source && Array.isArray(g.source.categories)) {
+      if (type !== 'qty') throw new Error(`El grupo "${name}": "desde la carta" solo sirve para cantidades (bebidas, adiciones)`);
+      const cats = [...new Set(g.source.categories.map(String))].filter(id => catIds.has(id));
+      if (!cats.length) throw new Error(`El grupo "${name}": escoge al menos una categoría de la carta`);
+      clean.source = { categories: cats }; clean.options = [];
+    } else {
+      if (!Array.isArray(g.options) || !g.options.length) throw new Error(`El grupo "${name}" necesita al menos una opción`);
+      if (g.options.length > 150) throw new Error(`El grupo "${name}" tiene demasiadas opciones (máx. 150)`);
+      const seen = new Set();
+      clean.options = g.options.map(o => {
+        const on = txt(o.name, 60);
+        if (!on) throw new Error(`El grupo "${name}" tiene una opción sin nombre`);
+        const id = o.id && /^[\w-]{8,64}$/.test(String(o.id)) && !seen.has(String(o.id)) ? String(o.id) : uuidv4();
+        seen.add(id);
+        return { id, name: on, price: num(o.price), ...(o.alcohol ? { alcohol: true } : {}), ...(o.section ? { section: txt(o.section, 40) } : {}), ...(o.note ? { note: txt(o.note, 120) } : {}) };
+      });
+    }
+    out.push(clean);
+  }
+  return out;
+}
+
 /** ¿Hay un turno de caja abierto? Los pedidos entran siempre, pero SIN turno abierto no se pueden facturar. */
 function hasOpenShift(businessId) {
   try {
@@ -394,7 +463,8 @@ function newCode(list) {
  * @returns { lines, subtotal } o lanza Error con mensaje para el cliente.
  * Cada línea: { productId, name, qty, unitPrice, total, choices:[texto], note, kind:'producto'|'adicion' }
  */
-function priceOrder(carta, rawItems, isOut = () => false) {
+function priceOrder(cartaIn, rawItems, isOut = () => false) {
+  const carta = resolveCarta(cartaIn);
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error('El pedido está vacío');
   if (rawItems.length > 40) throw new Error('Demasiados productos en el pedido');
   const byId = new Map(carta.products.map(p => [p.id, p]));
@@ -433,7 +503,7 @@ function priceOrder(carta, rawItems, isOut = () => false) {
           const o = g.options.find(x => x.id === String(c.optionId));
           const q = Math.min(20, Math.floor(Number(c.qty) || 0));
           if (!o || q <= 0) continue;
-          if (isOut(o.name)) throw new Error(`"${o.name}" está agotado`);
+          if (o.soldOut || isOut(o.name)) throw new Error(`"${o.name}" está agotado`);
           extras.push({ productId: p.id, name: o.name, qty: q * qty, unitPrice: o.price, total: o.price * q * qty,
             kind: 'adicion', alcohol: !!o.alcohol, parentName: p.name });
         }
@@ -450,5 +520,5 @@ function priceOrder(carta, rawItems, isOut = () => false) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, sampleCarta, blankCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
+  defaultCarta, resolveCarta, cleanGroups, nameTaken, sampleCarta, blankCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
 };

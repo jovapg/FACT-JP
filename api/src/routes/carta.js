@@ -110,11 +110,23 @@ router.put('/carta/products/:id', authenticate, async (req, res) => {
     const p = c && c.products.find(x => x.id === req.params.id);
     if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
     const b = req.body || {};
-    const before = { price: p.price, active: p.active, soldOut: p.soldOut, name: p.name };
+    const before = { price: p.price, active: p.active, soldOut: p.soldOut, name: p.name, categoryId: p.categoryId };
     if (typeof b.soldOut === 'boolean') p.soldOut = b.soldOut; // cajero también puede marcar agotado
     if (isAdmin(req)) {
       if (typeof b.active === 'boolean') p.active = b.active;
-      if (b.name !== undefined) p.name = carta.txt(b.name, 80, p.name);
+      if (b.name !== undefined) {
+        const nn = carta.txt(b.name, 80, p.name);
+        if (nn.toLowerCase() !== p.name.toLowerCase() && carta.nameTaken(c, nn, p.id)) return res.status(409).json({ error: 'Ya hay un producto con ese nombre. Los nombres no se pueden repetir.' });
+        p.name = nn;
+      }
+      if (b.categoryId !== undefined) {
+        if (!c.categories.some(x => x.id === b.categoryId)) return res.status(400).json({ error: 'Categoría no encontrada' });
+        p.categoryId = b.categoryId;
+      }
+      if (typeof b.alcohol === 'boolean') { if (b.alcohol) p.alcohol = true; else delete p.alcohol; }
+      if (b.groups !== undefined) {
+        try { p.groups = carta.cleanGroups(b.groups, c); } catch (e) { return res.status(400).json({ error: e.message }); }
+      }
       if (b.description !== undefined) p.description = carta.txt(b.description, 160);
       if (b.price !== undefined) p.price = carta.num(b.price);
       // Precio de una opción dentro de un grupo: { optionId, price }
@@ -131,6 +143,8 @@ router.put('/carta/products/:id', authenticate, async (req, res) => {
     if (p.active !== before.active) diffs.push(p.active ? 'ahora visible' : 'ocultado');
     if (p.soldOut !== before.soldOut) diffs.push(p.soldOut ? 'marcado AGOTADO' : 'ya disponible');
     if (p.name !== before.name) diffs.push('nombre era "' + before.name + '"');
+    if (p.categoryId !== before.categoryId) diffs.push('cambió de categoría');
+    if (b.groups !== undefined) diffs.push('opciones editadas');
     if (diffs.length) await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: 'Carta: "' + p.name + '" — ' + diffs.join(', ') });
     res.json(p);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
@@ -154,6 +168,128 @@ router.put('/carta/option-price', authenticate, async (req, res) => {
     await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: 'Carta: precio de "' + name + '" cambió a ' + cop(price) + ' en todos los combos' });
     res.json({ updated: n });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ───────────────────────── Editor de carta (solo admin) ─────────────────────────
+const needAdmin = (req, res) => { if (!isAdmin(req)) { res.status(403).json({ error: 'Forbidden' }); return false; } return true; };
+const nextOrder = (list) => list.reduce((m, x) => Math.max(m, Number(x.order) || 0), -1) + 1;
+const fail = (res, err) => { console.error(err); res.status(500).json({ error: 'Internal server error' }); };
+
+router.post('/carta/categories', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    if (!c) return res.status(404).json({ error: 'Sin carta' });
+    const name = carta.txt(req.body?.name, 40);
+    if (name.length < 2) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
+    if (c.categories.some(x => x.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: 'Ya existe una categoría con ese nombre' });
+    const cat = { id: uuidv4(), name, order: nextOrder(c.categories), extras: false, emoji: carta.txt(req.body?.emoji, 4), group: carta.txt(req.body?.group, 30) };
+    c.categories.push(cat);
+    await carta.writeCarta(req.params.businessId, c);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_categoria', summary: `Carta: categoría "${name}" creada` });
+    res.status(201).json(cat);
+  } catch (err) { fail(res, err); }
+});
+
+router.put('/carta/categories/:id', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    const cat = c && c.categories.find(x => x.id === req.params.id);
+    if (!cat) return res.status(404).json({ error: 'Categoría no encontrada' });
+    const b = req.body || {}; const was = cat.name;
+    if (b.name !== undefined) {
+      const name = carta.txt(b.name, 40);
+      if (name.length < 2) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
+      if (c.categories.some(x => x.id !== cat.id && x.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: 'Ya existe una categoría con ese nombre' });
+      cat.name = name;
+    }
+    if (b.emoji !== undefined) cat.emoji = carta.txt(b.emoji, 4);
+    if (b.group !== undefined) cat.group = carta.txt(b.group, 30);
+    await carta.writeCarta(req.params.businessId, c);
+    if (was !== cat.name) await logAudit(req.params.businessId, { ...who(req), action: 'carta_categoria', summary: `Carta: categoría "${was}" ahora se llama "${cat.name}"` });
+    res.json(cat);
+  } catch (err) { fail(res, err); }
+});
+
+router.delete('/carta/categories/:id', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    const cat = c && c.categories.find(x => x.id === req.params.id);
+    if (!cat) return res.status(404).json({ error: 'Categoría no encontrada' });
+    const n = c.products.filter(p => p.categoryId === cat.id).length;
+    if (n) return res.status(409).json({ error: `Esta categoría tiene ${n} producto(s). Muévelos a otra categoría o bórralos primero.` });
+    if (c.products.some(p => (p.groups || []).some(g => g.source && g.source.categories.includes(cat.id)))) {
+      return res.status(409).json({ error: 'Hay opciones de productos armadas con esta categoría. Quítala de esas opciones primero.' });
+    }
+    c.categories = c.categories.filter(x => x.id !== cat.id);
+    await carta.writeCarta(req.params.businessId, c);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_categoria', summary: `Carta: categoría "${cat.name}" borrada` });
+    res.json({ ok: true });
+  } catch (err) { fail(res, err); }
+});
+
+/** Orden de categorías: { ids: [...] } en el orden nuevo */
+router.post('/carta/categories/reorder', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    if (!c) return res.status(404).json({ error: 'Sin carta' });
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+    const rest = c.categories.filter(x => !ids.includes(x.id)).sort((a, b) => a.order - b.order).map(x => x.id);
+    [...ids.filter(id => c.categories.some(x => x.id === id)), ...rest].forEach((id, i) => { c.categories.find(x => x.id === id).order = i; });
+    await carta.writeCarta(req.params.businessId, c);
+    res.json({ ok: true });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/carta/products', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    if (!c) return res.status(404).json({ error: 'Sin carta' });
+    const b = req.body || {};
+    const name = carta.txt(b.name, 80);
+    if (name.length < 2) return res.status(400).json({ error: 'Escribe el nombre del producto' });
+    if (carta.nameTaken(c, name)) return res.status(409).json({ error: 'Ya hay un producto con ese nombre. Los nombres no se pueden repetir.' });
+    if (!c.categories.some(x => x.id === b.categoryId)) return res.status(400).json({ error: 'Escoge una categoría' });
+    let groups = [];
+    try { groups = carta.cleanGroups(b.groups || [], c); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const p = { id: uuidv4(), categoryId: b.categoryId, order: nextOrder(c.products), name, description: carta.txt(b.description, 160),
+      price: carta.num(b.price), active: b.active !== false, soldOut: false, ...(b.alcohol ? { alcohol: true } : {}), groups };
+    c.products.push(p);
+    await carta.writeCarta(req.params.businessId, c);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: `Carta: producto "${name}" creado (${cop(p.price)})` });
+    res.status(201).json(p);
+  } catch (err) { fail(res, err); }
+});
+
+router.delete('/carta/products/:id', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    const p = c && c.products.find(x => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+    c.products = c.products.filter(x => x.id !== p.id);
+    await carta.writeCarta(req.params.businessId, c);
+    await logAudit(req.params.businessId, { ...who(req), action: 'carta_producto', summary: `Carta: producto "${p.name}" borrado` });
+    res.json({ ok: true });
+  } catch (err) { fail(res, err); }
+});
+
+/** Orden de productos: { ids: [...] } (los de una misma categoría) en el orden nuevo */
+router.post('/carta/products/reorder', authenticate, async (req, res) => {
+  try {
+    if (!needAdmin(req, res)) return;
+    const c = await carta.readCarta(req.params.businessId);
+    if (!c) return res.status(404).json({ error: 'Sin carta' });
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids.map(String) : []).filter(id => c.products.some(p => p.id === id));
+    const orders = ids.map(id => c.products.find(p => p.id === id).order).sort((a, b) => a - b);
+    ids.forEach((id, i) => { c.products.find(p => p.id === id).order = orders[i]; });
+    await carta.writeCarta(req.params.businessId, c);
+    res.json({ ok: true });
+  } catch (err) { fail(res, err); }
 });
 
 router.get('/pedidos', authenticate, async (req, res) => {

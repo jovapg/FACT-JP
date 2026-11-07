@@ -327,17 +327,23 @@ function emojiFor(name) {
   if (/combo|compartir/.test(n)) return '🍱'
   return '🍗'
 }
+// Las categorías con el mismo "grupo" (ej: Aguas, Gaseosas, Cervezas → "Bebidas") se juntan en un solo botón.
+// Las cartas viejas, sin grupo, juntan las bebidas por su nombre.
 const groups = computed(() => {
-  const out = [], drink = []
+  const out = [], byGroup = {}
   for (const c of cats.value) {
     const count = productsOf(c.id).length
-    if (DRINK_CATS.includes(c.name)) { drink.push({ ...c, count }); if (drink.length === 1) out.push({ id: 'bebidas', name: 'Bebidas', emoji: '🥤', cats: drink, count: 0 }); continue }
-    out.push({ id: c.id, name: c.name, emoji: emojiFor(c.name), cats: [c], count })
+    const gname = c.group || (DRINK_CATS.includes(c.name) ? 'Bebidas' : '')
+    if (gname) {
+      if (!byGroup[gname]) { byGroup[gname] = { id: 'g:' + gname, name: gname, emoji: c.emoji || emojiFor(gname), cats: [], count: 0 }; out.push(byGroup[gname]) }
+      byGroup[gname].cats.push(c); byGroup[gname].count += count
+      continue
+    }
+    out.push({ id: c.id, name: c.name, emoji: c.emoji || emojiFor(c.name), cats: [c], count })
   }
-  for (const g of out) if (g.id === 'bebidas') g.count = g.cats.reduce((a, c) => a + c.count, 0)
   return out
 })
-const catEmoji = computed(() => Object.fromEntries(cats.value.map(c => [c.id, DRINK_CATS.includes(c.name) ? emojiFor(c.name) : emojiFor(c.name)])))
+const catEmoji = computed(() => Object.fromEntries(cats.value.map(c => [c.id, c.emoji || emojiFor(c.group || c.name)])))
 const emojiOf = (p) => catEmoji.value[p.categoryId] || '🍗'
 const TILE = [['#ffedd5', '#7c2d12'], ['#fef3c7', '#78350f'], ['#fee2e2', '#7f1d1d'], ['#dcfce7', '#14532d'], ['#fef9c3', '#713f12'], ['#e0f2fe', '#0c4a6e'], ['#fae8ff', '#701a75'], ['#ccfbf1', '#134e4a']]
 function tileStyle(g, i) {

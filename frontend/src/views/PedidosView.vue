@@ -142,8 +142,11 @@
           <button class="pv-btn main" :disabled="syncing" @click="syncInventory">{{ syncing ? 'Registrando…' : '📦 Registrar productos en inventario' }}</button>
         </section>
 
+        <CartaEditor v-if="isAdmin" :carta="carta" @reload="loadCarta" />
+
+        <template v-if="!isAdmin">
         <h3 class="pv-h">Productos</h3>
-        <p class="pv-hint">Marca <b>Agotado</b> lo que se acabó: desaparece del pedido al instante.<template v-if="isAdmin"> Toca el precio para cambiarlo.</template></p>
+        <p class="pv-hint">Marca <b>Agotado</b> lo que se acabó: desaparece del pedido al instante.</p>
         <div v-for="c in carta.categories" :key="c.id" class="pv-cat">
           <h4>{{ c.name }}</h4>
           <div v-for="p in carta.products.filter(x => x.categoryId === c.id)" :key="p.id" class="pv-prow">
@@ -154,6 +157,7 @@
             <label v-if="isAdmin" class="pv-sw sm"><input type="checkbox" :checked="p.active" @change="patch(p, { active: $event.target.checked })" /><span>Visible</span></label>
           </div>
         </div>
+        </template>
         <section v-if="isAdmin" class="pv-set">
           <h3>Precio de bebidas y adiciones (en todos los combos)</h3>
           <div v-for="n in extraNames" :key="n" class="pv-prow">
@@ -173,6 +177,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, inject } from 'vue'
 import PageLayout from '../components/PageLayout.vue'
 import InvoiceDone from '../components/InvoiceDone.vue'
+import CartaEditor from '../components/CartaEditor.vue'
 import api from '../services/api.js'
 import { useAuthStore } from '../stores/auth.js'
 import { usePedidos } from '../composables/usePedidos.js'

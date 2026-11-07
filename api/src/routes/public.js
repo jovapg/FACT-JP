@@ -43,12 +43,12 @@ function publicView(biz, c, profile = {}, isOut = () => false) {
     // Fuera del horario de pedidos la tienda se ve cerrada
     settings: { whatsapp, open: !!open && inHours, paused, pickup, freeDeliveryFrom, hours, welcome, address, bankInfo, deliveryNote, openFrom, openTo, outOfHours: !inHours,
       paymentQr: profile.paymentQr || '' },
-    categories: cats.map(({ id, name, order }) => ({ id, name, order })),
+    categories: cats.map(({ id, name, order, emoji, group }) => ({ id, name, order, emoji: emoji || '', group: group || '' })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
       soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol, image: isOut.image ? isOut.image(p.name) : '',
       groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0, collapsed: !!g.collapsed,
-        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '', soldOut: g.type === 'qty' && isOut(o.name) })) }))
+        options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '', soldOut: g.type === 'qty' && (!!o.soldOut || isOut(o.name)) })) }))
     }))
   };
 }
@@ -59,7 +59,7 @@ router.get('/carta/:slug', readLimiter, async (req, res) => {
     const c = biz && await carta.readCarta(biz.id);
     if (!c || c.settings.enabled === false) return res.status(404).json({ error: 'Carta no disponible' });
     res.set('Cache-Control', 'no-store');
-    res.json(publicView(biz, c, await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}, await carta.stockCheck(biz.id)));
+    res.json(publicView(biz, carta.resolveCarta(c), await readJSON(path.join(getBusinessPath(biz.id), 'profile.json')) || {}, await carta.stockCheck(biz.id)));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Error del servidor' }); }
 });
 
