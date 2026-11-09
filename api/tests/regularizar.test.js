@@ -25,8 +25,10 @@ test('detecta ventas sin turno, las agrupa por día y las regulariza sin tocar l
   escribirDoc(srv.dataDir, F.id, 'sales.json', JSON.stringify([
     sale('a', iso(2, 15), 10000), sale('b', iso(2, 18), 5000, 'transferencia'), sale('c', iso(3, 16), 8000), sale('d', iso(4, 16), 7000)]));
 
-  const cajero = F.tokens.cajero, admin = F.tokens.admin;
+  const cajero = F.tokens.cajero, adminFranq = F.tokens.admin, admin = SUP; // regulariza solo el superadmin
   assert.equal((await srv.api('GET', `/api/${F.id}/shifts/unassigned`, { token: cajero })).status, 403, 'el cajero no regulariza');
+  assert.equal((await srv.api('GET', `/api/${F.id}/shifts/unassigned`, { token: adminFranq })).status, 403, 'el admin de la franquicia tampoco');
+  assert.equal((await srv.api('POST', `/api/${F.id}/shifts/regularize`, { token: adminFranq, body: {} })).status, 403);
 
   const r = (await srv.api('GET', `/api/${F.id}/shifts/unassigned`, { token: admin })).data;
   assert.equal(r.count, 3); assert.equal(r.total, 23000);
@@ -62,7 +64,7 @@ test('un grupo nunca salta por encima de un turno real el mismo día', async () 
   escribirDoc(srv.dataDir, bid, 'shifts.json', JSON.stringify([...antes, turno]));
   const ventas = JSON.parse(leerDoc(srv.dataDir, bid, 'sales.json'));
   escribirDoc(srv.dataDir, bid, 'sales.json', JSON.stringify([...ventas, sale('e', iso(6, 15), 3000), sale('f', iso(6, 21), 4000)]));
-  const g = (await srv.api('GET', `/api/${bid}/shifts/unassigned`, { token: F.tokens.admin })).data.groups;
+  const g = (await srv.api('GET', `/api/${bid}/shifts/unassigned`, { token: SUP })).data.groups;
   assert.equal(g.length, 2, 'antes y después del turno real son grupos distintos (si no, se contaría doble)');
 });
 

@@ -683,7 +683,7 @@ function shareShiftWhatsApp(shift) {
 }
 
 // ── Regularización de ventas sin turno (solo admin) ─────────────
-const canRegularize = computed(() => ['admin', 'superadmin'].includes(auth.user?.role))
+const canRegularize = computed(() => auth.user?.role === 'superadmin')
 const unassigned = ref({ count: 0, total: 0, groups: [] })
 const reguBusy = ref(false)
 const unassignedLoaded = ref(false)

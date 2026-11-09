@@ -135,11 +135,12 @@ const summarizeGroup = (g) => ({
   cash: sum(g.sales, s => (bucketOf(s.paymentMethod) === 'efectivo' ? s.total || 0 : 0)),
   other: sum(g.sales, s => (bucketOf(s.paymentMethod) === 'banco' ? s.total || 0 : 0))
 });
-const canRegularize = (req) => ['admin', 'superadmin'].includes(req.user.role);
+// Corrige cifras de Finanzas: solo el superadmin (dueño de la plataforma), no el admin de la franquicia
+const canRegularize = (req) => req.user.role === 'superadmin';
 
 router.get('/shifts/unassigned', authenticate, async (req, res) => {
   try {
-    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el administrador puede regularizar ventas sin turno' });
+    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el superadmin puede regularizar ventas sin turno' });
     const groups = unassignedGroups(await readJSON(salesPath(req.params.businessId)) || [], await readJSON(shiftsPath(req.params.businessId)) || []).map(summarizeGroup);
     res.json({ count: sum(groups, g => g.count), total: sum(groups, g => g.total), groups });
   } catch { res.status(500).json({ error: 'Internal server error' }); }
@@ -147,7 +148,7 @@ router.get('/shifts/unassigned', authenticate, async (req, res) => {
 
 router.post('/shifts/regularize', authenticate, async (req, res) => {
   try {
-    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el administrador puede regularizar ventas sin turno' });
+    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el superadmin puede regularizar ventas sin turno' });
     const bid = req.params.businessId;
     const sales = await readJSON(salesPath(bid)) || [];
     const shifts = await readJSON(shiftsPath(bid)) || [];
