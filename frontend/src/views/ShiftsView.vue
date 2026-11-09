@@ -31,6 +31,9 @@
           </button>
         </div>
 
+        <div v-else-if="canRegularize && unassignedLoaded" class="regu-ok mb-4">✓ Todas las ventas de este negocio están dentro de un turno (nada que regularizar).</div>
+        <div v-else-if="canRegularize && unassignedError" class="regu-ok mb-4">No se pudo revisar si hay ventas sin turno: {{ unassignedError }}</div>
+
         <!-- ── Turno activo ──────────────────────────────────────── -->
         <div v-if="shiftsStore.currentShift" class="shift-active-card mb-4">
           <div class="shift-active-header">
@@ -683,9 +686,14 @@ function shareShiftWhatsApp(shift) {
 const canRegularize = computed(() => ['admin', 'superadmin'].includes(auth.user?.role))
 const unassigned = ref({ count: 0, total: 0, groups: [] })
 const reguBusy = ref(false)
+const unassignedLoaded = ref(false)
+const unassignedError = ref('')
 async function loadUnassigned() {
   if (!canRegularize.value) return
-  try { unassigned.value = (await api.get(`/api/${auth.currentBusiness.id}/shifts/unassigned`)).data } catch { /* sin permiso o sin datos */ }
+  try {
+    unassigned.value = (await api.get(`/api/${auth.currentBusiness.id}/shifts/unassigned`)).data
+    unassignedLoaded.value = true; unassignedError.value = ''
+  } catch (e) { unassignedLoaded.value = false; unassignedError.value = e.response?.data?.error || e.message }
 }
 async function regularizar() {
   const u = unassigned.value
@@ -792,6 +800,7 @@ onMounted(async () => {
 
 /* Sin turno */
 .regu-card { background: var(--warning-light); border: 1.5px solid #fcd34d; color: #92400e; border-radius: var(--radius); padding: 16px 20px; }
+.regu-ok { font-size: 13px; color: var(--text-muted, #6b7280); padding: 4px 2px; }
 .regu-title { font-weight: 700; margin-bottom: 6px; }
 .regu-text { margin: 0 0 10px; font-size: 14px; }
 .regu-list { margin: 0 0 12px; padding-left: 18px; font-size: 14px; }
