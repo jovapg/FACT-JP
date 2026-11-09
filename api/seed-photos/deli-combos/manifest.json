@@ -1,0 +1,63 @@
+{
+  "slug": "deli-combos",
+  "nota": "Fotos reales enviadas por la dueña (9-nov-2026). Se asignan a los productos del inventario por nombre, solo si aún no tienen foto.",
+  "photos": [
+    {
+      "file": "alitas-salsas.webp",
+      "products": [
+        "Alitas x24",
+        "Alitas x18"
+      ]
+    },
+    {
+      "file": "alitas-cajas.webp",
+      "products": [
+        "Alitas x12",
+        "Alitas x6"
+      ]
+    },
+    {
+      "file": "cuarto-asado.webp",
+      "products": [
+        "¼ de pollo (muslo y contramuslo)",
+        "Combo personal muslo"
+      ]
+    },
+    {
+      "file": "deditos.webp",
+      "products": [
+        "Deditos"
+      ]
+    },
+    {
+      "file": "pechuga-apanada.webp",
+      "products": [
+        "Combo personal pechuga",
+        "Pechuga"
+      ]
+    },
+    {
+      "file": "muslo-asado.webp",
+      "products": [
+        "Combo personal contramuslo",
+        "Contramuslo",
+        "Muslo"
+      ]
+    },
+    {
+      "file": "asador.webp",
+      "products": [
+        "Pollo entero",
+        "½ pollo",
+        "½ pollo con consomé y ensalada"
+      ]
+    },
+    {
+      "file": "tragon.webp",
+      "products": [
+        "Tragón con papas francesas",
+        "Tragón con papa al vapor"
+      ]
+    }
+  ]
+}

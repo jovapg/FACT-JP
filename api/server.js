@@ -51,6 +51,9 @@ console.log(`[DATA] Ruta de datos: ${path.resolve(dataPath)}`);
   }
 })();
 
+// Fotos de productos que viajan con la aplicación (api/seed-photos): se asignan por nombre, sin pisar las que ya tengan foto
+setTimeout(() => { require('./src/services/seedPhotos').run(); }, 1500);
+
 // Subidas de imágenes: solo estos tipos, y la extensión se decide por el tipo MIME
 // (no por el nombre del archivo). Así un SVG/HTML disfrazado de imagen no puede
 // guardarse con una extensión que el navegador ejecute.
