@@ -1,0 +1,38 @@
+# Vigilancia de facJp: cada 10 minutos revisa que la app esté bien y la carta de Deli-Combos abra.
+# Si algo falla (después de reintentar), la tarea falla y GitHub te avisa por correo y por la app del celular.
+# También se puede correr a mano desde la pestaña Actions ("Run workflow"), y corre una vez cuando se edita este archivo.
+name: Vigilancia
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/vigilancia.yml'
+
+jobs:
+  vigilar:
+    name: La app responde
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Revisar la app (chequeo profundo)
+        run: |
+          URL=https://fact-jp-production.up.railway.app
+          # Hasta 4 intentos separados por 25 segundos: un reinicio normal (por un despliegue) no debe dar falsa alarma
+          for intento in 1 2 3 4; do
+            code=$(curl -s -o /tmp/deep.json -w '%{http_code}' --max-time 20 "$URL/api/health/deep" || echo 000)
+            if [ "$code" = "200" ] && grep -q '"status":"ok"' /tmp/deep.json; then
+              echo "La app responde bien (intento $intento)"; cat /tmp/deep.json; echo; exit 0
+            fi
+            echo "Intento $intento: código $code"; cat /tmp/deep.json 2>/dev/null; echo
+            [ "$intento" -lt 4 ] && sleep 25
+          done
+          echo "::error title=facJp no responde::La app no respondió bien en 4 intentos (último código: $code). Revisa Railway."
+          exit 1
+      - name: Revisar que la carta pública abre
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://fact-jp-production.up.railway.app/api/public/carta/deli-combos || echo 000)
+          echo "Carta de Deli-Combos: $code"
+          if [ "$code" != "200" ]; then echo "::error title=La carta no abre::La carta pública de Deli-Combos respondió $code."; exit 1; fi
