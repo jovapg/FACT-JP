@@ -37,7 +37,7 @@ function writeAtomic(dest, data) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + '.restore-tmp';
   fs.writeFileSync(tmp, data);
-  fs.renameSync(tmp, dest);
+  fs.renameSync(tmp, dest); // el temporal termina en .restore-tmp (se limpia solo si queda de una falla)
 }
 
 /**

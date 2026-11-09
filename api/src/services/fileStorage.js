@@ -126,14 +126,53 @@ function reportCorruptFile(filePath, err) {
   } catch { /* avisar nunca debe romper la lectura */ }
 }
 
+const sleepMs = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* sin espera */ } };
+
 /**
- * Guarda un objeto/array como JSON formateado en el archivo indicado.
+ * Escribe un archivo de forma SEGURA: primero se escribe completo en un archivo temporal (y se fuerza a disco),
+ * y solo al final se renombra sobre el definitivo. Si el servidor se corta a mitad de la escritura, el archivo
+ * anterior queda intacto en lugar de quedar a medias. (En Windows, si el antivirus lo tiene tomado un instante,
+ * se reintenta.)
+ */
+function writeFileAtomicSync(filePath, text, opts = {}) {
+  ensureDir(path.dirname(filePath));
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const fd = fs.openSync(tmp, 'w', opts.mode);
+  try { fs.writeSync(fd, text, null, 'utf-8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, filePath); return; }
+    catch (e) {
+      if (i < 4 && ['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { sleepMs(15 * (i + 1)); continue; }
+      try { fs.unlinkSync(tmp); } catch { /* ya no está */ }
+      throw e;
+    }
+  }
+}
+
+/** Borra los temporales que quedaron de una escritura interrumpida (más de 10 minutos de antigüedad) */
+function cleanTempFiles(root = DATA_PATH) {
+  let n = 0;
+  const walk = (dir) => {
+    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(tmp|restore-tmp)(-[\w-]+)?$/.test(e.name)) {
+        try { if (Date.now() - fs.statSync(full).mtimeMs > 10 * 60 * 1000) { fs.unlinkSync(full); n++; } } catch { /* otro proceso lo tomó */ }
+      }
+    }
+  };
+  walk(root);
+  return n;
+}
+
+/**
+ * Guarda un objeto/array como JSON formateado en el archivo indicado, de forma segura (ver writeFileAtomicSync).
  * Crea el directorio padre si no existe.
  */
 async function writeJSON(filePath, data) {
-  const dir = path.dirname(filePath);
-  ensureDir(dir);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  const text = JSON.stringify(data, null, 2); // si los datos no se pueden convertir, falla ANTES de tocar el archivo
+  writeFileAtomicSync(filePath, text);
   reportedCorrupt.delete(path.resolve(filePath)); // el archivo quedó sano otra vez
 }
 
@@ -175,6 +214,8 @@ async function deleteFromJSON(filePath, id) {
 }
 
 module.exports = {
+  writeFileAtomicSync,
+  cleanTempFiles,
   getDataPath,
   getBusinessPath,
   ensureBusinessDir,

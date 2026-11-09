@@ -40,7 +40,7 @@ function readStatus() { try { return JSON.parse(fs.readFileSync(statusFile(), 'u
 function writeStatus(patch) {
   const s = { ...readStatus(), ...patch };
   fs.mkdirSync(backupDir(), { recursive: true });
-  fs.writeFileSync(statusFile(), JSON.stringify(s, null, 2));
+  require('./fileStorage').writeFileAtomicSync(statusFile(), JSON.stringify(s, null, 2));
   return s;
 }
 

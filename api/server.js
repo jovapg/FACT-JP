@@ -195,6 +195,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Chequeo profundo para el monitor externo: además de que la app responda, comprueba que el volumen de datos
+// exista, se pueda escribir y que la lista de franquicias se lea bien. Responde 503 si algo de eso falla.
+app.get('/api/health/deep', (req, res) => {
+  const checks = {};
+  try {
+    const dir = path.resolve(dataPath);
+    checks.volumen = fs.existsSync(dir) ? 'ok' : 'no existe';
+    const probe = path.join(dir, '.health-' + process.pid);
+    fs.writeFileSync(probe, 'ok'); fs.unlinkSync(probe);
+    checks.escritura = 'ok';
+    const file = path.join(dir, 'businesses.json');
+    if (fs.existsSync(file)) { const list = JSON.parse(fs.readFileSync(file, 'utf8')); checks.franquicias = Array.isArray(list) ? 'ok' : 'formato inesperado'; }
+    else checks.franquicias = 'ok';
+  } catch (e) { checks.error = String(e.message || e).slice(0, 120); }
+  const ok = Object.values(checks).every(v => v === 'ok');
+  res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'falla', checks, timestamp: new Date().toISOString() });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/backups', require('./src/routes/backups'));   // respaldos (solo superadmin)
@@ -375,7 +393,10 @@ app.get('/api/:businessId/users', ...bizAccess, async (req, res) => {
   try {
     const usersPath = path.join(getBusinessPath(req.params.businessId), 'users.json');
     const users = await readJSON(usersPath) || [];
-    res.json(users.map(u => ({ ...u, password: undefined })));
+    // Admin y superadmin ven todo (sin la contraseña). Los demás roles solo ven nombre y rol: el nombre de usuario
+    // de acceso no se les entrega.
+    if (req.user.role === 'admin' || req.user.role === 'superadmin') return res.json(users.map(u => ({ ...u, password: undefined })));
+    res.json(users.map(u => ({ id: u.id, name: u.name, role: u.role })));
   } catch {
     res.json([]);
   }
@@ -607,6 +628,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`facJp API corriendo en http://0.0.0.0:${PORT}`);
   console.log(`Accede en: http://localhost:${PORT}`);
   // Respaldo automático de los datos cada ~24 horas (se conservan los últimos 30)
+  try { const n = require('./src/services/fileStorage').cleanTempFiles(); if (n) console.log(`[datos] ${n} archivo(s) temporal(es) de una escritura interrumpida eliminados`); } catch { /* no es crítico */ }
   require('./src/services/backupService').scheduleBackups();
 });
 

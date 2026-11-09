@@ -440,7 +440,7 @@ function nextCode(businessId, mode, prefix) {
   try { c = JSON.parse(fs.readFileSync(counterPath(businessId), 'utf8')) || {}; } catch { c = {}; }
   c[letter] = (Number(c[letter]) || 0) + 1;
   fs.mkdirSync(path.dirname(counterPath(businessId)), { recursive: true });
-  fs.writeFileSync(counterPath(businessId), JSON.stringify(c));
+  require('./fileStorage').writeFileAtomicSync(counterPath(businessId), JSON.stringify(c)); // contador de pedidos: nunca a medias
   const pre = String(prefix || 'DC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'DC';
   return `${letter}-${pre}${String(c[letter]).padStart(2, '0')}`;
 }

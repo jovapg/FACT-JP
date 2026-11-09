@@ -1,0 +1,47 @@
+# Pruebas automáticas de facJp.
+# Corren en cada cambio que se sube a main y en cada solicitud de cambio.
+# Si Railway tiene "Wait for CI" prendido, solo despliega cuando estas pruebas pasan.
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  servidor:
+    name: Pruebas del servidor (ventas, pedidos, finanzas, seguridad, respaldos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Instalar
+        working-directory: api
+        run: npm ci
+      - name: Probar
+        working-directory: api
+        run: npm test
+
+  pantalla:
+    name: Compilar la pantalla (imports y estilos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar
+        working-directory: frontend
+        run: npm ci
+      - name: Compilar
+        working-directory: frontend
+        run: npm run build

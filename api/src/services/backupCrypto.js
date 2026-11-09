@@ -35,7 +35,7 @@ function generateKey() {
   if (getKey()) throw new Error('Ya existe una clave de respaldos. No se puede crear otra (los respaldos viejos dejarían de abrirse).');
   const k = crypto.randomBytes(32);
   fs.mkdirSync(path.dirname(keyFile()), { recursive: true });
-  fs.writeFileSync(keyFile(), k.toString('hex'), { mode: 0o600 });
+  require('./fileStorage').writeFileAtomicSync(keyFile(), k.toString('hex'), { mode: 0o600 });
   return formatKey(k);
 }
 

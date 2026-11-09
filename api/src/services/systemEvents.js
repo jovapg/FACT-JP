@@ -24,7 +24,7 @@ function load() {
 
 function save(list) {
   fs.mkdirSync(getDataPath(), { recursive: true });
-  fs.writeFileSync(file(), JSON.stringify(list, null, 2), 'utf8');
+  require('./fileStorage').writeFileAtomicSync(file(), JSON.stringify(list, null, 2));
 }
 
 /**
