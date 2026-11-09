@@ -44,6 +44,15 @@ for (const e of fs.readdirSync(tmp, { withFileTypes: true })) {
   const extra = Object.keys(migrated).filter(n => !originals.includes(n));
   if (extra.length) console.log(`  ⚠ ${e.name}: hay documentos de más en la base: ${extra.join(', ')}`);
 }
+// Archivos de la raíz (lista de franquicias, superadmin, enlaces cortos...) → base global
+{
+  const root = st.listRootDocs();
+  for (const n of fs.readdirSync(tmp).filter(n => /\.json$/i.test(n) && fs.statSync(path.join(tmp, n)).isFile())) {
+    const orig = fs.readFileSync(path.join(tmp, n), 'utf8'); docs++; bytes += orig.length;
+    let x, y; try { x = JSON.parse(orig); } catch { continue; } try { y = JSON.parse(root[n]); } catch { y = undefined; }
+    if (stable(x) !== stable(y)) { bad++; console.log('  ✖ DIFERENTE (raíz): ' + n); }
+  }
+}
 console.log(`\nMigrados ${docs} documentos (${(bytes / 1048576).toFixed(2)} MB) en ${Date.now() - t0} ms. Diferencias: ${bad}`);
 
 if (biggest.n) {

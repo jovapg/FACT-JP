@@ -3,13 +3,13 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Historial de Facturas</h1>
-            <p class="page-subtitle">{{ invoices.length }} facturas registradas<template v-if="domisHoy"> · 🛵 {{ domisHoy }} domicilio{{ domisHoy === 1 ? '' : 's' }} hoy</template></p>
+            <p class="page-subtitle">{{ invoices.length }} facturas {{ search ? 'encontradas' : 'recientes' }}<template v-if="domisHoy"> · 🛵 {{ domisHoy }} domicilio{{ domisHoy === 1 ? '' : 's' }} hoy</template></p>
           </div>
         </div>
 
         <!-- Search -->
         <div class="card mb-3" style="padding:14px">
-          <input v-model="search" class="form-control" :placeholder="`Buscar por número, cajero, ${spaces.label.toLowerCase()}...`" style="max-width:400px" />
+          <input v-model="search" class="form-control" :placeholder="`Buscar en todo el historial: número, cajero, ${spaces.label.toLowerCase()}, producto...`" style="max-width:480px" />
         </div>
 
         <div v-if="loading" class="loading">
@@ -69,6 +69,9 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div v-if="hasMore" class="more-row">
+            <button class="btn btn-outline" :disabled="!!loadingMore" @click="loadMore">{{ loadingMore ? 'Cargando…' : 'Cargar facturas más antiguas' }}</button>
           </div>
         </div>
 
@@ -221,7 +224,7 @@
  * El PDF requiere autenticación: se pide con el header Authorization y se abre como blob
  * para que el enlace pueda abrirse directamente en el navegador.
  */
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, watch } from 'vue'
 import { useSalesStore } from '../stores/sales.js'
 import { useAuthStore } from '../stores/auth.js'
 import { useBusinessStore } from '../stores/business.js'
@@ -238,7 +241,9 @@ const inventoryStore = useInventoryStore()
 const toast = inject('toast')
 const spaces = useSpaces()
 
-const invoices = ref([])             // Lista completa de facturas
+const invoices = ref([])             // Facturas cargadas (las más recientes; el resto se pide con "Cargar más")
+const hasMore = ref(false)           // ¿hay facturas más antiguas por cargar?
+const loadingMore = ref(false)
 const loading = ref(false)
 const search = ref('')               // Texto de búsqueda
 const selectedInvoice = ref(null)    // Factura abierta en el modal de detalle
@@ -320,15 +325,8 @@ const domiNumber = computed(() => {
 })
 const domisHoy = computed(() => invoices.value.filter(i => orderKind(i) === 'Domicilio' && new Date(i.createdAt).toDateString() === new Date().toDateString()).length)
 
-const filteredInvoices = computed(() => {
-  if (!search.value) return invoices.value
-  const s = search.value.toLowerCase()
-  return invoices.value.filter(inv =>
-    inv.invoiceNumber?.toLowerCase().includes(s) ||
-    inv.cashier?.toLowerCase().includes(s) ||
-    String(inv.tableNumber).includes(s)
-  )
-})
+// La búsqueda la hace el servidor sobre TODO el historial (ver watch(search) más abajo): aquí no se filtra de nuevo
+const filteredInvoices = computed(() => invoices.value)
 
 function formatCOP(v) { return '$' + Number(v || 0).toLocaleString('es-CO') }
 
@@ -425,11 +423,36 @@ async function saveEditInvoice() {
 
 // Al montar: cargar facturas (invertidas para mostrar la más reciente primero)
 // y el perfil del negocio (para el encabezado del modal)
+/** Carga la primera página (o los resultados de la búsqueda). Más reciente primero. */
+async function loadInvoices() {
+  const q = search.value.trim()
+  const { list, hasMore: more } = await salesStore.fetchInvoices(q ? { q } : {})
+  invoices.value = [...list].reverse()
+  hasMore.value = more
+}
+/** Trae la siguiente página de facturas más antiguas */
+async function loadMore() {
+  if (!invoices.value.length || loadingMore.value) return
+  loadingMore.value = true
+  try {
+    const q = search.value.trim()
+    const oldest = invoices.value[invoices.value.length - 1].createdAt
+    const { list, hasMore: more } = await salesStore.fetchInvoices({ before: oldest, ...(q ? { q } : {}) })
+    invoices.value = [...invoices.value, ...[...list].reverse()]
+    hasMore.value = more
+  } finally { loadingMore.value = false }
+}
+// Búsqueda en el servidor (espera a que dejes de escribir)
+let searchTimer = null
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => { try { await loadInvoices() } catch { /* se queda lo anterior */ } }, 350)
+})
+
 onMounted(async () => {
   loading.value = true
   try {
-    const data = await salesStore.fetchInvoices()
-    invoices.value = [...data].reverse()
+    await loadInvoices()
     await businessStore.fetchProfile()
     // Recetas e inventario para el editor de facturas (solo admin)
     if (canManage.value) {
@@ -443,6 +466,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.more-row { display: flex; justify-content: center; padding: 14px; }
 .mb-3 { margin-bottom: 16px; }
 .action-btns { display: flex; gap: 6px; }
 .currency { color: var(--success); font-weight: 700; }

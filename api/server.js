@@ -207,13 +207,14 @@ app.get('/api/health/deep', (req, res) => {
     fs.writeFileSync(probe, 'ok'); fs.unlinkSync(probe);
     checks.escritura = 'ok';
     const file = path.join(dir, 'businesses.json');
-    if (fs.existsSync(file)) { const list = JSON.parse(fs.readFileSync(file, 'utf8')); checks.franquicias = Array.isArray(list) ? 'ok' : 'formato inesperado'; }
+    const text = require('./src/services/fileStorage').readText(file);
+    if (text !== null) { const list = JSON.parse(text); checks.franquicias = Array.isArray(list) ? 'ok' : 'formato inesperado'; }
     else checks.franquicias = 'ok';
     // Con SQLite: cada negocio debe poder abrir su base y leer su perfil
     const st = require('./src/services/fileStorage');
-    if (st.ENGINE === 'sqlite' && fs.existsSync(file)) {
+    if (st.ENGINE === 'sqlite' && text !== null) {
       const bad = [];
-      for (const b of JSON.parse(fs.readFileSync(file, 'utf8'))) {
+      for (const b of JSON.parse(text)) {
         try { st.listBusinessDocs(String(b.id)); } catch (e) { bad.push(String(b.id).slice(0, 8)); }
       }
       checks.bases = bad.length ? 'no abren: ' + bad.join(',') : 'ok';

@@ -19,12 +19,11 @@ const MAX_EVENTS = 200;
 const file = () => path.join(getDataPath(), 'system-events.json');
 
 function load() {
-  try { return JSON.parse(fs.readFileSync(file(), 'utf8')); } catch { return []; }
+  try { return JSON.parse(require('./fileStorage').readText(file()) || '[]'); } catch { return []; }
 }
 
 function save(list) {
-  fs.mkdirSync(getDataPath(), { recursive: true });
-  require('./fileStorage').writeFileAtomicSync(file(), JSON.stringify(list, null, 2));
+  require('./fileStorage').writeText(file(), JSON.stringify(list, null, 2));
 }
 
 /**

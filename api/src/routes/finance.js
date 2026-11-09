@@ -28,7 +28,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { logAudit, cop } = require('../services/audit');
 
@@ -442,7 +442,7 @@ router.get('/finance', authenticate, adminOnly, async (req, res) => {
     // Solo lo que ya está en un turno cerrado (es lo que Finanzas tiene sumado)
     const shiftsAll = await readJSON(shiftsPath(id)) || [];
     const wasClosed = closedRanges(shiftsAll), closedIds = new Set(shiftsAll.filter(x => x.status === 'closed').map(x => x.id));
-    for (const s of await readJSON(salesPath(id)) || []) {
+    for (const s of collection(id, 'sales.json').query({ fromTs: fromTime, toTs: toTime })) { // solo las ventas del periodo
       const t = new Date(s.createdAt).getTime(), fee = feeOfSale(s);
       if (fee && t >= fromTime && t <= toTime && wasClosed(s.createdAt)) domi[bucketOfMethod(s.paymentMethod)] += fee;
     }
@@ -584,7 +584,7 @@ router.get('/finance/daily', authenticate, adminOnly, async (req, res) => {
     const inDay = (iso) => { const t = new Date(iso).getTime(); return !isNaN(t) && t >= dayStart && t < dayEnd; };
 
     // Ventas del día (todas, por área × bucket)
-    const sales = await readJSON(salesPath(id)) || [];
+    const sales = collection(id, 'sales.json').query({ fromTs: dayStart, toTs: dayEnd }); // solo las ventas de ese día
     const ventas = { bar: emptyArea(), restaurante: emptyArea(), total: 0, count: 0 };
     for (const s of sales) {
       if (!inDay(s.createdAt)) continue;

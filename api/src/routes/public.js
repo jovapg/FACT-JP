@@ -93,9 +93,9 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Para pedir licor confirma que eres mayor de 18 años' });
     }
 
-    const list = await carta.readPedidos(biz.id);
+    carta.expireStale(biz.id);
     // Freno básico a repetidos: máximo 3 pedidos abiertos por el mismo celular
-    const open = list.filter(p => p.phone === phone && ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'].includes(p.status));
+    const open = carta.pedidosColl(biz.id).query({ statuses: ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino'] }).filter(p => p.phone === phone);
     if (open.length >= 3) return res.status(429).json({ error: 'Ya tienes pedidos en curso con este celular.' });
 
     const now = new Date();
@@ -114,8 +114,7 @@ router.post('/pedidos/:slug', orderLimiter, async (req, res) => {
       updatedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + carta.EXPIRE_MIN * 60000).toISOString()
     };
-    list.push(pedido);
-    await carta.writePedidos(biz.id, list);
+    carta.pedidosColl(biz.id).insert(pedido);
 
     res.status(201).json({
       code: pedido.code, subtotal: pedido.subtotal, freeDelivery: pedido.freeDelivery,

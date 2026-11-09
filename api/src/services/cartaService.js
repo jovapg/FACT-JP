@@ -16,7 +16,7 @@
 
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('./fileStorage');
 const drinksLib = require('./drinks');
 const { SNACK_SECTIONS } = require('./snacks');
 
@@ -305,22 +305,41 @@ async function readCarta(businessId) {
 
 async function writeCarta(businessId, carta) { await writeJSON(cartaPath(businessId), carta); }
 
-/** Lee pedidos aplicando vencimiento (15 min) y limpieza (vencidos > 1 día). Guarda si cambió algo. */
-async function readPedidos(businessId) {
-  let list = await readJSON(pedidosPath(businessId)) || [];
-  const now = Date.now();
-  let changed = false;
-  for (const p of list) {
-    if (p.status === 'por_confirmar' && new Date(p.expiresAt).getTime() < now) {
-      p.status = 'vencido'; p.updatedAt = new Date().toISOString(); changed = true;
-    }
+// Los pedidos se guardan como FILAS (una por pedido, con fecha y estado indexados): crear o cambiar uno toca una sola fila
+// y la pantalla de Pedidos (que consulta cada 10 s) no lee el historial completo.
+const pedidosColl = (businessId) => collection(businessId, 'pedidos.json');
+const OPEN_STATES = ['por_confirmar', 'pendiente', 'en_preparacion', 'en_camino', 'entregado']; // entregado = por facturar
+const RECENT_MS = 48 * 3600 * 1000;   // los cerrados de los últimos 2 días siempre se muestran
+const HISTORY_N = 60;                 // y, además, los últimos 60 cerrados
+
+/** Aplica el vencimiento (15 min sin confirmar) y la limpieza (vencidos de más de 1 día). Solo toca lo que cambia. */
+function expireStale(businessId) {
+  const c = pedidosColl(businessId), now = Date.now();
+  for (const p of c.query({ statuses: ['por_confirmar'] })) {
+    if (new Date(p.expiresAt).getTime() < now) { p.status = 'vencido'; p.updatedAt = new Date().toISOString(); c.upsert(p); }
   }
-  const before = list.length;
-  list = list.filter(p => !(p.status === 'vencido' && now - new Date(p.expiresAt).getTime() > KEEP_EXPIRED_MS));
-  if (list.length !== before) changed = true;
-  if (changed) await writeJSON(pedidosPath(businessId), list);
-  return list;
+  const viejos = c.query({ statuses: ['vencido'] }).filter(p => now - new Date(p.expiresAt).getTime() > KEEP_EXPIRED_MS).map(p => p.id);
+  if (viejos.length) c.removeMany(viejos);
 }
+/** Pedidos en curso (los que faltan por facturar incluidos) */
+function openPedidos(businessId) { return pedidosColl(businessId).query({ statuses: OPEN_STATES }); }
+/** Lo que necesita la pantalla: todo lo en curso + los cerrados recientes + los últimos cerrados. Más nuevo primero. */
+function listPedidos(businessId) {
+  expireStale(businessId);
+  const c = pedidosColl(businessId);
+  const byId = new Map();
+  for (const p of c.query({ statuses: OPEN_STATES })) byId.set(p.id, p);
+  const closed = ['facturado', 'cancelado', 'vencido'];
+  for (const p of c.query({ statuses: closed, fromTs: Date.now() - RECENT_MS })) byId.set(p.id, p);
+  // Los últimos cerrados: se piden por estado (cada uno usa su índice, ya ordenado) y se juntan los más recientes
+  const ultimos = [];
+  for (const st of closed) ultimos.push(...c.query({ statuses: [st], desc: true, limit: HISTORY_N }));
+  ultimos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  for (const p of ultimos.slice(0, HISTORY_N)) byId.set(p.id, p);
+  return [...byId.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+/** Lee TODOS los pedidos (solo para casos raros: respaldos, reportes). La pantalla usa listPedidos. */
+async function readPedidos(businessId) { expireStale(businessId); return pedidosColl(businessId).all(); }
 async function writePedidos(businessId, list) { await writeJSON(pedidosPath(businessId), list); }
 
 const fs = require('fs');
@@ -519,5 +538,5 @@ function priceOrder(cartaIn, rawItems, isOut = () => false) {
 
 module.exports = {
   cartaPath, pedidosPath, EXPIRE_MIN, STATES, txt, num,
-  defaultCarta, resolveCarta, cleanGroups, nameTaken, sampleCarta, blankCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
+  defaultCarta, resolveCarta, cleanGroups, nameTaken, sampleCarta, blankCarta, syncInventory, stockCheck, readCarta, writeCarta, readPedidos, writePedidos, pedidosColl, expireStale, openPedidos, listPedidos, newCode, nextCode, priceOrder, counterPath, hasOpenShift, NO_SHIFT_MSG, withinHours
 };

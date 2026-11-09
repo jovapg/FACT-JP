@@ -102,6 +102,18 @@ function existsDoc(filePath) {
   const info = docInfo(filePath);
   return info ? docStore.existsDoc(info) : fs.existsSync(filePath);
 }
+/** Documentos de la raíz (lista de franquicias, superadmin, enlaces cortos...) como { 'businesses.json': texto, ... } (para respaldos) */
+function listRootDocs() {
+  if (docStore.ENGINE === 'sqlite') {
+    const out = {};
+    for (const r of docStore.listDocs(path.resolve(DATA_PATH), docStore.GLOBAL_DB)) out[r.name] = r.json;
+    return out;
+  }
+  const out = {};
+  try { for (const e of fs.readdirSync(DATA_PATH, { withFileTypes: true })) if (e.isFile() && /\.json$/i.test(e.name)) out[e.name] = fs.readFileSync(path.join(DATA_PATH, e.name), 'utf8'); } catch { /* sin carpeta */ }
+  return out;
+}
+
 /** Todos los documentos de un negocio como { 'sales.json': texto, ... } (para respaldos) */
 function listBusinessDocs(businessId) {
   const dir = getBusinessPath(businessId);
@@ -113,6 +125,56 @@ function listBusinessDocs(businessId) {
   const out = {};
   try { for (const n of fs.readdirSync(dir)) if (/\.json$/i.test(n)) out[n] = fs.readFileSync(path.join(dir, n), 'utf8'); } catch { /* sin carpeta */ }
   return out;
+}
+
+/**
+ * Colección de registros que crece (ventas, pedidos): { all, get, upsert, insert, remove, count, query }.
+ * Con SQLite cada registro es UNA FILA (agregar toca una sola; las consultas por fecha/estado no leen todo).
+ * Con archivos JSON hace lo mismo sobre la lista completa (más lento, pero igual de correcto).
+ * Todas las funciones son SÍNCRONAS (así dos peticiones nunca se pisan a mitad de una operación).
+ *   query({ fromTs, toTs, statuses, notStatuses, limit, desc })  — fechas en milisegundos sobre createdAt
+ */
+function collection(businessId, name) {
+  const file = path.join(getBusinessPath(businessId), name);
+  if (docStore.ENGINE === 'sqlite') {
+    const dir = path.resolve(path.dirname(file));
+    return {
+      all: () => docStore.collAll(dir, name),
+      get: (id) => docStore.collGet(dir, name, id),
+      upsert: (item) => docStore.collUpsert(dir, name, item),
+      insert: (item) => docStore.collUpsert(dir, name, item),
+      remove: (id) => docStore.collRemove(dir, name, id),
+      removeMany: (ids) => docStore.collRemoveMany(dir, name, ids),
+      count: () => docStore.collCount(dir, name),
+      query: (o) => docStore.collQuery(dir, name, o)
+    };
+  }
+  const load = () => { const t = readText(file); try { return t === null ? [] : JSON.parse(t); } catch { return []; } };
+  const save = (list) => writeText(file, JSON.stringify(list, null, 2));
+  const ts = (x) => { const t = Date.parse(x && x.createdAt); return Number.isNaN(t) ? null : t; };
+  return {
+    all: load,
+    get: (id) => load().find(x => String(x.id) === String(id)) || null,
+    upsert: (item) => { const l = load(); const i = l.findIndex(x => String(x.id) === String(item.id)); if (i >= 0) l[i] = item; else l.push(item); save(l); },
+    insert: (item) => { const l = load(); const i = l.findIndex(x => String(x.id) === String(item.id)); if (i >= 0) l[i] = item; else l.push(item); save(l); },
+    remove: (id) => { const l = load(); const n = l.filter(x => String(x.id) !== String(id)); if (n.length === l.length) return false; save(n); return true; },
+    removeMany: (ids) => { const set = new Set(ids.map(String)); const l = load(); const n = l.filter(x => !set.has(String(x.id))); if (n.length !== l.length) save(n); return l.length - n.length; },
+    count: () => load().length,
+    query: (o = {}) => {
+      let l = load().filter(x => {
+        const t = ts(x);
+        if (o.fromTs != null && !(t != null && t >= o.fromTs)) return false;
+        if (o.toTs != null && !(t != null && t <= o.toTs)) return false;
+        const sk = docStore.statusKey(name.replace(/\.json$/i, ''), x);
+        if (o.statuses && o.statuses.length && !o.statuses.includes(sk)) return false;
+        if (o.notStatuses && o.notStatuses.length && o.notStatuses.includes(sk)) return false;
+        if (o.like && !JSON.stringify(x).toLowerCase().includes(String(o.like).toLowerCase())) return false;
+        return true;
+      });
+      if (o.desc) l = l.reverse();
+      return o.limit ? l.slice(0, o.limit) : l;
+    }
+  };
 }
 
 /**
@@ -251,10 +313,12 @@ async function deleteFromJSON(filePath, id) {
 }
 
 module.exports = {
+  collection,
   readText,
   writeText,
   existsDoc,
   listBusinessDocs,
+  listRootDocs,
   docInfo,
   ENGINE: docStore.ENGINE,
   writeFileAtomicSync,

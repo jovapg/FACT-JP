@@ -410,6 +410,7 @@ router.delete('/:id', authenticate, requireSuperAdmin, async (req, res) => {
     const root = path.resolve(getDataPath());
     const target = path.resolve(getBusinessPath(req.params.id));
     if (target.startsWith(root + path.sep)) {
+      require('../services/docStore').close(target); // soltar la base de datos del negocio antes de borrar su carpeta
       await fs.promises.rm(target, { recursive: true, force: true });
     }
 

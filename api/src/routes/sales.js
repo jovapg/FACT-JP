@@ -22,12 +22,14 @@ const express = require('express');
 const router = express.Router({ mergeParams: true }); // mergeParams: true necesario para :businessId
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 const { logAudit, cop } = require('../services/audit');
 
 const salesPath   = (id) => path.join(getBusinessPath(id), 'sales.json');
+// Las ventas se guardan como filas (una por venta): agregar o editar una no reescribe el historial
+const salesColl  = (id) => collection(id, 'sales.json');
 const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
 const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
 const shiftsPath  = (id) => path.join(getBusinessPath(id), 'shifts.json');
@@ -56,45 +58,26 @@ function generateInvoiceNumber(profile) {
  */
 router.get('/sales', authenticate, async (req, res) => {
   try {
-    let sales = await readJSON(salesPath(req.params.businessId)) || [];
-
     const { from, to, date, period } = req.query;
-
+    // Se calcula el rango en milisegundos y la consulta trae SOLO ese rango (no todo el historial)
+    let fromTs = null, toTs = null; // toTs inclusivo
     if (date) {
-      // Filtro por día exacto: desde las 00:00 hasta las 23:59 del día indicado
+      // Día exacto: desde las 00:00 hasta las 23:59 del día indicado
       const day = new Date(date);
       const nextDay = new Date(day);
       nextDay.setDate(nextDay.getDate() + 1);
-      sales = sales.filter(s => {
-        const sd = new Date(s.createdAt);
-        return sd >= day && sd < nextDay;
-      });
+      fromTs = day.getTime(); toTs = nextDay.getTime() - 1;
     } else if (from || to) {
-      // Filtro por rango de fechas personalizado
-      if (from) {
-        const fromDate = new Date(from);
-        sales = sales.filter(s => new Date(s.createdAt) >= fromDate);
-      }
-      if (to) {
-        const toDate = new Date(to);
-        toDate.setDate(toDate.getDate() + 1); // Incluye todo el día 'to'
-        sales = sales.filter(s => new Date(s.createdAt) < toDate);
-      }
+      if (from) fromTs = new Date(from).getTime();
+      if (to) { const toDate = new Date(to); toDate.setDate(toDate.getDate() + 1); toTs = toDate.getTime() - 1; } // incluye todo el día 'to'
     } else if (period) {
-      // Filtro por período relativo
       const now = new Date();
-      if (period === 'day') {
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        sales = sales.filter(s => new Date(s.createdAt) >= today);
-      } else if (period === 'week') {
-        const weekAgo = new Date(now);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        sales = sales.filter(s => new Date(s.createdAt) >= weekAgo);
-      } else if (period === 'month') {
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        sales = sales.filter(s => new Date(s.createdAt) >= monthStart);
-      }
+      if (period === 'day') fromTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      else if (period === 'week') { const w = new Date(now); w.setDate(w.getDate() - 7); fromTs = w.getTime(); }
+      else if (period === 'month') fromTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     }
+    if ((fromTs !== null && Number.isNaN(fromTs)) || (toTs !== null && Number.isNaN(toTs))) return res.json([]);
+    const sales = salesColl(req.params.businessId).query({ fromTs: fromTs ?? undefined, toTs: toTs ?? undefined });
 
     res.json(sales);
   } catch (err) {
@@ -184,9 +167,7 @@ router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
     };
 
     // Guardar la venta primero
-    const sales = await readJSON(salesPath(req.params.businessId)) || [];
-    sales.push(sale);
-    await writeJSON(salesPath(req.params.businessId), sales);
+    salesColl(req.params.businessId).insert(sale);
 
     // Incrementar contador de facturas DESPUÉS de guardar exitosamente
     // (evita que un error deje el contador adelantado sin venta guardada)
@@ -248,11 +229,8 @@ router.put('/sales/:id', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });
 
-    const sales = await readJSON(salesPath(req.params.businessId)) || [];
-    const idx = sales.findIndex(s => s.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: 'Factura no encontrada' });
-
-    const oldSale = sales[idx];
+    const oldSale = salesColl(req.params.businessId).get(req.params.id);
+    if (!oldSale) return res.status(404).json({ error: 'Factura no encontrada' });
     if (oldSale.paymentMethod === 'pago_fiado' || oldSale.type === 'abono_deuda') {
       return res.status(400).json({
         error: 'Esta factura proviene de un abono o pago de fiado. Edítala desde el panel de Deudas.'
@@ -305,7 +283,7 @@ router.put('/sales/:id', authenticate, async (req, res) => {
     }
 
     // Actualizar la factura conservando id, número, fecha y cajero originales
-    sales[idx] = {
+    const updated = {
       ...oldSale,
       items: normItems,
       subtotal,
@@ -318,18 +296,18 @@ router.put('/sales/:id', authenticate, async (req, res) => {
       editedBy: req.user.name || req.user.username
     };
 
-    await writeJSON(salesPath(req.params.businessId), sales);
+    salesColl(req.params.businessId).upsert(updated);
 
     // Ajustar los totales del turno (efectivo/banco/área) por el cambio de la venta
     // Valor del domicilio de la factura = suma de sus líneas "Domicilio" (lo lee el bolsillo Domicilios)
     const feeOf = (list) => (list || []).filter(i => i.kind === 'domicilio').reduce((a, i) => a + (Number(i.price) || 0) * (Number(i.qty) || 1), 0);
     const oldFee = feeOf(oldSale.items), newFee = feeOf(normItems);
     if (oldSale.source === 'carta' || oldFee || newFee) {
-      sales[idx].deliveryFee = newFee;
-      await writeJSON(salesPath(req.params.businessId), sales);
+      updated.deliveryFee = newFee;
+      salesColl(req.params.businessId).upsert(updated);
     }
 
-    await adjustShiftForSaleEdit(req.params.businessId, oldSale, sales[idx]);
+    await adjustShiftForSaleEdit(req.params.businessId, oldSale, updated);
 
     await logAudit(req.params.businessId, {
       user: req.user.name || req.user.username, role: req.user.role, action: 'edit_invoice',
@@ -338,7 +316,7 @@ router.put('/sales/:id', authenticate, async (req, res) => {
         (paymentMethod && paymentMethod !== oldSale.paymentMethod ? `; pago ${oldSale.paymentMethod} → ${paymentMethod}` : '') + ')'
     });
 
-    res.json({ sale: sales[idx], inventoryAlerts });
+    res.json({ sale: updated, inventoryAlerts });
   } catch (err) {
     console.error(err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -347,8 +325,7 @@ router.put('/sales/:id', authenticate, async (req, res) => {
 /** GET /sales/:id — Obtiene una venta específica por ID */
 router.get('/sales/:id', authenticate, async (req, res) => {
   try {
-    const sales = await readJSON(salesPath(req.params.businessId)) || [];
-    const sale = sales.find(s => s.id === req.params.id);
+    const sale = salesColl(req.params.businessId).get(req.params.id);
     if (!sale) return res.status(404).json({ error: 'Sale not found' });
     res.json(sale);
   } catch (err) {

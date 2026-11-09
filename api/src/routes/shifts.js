@@ -29,7 +29,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 
 const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
@@ -254,7 +254,8 @@ router.post('/shifts/:id/close', authenticate, async (req, res) => {
     let incomeBreakdown = { bar: { efectivo: 0, banco: 0 }, restaurante: { efectivo: 0, banco: 0 } };
     let fiadoAbonos = 0; // cuánto del ingreso del turno vino de abonos de fiado
     try {
-      const sales = await readJSON(salesPath(req.params.businessId)) || [];
+      // Solo las ventas hechas durante el turno (no todo el historial)
+      const sales = collection(req.params.businessId, 'sales.json').query({ fromTs: new Date(shift.openedAt).getTime(), toTs: new Date(closedAt).getTime() });
       incomeBreakdown = incomeByAreaBucket(sales, shift.openedAt, closedAt);
 
       // Los abonos de deuda nuevos son ventas (type 'abono_deuda'): ya están en el desglose

@@ -16,7 +16,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const crypto = require('crypto');
 const path = require('path');
-const { readJSON, writeJSON, getDataPath, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getDataPath, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { generateInvoicePDF } = require('../services/pdfGenerator');
 
@@ -92,8 +92,7 @@ async function handleShortlink(req, res) {
 
     const salesPath = path.join(getBusinessPath(entry.businessId), 'sales.json');
     const profilePath = path.join(getBusinessPath(entry.businessId), 'profile.json');
-    const sales = await readJSON(salesPath) || [];
-    const sale = sales.find(s => s.id === entry.invoiceId);
+    const sale = collection(entry.businessId, 'sales.json').get(entry.invoiceId);
     if (!sale) return res.status(404).json({ error: 'Factura no encontrada' });
 
     const business = await readJSON(profilePath) || {};

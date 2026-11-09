@@ -34,7 +34,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 const { logAudit, cop } = require('../services/audit');
@@ -85,9 +85,7 @@ async function createAbonoSale(businessId, debtor, transaction, user) {
     createdAt: transaction.date
   };
 
-  const sales = await readJSON(salesPath(businessId)) || [];
-  sales.push(sale);
-  await writeJSON(salesPath(businessId), sales);
+  collection(businessId, 'sales.json').insert(sale);
 
   profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
   await writeJSON(profilePath(businessId), profile);
@@ -101,10 +99,8 @@ async function createAbonoSale(businessId, debtor, transaction, user) {
  * ajusta el turno al que pertenece. Re-escala el reparto por área del abono.
  */
 async function syncAbonoSale(businessId, debtor, tx, oldAmount) {
-  const sales = await readJSON(salesPath(businessId)) || [];
-  const idx = sales.findIndex(x => x.id === tx.abonoSaleId);
-  if (idx === -1) return;
-  const oldSale = sales[idx];
+  const oldSale = collection(businessId, 'sales.json').get(tx.abonoSaleId);
+  if (!oldSale) return;
 
   const oldSplit = tx.areaSplit || { bar: oldAmount, restaurante: 0 };
   const bar = oldAmount > 0 ? Math.round(tx.amount * ((oldSplit.bar || 0) / oldAmount)) : tx.amount;
@@ -119,17 +115,15 @@ async function syncAbonoSale(businessId, debtor, tx, oldAmount) {
     totalsByArea: { bar: tx.areaSplit.bar, restaurante: tx.areaSplit.restaurante },
     notes: `Abono a deuda de ${debtor.name}${extra}`
   };
-  sales[idx] = newSale;
-  await writeJSON(salesPath(businessId), sales);
+  collection(businessId, 'sales.json').upsert(newSale);
   await adjustShiftForSaleEdit(businessId, oldSale, newSale);
 }
 
 /** Borra la factura de un abono (cuando el abono se elimina) y la quita del turno */
 async function removeAbonoSale(businessId, tx) {
-  const sales = await readJSON(salesPath(businessId)) || [];
-  const sale = sales.find(x => x.id === tx.abonoSaleId);
+  const sale = collection(businessId, 'sales.json').get(tx.abonoSaleId);
   if (!sale) return;
-  await writeJSON(salesPath(businessId), sales.filter(x => x.id !== tx.abonoSaleId));
+  collection(businessId, 'sales.json').remove(tx.abonoSaleId);
   await removeSaleFromShift(businessId, sale);
 }
 
@@ -161,21 +155,17 @@ async function reversePaymentSettlement(businessId, debtor, payment) {
   }
 
   // Borrar la(s) factura(s) automática(s) de pago_fiado asociadas
-  const sales = await readJSON(salesPath(businessId)) || [];
+  const salesC = collection(businessId, 'sales.json');
   let saleIds;
   if (payment.generatedSaleId) {
-    saleIds = new Set([payment.generatedSaleId]);
+    saleIds = [payment.generatedSaleId];
   } else if (payment.abonoSaleId) {
-    saleIds = new Set(); // abono nuevo: su factura de abono se maneja aparte, no hay 'pago_fiado'
+    saleIds = []; // abono nuevo: su factura de abono se maneja aparte, no hay 'pago_fiado'
   } else {
-    saleIds = new Set(
-      sales.filter(s => s.paymentMethod === 'pago_fiado' && s.debtorId === debtor.id).map(s => s.id)
-    );
+    // pagos muy antiguos sin vínculo: se buscan por forma de pago y deudor (caso raro, recorre las ventas)
+    saleIds = salesC.all().filter(s => s.paymentMethod === 'pago_fiado' && s.debtorId === debtor.id).map(s => s.id);
   }
-  if (saleIds.size > 0) {
-    const filtered = sales.filter(s => !saleIds.has(s.id));
-    if (filtered.length !== sales.length) await writeJSON(salesPath(businessId), filtered);
-  }
+  for (const id of saleIds) salesC.remove(id);
 }
 
 /** GET — Lista todos los deudores del negocio */

@@ -42,8 +42,14 @@ async function startServer(extraEnv = {}) {
     if (child.exitCode !== null) throw new Error('El servidor se cerró al arrancar:\n' + log);
     await new Promise(r => setTimeout(r, 100));
   }
-  // El superadmin se crea al arrancar: esperar a que exista el archivo
-  for (let i = 0; i < 50 && !fs.existsSync(path.join(dataDir, 'superadmin.json')); i++) await new Promise(r => setTimeout(r, 100));
+  // El superadmin se crea al arrancar: esperar a que se pueda entrar con él (sirve igual con archivos o con base de datos)
+  for (let i = 0; i < 60; i++) {
+    try {
+      const r = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': `172.16.${i >> 8}.${i & 255}` }, body: JSON.stringify({ username: SA_USER, password: SA_PASS }) });
+      if (r.status === 200) break;
+    } catch { /* aún arrancando */ }
+    await new Promise(r => setTimeout(r, 100));
+  }
 
   /** Llamada HTTP. Cada una sale con una IP distinta para no chocar con los límites por IP. */
   async function api(method, url, { token, body, headers = {}, raw } = {}) {
@@ -106,17 +112,18 @@ async function publicOrder(srv, slug, productName, extra = {}) {
  * Funciona con los dos motores: archivo .json o la base negocio.db de ese negocio.
  */
 const sqliteMode = () => (process.env.STORAGE_ENGINE || 'json').toLowerCase() === 'sqlite';
+// En SQLite se usa el MISMO código del motor (no una copia): así las pruebas guardan exactamente como la app.
 function leerDoc(dataDir, bizId, name) {
   if (!sqliteMode()) return fs.readFileSync(path.join(dataDir, bizId, name), 'utf8');
-  const { DatabaseSync } = require('node:sqlite');
-  const db = new DatabaseSync(path.join(dataDir, bizId, 'negocio.db'));
-  try { const r = db.prepare('SELECT json FROM docs WHERE name = ?').get(name); if (!r) throw new Error('No existe ' + name); return r.json; } finally { db.close(); }
+  const ds = require('../src/services/docStore');
+  const dir = path.resolve(dataDir, bizId);
+  try { const t = ds.readDoc({ dir, name }); if (t === null) throw new Error('No existe ' + name); return t; } finally { ds.close(dir); }
 }
 function escribirDoc(dataDir, bizId, name, text) {
   if (!sqliteMode()) { fs.writeFileSync(path.join(dataDir, bizId, name), text); return; }
-  const { DatabaseSync } = require('node:sqlite');
-  const db = new DatabaseSync(path.join(dataDir, bizId, 'negocio.db'));
-  try { db.exec('PRAGMA busy_timeout = 5000'); db.prepare('INSERT INTO docs (name, json, updated) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET json = excluded.json, updated = excluded.updated').run(name, text, new Date().toISOString()); } finally { db.close(); }
+  const ds = require('../src/services/docStore');
+  const dir = path.resolve(dataDir, bizId);
+  try { ds.writeDoc({ dir, name }, text); } finally { ds.close(dir); }
 }
 
 module.exports = { leerDoc, escribirDoc, sqliteMode, startServer, createFranchise, openShift, publicOrder, SA_USER, SA_PASS };

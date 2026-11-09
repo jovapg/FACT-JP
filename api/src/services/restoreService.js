@@ -83,7 +83,7 @@ async function restore(payload, scope, who = 'superadmin') {
   // 3) Al restaurar solo algunas, su línea en la lista de franquicias vuelve a ser la del respaldo
   if (!all) {
     const file = path.join(root, 'businesses.json');
-    const cur = parse(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '[]', []);
+    const cur = parse(require('./fileStorage').readText(file) || '[]', []);
     for (const id of ids) {
       const fromBundle = bundleBiz.find(b => b.id === id);
       const i = cur.findIndex(b => b.id === id);

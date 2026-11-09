@@ -71,10 +71,14 @@ export const useSalesStore = defineStore('sales', () => {
     return res.data
   }
 
-  /** Retorna todas las ventas (facturas) del negocio activo */
-  async function fetchInvoices() {
-    const res = await api.get(`/api/${bizId()}/invoices`)
-    return res.data
+  /**
+   * Facturas del negocio activo, las más recientes por páginas.
+   * params: { limit, before (fecha ISO: las anteriores a esa), q (texto: busca en todo el historial) }
+   * Retorna { list (la más antigua primero), hasMore }
+   */
+  async function fetchInvoices(params = {}) {
+    const res = await api.get(`/api/${bizId()}/invoices`, { params })
+    return { list: res.data, hasMore: res.headers['x-has-more'] === '1' }
   }
 
   /**

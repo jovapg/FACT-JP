@@ -21,9 +21,29 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true }); // mergeParams: true necesario para :businessId
 const path = require('path');
-const { readJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { generateSalesReport, generateRentabilidadReport } = require('../services/excelGenerator');
+
+/**
+ * Rango de fechas (en milisegundos) que cubre un reporte, con las mismas reglas de siempre (date / from-to / period).
+ * Sirve para pedir al almacén SOLO las ventas de ese rango en vez de todo el historial; los filtros que ya hay
+ * más abajo siguen corriendo encima, así que el resultado no cambia.
+ */
+function rangeBounds({ date, from, to, period } = {}) {
+  const b = {};
+  const now = new Date();
+  if (date) { const d = new Date(date); const n = new Date(d); n.setDate(n.getDate() + 1); b.fromTs = d.getTime(); b.toTs = n.getTime(); }
+  else if (from || to) {
+    if (from) b.fromTs = new Date(from).getTime();
+    if (to) { const t = new Date(to); t.setDate(t.getDate() + 1); b.toTs = t.getTime(); }
+  } else if (period === 'day') b.fromTs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  else if (period === 'week') { const w = new Date(now); w.setDate(w.getDate() - 7); b.fromTs = w.getTime(); }
+  else if (period === 'month') b.fromTs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  for (const k of ['fromTs', 'toTs']) if (Number.isNaN(b[k])) delete b[k]; // fecha inválida: sin límite (el filtro de abajo decide)
+  return b;
+}
+const salesIn = (businessId, b = {}) => collection(businessId, 'sales.json').query({ fromTs: b.fromTs, toTs: b.toTs });
 
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
 const purchasesPath = (id) => path.join(getBusinessPath(id), 'purchases.json');
@@ -34,8 +54,8 @@ const shiftsPath = (id) => path.join(getBusinessPath(id), 'shifts.json');
 // GET /api/:businessId/reports/sales
 router.get('/reports/sales', authenticate, async (req, res) => {
   try {
-    let sales = await readJSON(salesPath(req.params.businessId)) || [];
     const { period, date, from, to } = req.query;
+    let sales = salesIn(req.params.businessId, rangeBounds(req.query));
 
     if (date) {
       const day = new Date(date);
@@ -120,8 +140,8 @@ router.get('/reports/sales', authenticate, async (req, res) => {
 // GET /api/:businessId/reports/export/excel
 router.get('/reports/export/excel', authenticate, async (req, res) => {
   try {
-    let sales = await readJSON(salesPath(req.params.businessId)) || [];
     const { from, to } = req.query;
+    let sales = salesIn(req.params.businessId, rangeBounds({ from, to }));
 
     if (from) sales = sales.filter(s => new Date(s.createdAt) >= new Date(from));
     if (to) {
@@ -167,7 +187,7 @@ router.get('/reports/rentabilidad', authenticate, async (req, res) => {
       return filtered;
     }
 
-    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allSales = salesIn(req.params.businessId, rangeBounds(req.query));
     const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
     const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
     const allShifts = await readJSON(shiftsPath(req.params.businessId)) || [];
@@ -269,7 +289,7 @@ router.get('/reports/rentabilidad/excel', authenticate, async (req, res) => {
       return filtered;
     }
 
-    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allSales = salesIn(req.params.businessId, rangeBounds(req.query));
     const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
     const suppliers = await readJSON(suppliersPath(req.params.businessId)) || [];
     const allShifts = await readJSON(shiftsPath(req.params.businessId)) || [];
@@ -394,7 +414,7 @@ router.get('/reports/cierre', authenticate, async (req, res) => {
       return t;
     };
 
-    const allSales = await readJSON(salesPath(req.params.businessId)) || [];
+    const allSales = salesIn(req.params.businessId, { fromTs: start.getTime(), toTs: end.getTime() });
     const allPurchases = await readJSON(purchasesPath(req.params.businessId)) || [];
 
     const sales = allSales.filter(s => inRange(s.createdAt));

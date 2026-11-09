@@ -18,18 +18,33 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true }); // mergeParams: true necesario para :businessId
 const path = require('path');
-const { readJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const { generateInvoicePDF } = require('../services/pdfGenerator');
 
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
 const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
 
-/** GET /invoices — Lista todas las ventas del negocio (son las mismas facturas) */
+/**
+ * GET /invoices — Facturas del negocio (son las mismas ventas), las MÁS RECIENTES primero por páginas.
+ *   ?limit=300         cuántas traer (máx. 1000)
+ *   ?before=<fecha ISO> las anteriores a esa fecha (para "cargar más antiguas")
+ *   ?q=texto           busca en todo el historial (número, cajero, mesa, cliente, productos...)
+ * Responde la lista en orden cronológico (la más antigua primero) y el encabezado X-Has-More=1 si hay más.
+ */
 router.get('/invoices', authenticate, async (req, res) => {
   try {
-    const sales = await readJSON(salesPath(req.params.businessId)) || [];
-    res.json(sales);
+    const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit, 10) || 300));
+    const o = { desc: true, limit: limit + 1 };
+    const before = req.query.before ? new Date(req.query.before).getTime() : null;
+    if (before && !Number.isNaN(before)) o.toTs = before - 1;
+    const q = String(req.query.q || '').trim();
+    if (q) o.like = q.slice(0, 80);
+    const rows = collection(req.params.businessId, 'sales.json').query(o);
+    const hasMore = rows.length > limit;
+    res.set('X-Has-More', hasMore ? '1' : '0');
+    res.set('Access-Control-Expose-Headers', 'X-Has-More');
+    res.json(rows.slice(0, limit).reverse());
   } catch (err) {
     console.error(err); res.status(500).json({ error: "Internal server error" });
   }
@@ -48,8 +63,7 @@ router.get('/invoices/:id/pdf',
   authenticate,
   async (req, res) => {
     try {
-      const sales = await readJSON(salesPath(req.params.businessId)) || [];
-      const sale = sales.find(s => s.id === req.params.id);
+      const sale = collection(req.params.businessId, 'sales.json').get(req.params.id);
       if (!sale) return res.status(404).json({ error: 'Invoice not found' });
 
       // Cargar perfil del negocio para el encabezado del PDF (nombre, NIT, dirección)

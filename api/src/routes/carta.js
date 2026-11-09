@@ -15,7 +15,7 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorage');
+const { readJSON, writeJSON, getBusinessPath, collection } = require('../services/fileStorage');
 const { authenticate } = require('../middleware/auth');
 const carta = require('../services/cartaService');
 const { updateActiveShift } = require('../services/shiftSales');
@@ -294,9 +294,9 @@ router.post('/carta/products/reorder', authenticate, async (req, res) => {
 
 router.get('/pedidos', authenticate, async (req, res) => {
   try {
-    const list = await carta.readPedidos(req.params.businessId);
+    // Solo lo que la pantalla necesita (en curso + cerrados recientes + últimos cerrados), no todo el historial
     res.set('Cache-Control', 'no-store');
-    res.json(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    res.json(carta.listPedidos(req.params.businessId));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
@@ -329,9 +329,7 @@ async function pedidoToSale(businessId, p, user) {
     source: 'carta', mode: p.mode, pedidoId: p.id, deliveryFee: fee,
     createdAt: new Date().toISOString()
   };
-  const sales = await readJSON(salesPath(businessId)) || [];
-  sales.push(sale);
-  await writeJSON(salesPath(businessId), sales);
+  collection(businessId, 'sales.json').insert(sale);
   profile.invoiceCounter = (profile.invoiceCounter || 0) + 1;
   await writeJSON(profilePath(businessId), profile);
   await updateActiveShift(businessId, sale);
@@ -353,8 +351,8 @@ const PAYS = ['efectivo', 'transferencia'];
 router.put('/pedidos/:id', authenticate, async (req, res) => {
   try {
     const bid = req.params.businessId;
-    const list = await carta.readPedidos(bid);
-    const p = list.find(x => x.id === req.params.id);
+    carta.expireStale(bid);
+    const p = carta.pedidosColl(bid).get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
     const b = req.body || {};
     const unbilled = p.status === 'entregado' && !p.saleId; // entregado, falta facturar
@@ -397,7 +395,7 @@ router.put('/pedidos/:id', authenticate, async (req, res) => {
       }
     }
     p.updatedAt = new Date().toISOString();
-    await carta.writePedidos(bid, list);
+    carta.pedidosColl(bid).upsert(p);
 
     // Bitácora: qué cambió en el pedido y quién lo hizo
     const LBL = { por_confirmar: 'por confirmar', pendiente: 'confirmado', en_preparacion: 'en preparación', en_camino: p.mode === 'recoger' ? 'listo para recoger' : 'en camino', entregado: 'entregado', cancelado: 'CANCELADO', vencido: 'vencido' };
@@ -418,14 +416,14 @@ router.post('/pedidos/:id/facturar', authenticate, async (req, res) => {
     if (isDomi(req)) return res.status(403).json({ error: 'Forbidden' });
     const bid = req.params.businessId;
     if (!carta.hasOpenShift(bid)) return res.status(409).json({ error: carta.NO_SHIFT_MSG });
-    const list = await carta.readPedidos(bid);
-    const p = list.find(x => x.id === req.params.id);
+    carta.expireStale(bid);
+    const p = carta.pedidosColl(bid).get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
     if (p.status !== 'entregado') return res.status(400).json({ error: 'Primero hay que marcarlo como entregado' });
     if (p.saleId) return res.status(409).json({ error: 'Este pedido ya está facturado' });
     const sale = await pedidoToSale(bid, p, req.user);
     p.saleId = sale.id; p.invoiceNumber = sale.invoiceNumber; p.updatedAt = new Date().toISOString();
-    await carta.writePedidos(bid, list);
+    carta.pedidosColl(bid).upsert(p);
     await logAudit(bid, { ...who(req), action: 'pedido_factura',
       summary: `Facturó el pedido #${p.code} (${p.customer.name}) → factura ${sale.invoiceNumber} por ${cop(sale.total)}, pago ${sale.paymentMethod}${sale.deliveryFee ? ', domicilio ' + cop(sale.deliveryFee) : ''}` });
     res.status(201).json({ pedido: p, sale });
