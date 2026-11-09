@@ -193,7 +193,7 @@ const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shor
 // Health check (antes de las rutas /api/:businessId, que si no lo interceptan y pide sesión)
 app.get('/api/health', (req, res) => {
   // version: los 7 primeros caracteres del cambio que está corriendo (Railway los pone solo). Sirve para saber qué versión está publicada.
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7), node: process.version });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7), node: process.version, storage: require('./src/services/fileStorage').ENGINE });
 });
 
 // Chequeo profundo para el monitor externo: además de que la app responda, comprueba que el volumen de datos
@@ -209,6 +209,15 @@ app.get('/api/health/deep', (req, res) => {
     const file = path.join(dir, 'businesses.json');
     if (fs.existsSync(file)) { const list = JSON.parse(fs.readFileSync(file, 'utf8')); checks.franquicias = Array.isArray(list) ? 'ok' : 'formato inesperado'; }
     else checks.franquicias = 'ok';
+    // Con SQLite: cada negocio debe poder abrir su base y leer su perfil
+    const st = require('./src/services/fileStorage');
+    if (st.ENGINE === 'sqlite' && fs.existsSync(file)) {
+      const bad = [];
+      for (const b of JSON.parse(fs.readFileSync(file, 'utf8'))) {
+        try { st.listBusinessDocs(String(b.id)); } catch (e) { bad.push(String(b.id).slice(0, 8)); }
+      }
+      checks.bases = bad.length ? 'no abren: ' + bad.join(',') : 'ok';
+    }
   } catch (e) { checks.error = String(e.message || e).slice(0, 120); }
   const ok = Object.values(checks).every(v => v === 'ok');
   res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'falla', checks, timestamp: new Date().toISOString() });

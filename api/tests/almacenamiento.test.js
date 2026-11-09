@@ -73,3 +73,14 @@ test('los archivos con permisos especiales se escriben igual de seguros (clave d
   st.writeFileAtomicSync(f, 'def', { mode: 0o600 });
   assert.equal(fs.readFileSync(f, 'utf8'), 'def');
 });
+
+test('el estado de salud informa el motor de almacenamiento', async () => {
+  const { startServer } = require('./helpers');
+  const srv = await startServer();
+  try {
+    const h = (await srv.api('GET', '/api/health')).data;
+    assert.equal(h.storage, process.env.STORAGE_ENGINE === 'sqlite' ? 'sqlite' : 'json');
+    const d = await srv.api('GET', '/api/health/deep');
+    assert.equal(d.status, 200, JSON.stringify(d.data));
+  } finally { await srv.stop(); }
+});
