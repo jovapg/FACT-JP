@@ -6,8 +6,8 @@
         <p class="bp-text">Cada 6 horas se crea uno con todos los datos y las fotos. Se guardan los últimos {{ info.keep }} en el servidor y, si configuras el respaldo externo, también <b>cifrados</b> en Backblaze, fuera de Railway.</p>
       </div>
       <div class="bp-btns">
-        <button class="btn btn-sm btn-outline" :disabled="busy" @click="makeLocal">Respaldar ahora</button>
-        <button class="btn btn-sm btn-primary" :disabled="busy || !ready" :title="ready ? '' : 'Primero configura el respaldo externo'" @click="runRemote">{{ busy === 'run' ? 'Subiendo…' : 'Respaldar y subir' }}</button>
+        <button class="btn btn-sm btn-outline" :disabled="!!busy" @click="makeLocal">Respaldar ahora</button>
+        <button class="btn btn-sm btn-primary" :disabled="!!busy || !ready" :title="ready ? '' : 'Primero configura el respaldo externo'" @click="runRemote">{{ busy === 'run' ? 'Subiendo…' : 'Respaldar y subir' }}</button>
         <button class="btn btn-sm btn-outline" @click="openRestore(null)">♻️ Restaurar</button>
       </div>
     </div>
@@ -38,11 +38,11 @@
     </div>
     <div v-else-if="!info.offsite.keyReady" class="bp-help">
       <b>Falta la clave de cifrado.</b> Los respaldos se cifran antes de salir del servidor. La clave se crea una sola vez y se muestra una sola vez: guárdala en dos lugares.
-      <div style="margin-top:8px"><button class="btn btn-sm btn-primary" :disabled="busy" @click="makeKey">Crear la clave de cifrado</button></div>
+      <div style="margin-top:8px"><button class="btn btn-sm btn-primary" :disabled="!!busy" @click="makeKey">Crear la clave de cifrado</button></div>
     </div>
     <div v-else class="bp-row-actions">
-      <button class="btn btn-sm btn-outline" :disabled="busy" @click="testConn">{{ busy === 'test' ? 'Probando…' : 'Probar conexión' }}</button>
-      <button class="btn btn-sm btn-outline" :disabled="busy" @click="verifyNow">{{ busy === 'verify' ? 'Comprobando…' : 'Comprobar el último respaldo externo' }}</button>
+      <button class="btn btn-sm btn-outline" :disabled="!!busy" @click="testConn">{{ busy === 'test' ? 'Probando…' : 'Probar conexión' }}</button>
+      <button class="btn btn-sm btn-outline" :disabled="!!busy" @click="verifyNow">{{ busy === 'verify' ? 'Comprobando…' : 'Comprobar el último respaldo externo' }}</button>
     </div>
 
     <p v-if="!info.backups.length" class="bp-text">Todavía no hay respaldos. El primero se crea solo, un minuto después de que arranca el servidor.</p>
