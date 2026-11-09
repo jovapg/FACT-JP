@@ -192,7 +192,8 @@ const { router: shortlinksRouter, handleShortlink } = require('./src/routes/shor
 // Mount routes
 // Health check (antes de las rutas /api/:businessId, que si no lo interceptan y pide sesión)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // version: los 7 primeros caracteres del cambio que está corriendo (Railway los pone solo). Sirve para saber qué versión está publicada.
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7) });
 });
 
 // Chequeo profundo para el monitor externo: además de que la app responda, comprueba que el volumen de datos
