@@ -12,7 +12,7 @@
     </div>
 
     <div v-if="noShift" class="shift-warning">
-      ⚠️ No hay un turno de caja abierto. Abre un turno en <strong>Turnos de Caja</strong> para poder registrar abonos.
+      ⚠️ No hay un turno de caja abierto. Abre un turno en <strong>Turnos de Caja</strong> para poder fiar o registrar abonos.
     </div>
 
     <!-- Resumen -->
@@ -81,7 +81,7 @@
               <td class="text-muted">{{ lastMovement(d) }}</td>
               <td @click.stop>
                 <div class="action-btns">
-                  <button class="btn btn-sm btn-danger-outline" @click="openCharge(d)" title="Registrar fiado">
+                  <button class="btn btn-sm btn-danger-outline" @click="openCharge(d)" :title="noShift ? 'Abre un turno de caja para fiar' : 'Registrar fiado'" :disabled="noShift">
                     <Plus :size="12" /> Fiado
                   </button>
                   <button class="btn btn-sm btn-success-outline" @click="openPayment(d)" :title="noShift ? 'Abre un turno de caja para registrar abonos' : 'Registrar abono'" :disabled="d.balance <= 0 || noShift">
@@ -422,7 +422,7 @@
           <button class="btn btn-outline" @click="printStatement(detailDebtor)" :disabled="!detailDebtor.transactions?.length">
             <FileText :size="13" /> Estado de cuenta
           </button>
-          <button class="btn btn-danger-outline" @click="openCharge(detailDebtor); detailDebtor = null">
+          <button class="btn btn-danger-outline" @click="openCharge(detailDebtor); detailDebtor = null" :disabled="noShift" :title="noShift ? 'Abre un turno de caja para fiar' : ''">
             <Plus :size="13" /> Fiado
           </button>
           <button class="btn btn-primary" @click="openPayment(detailDebtor); detailDebtor = null" :disabled="detailDebtor.balance <= 0 || noShift" :title="noShift ? 'Abre un turno de caja para registrar abonos' : ''">
@@ -643,6 +643,7 @@ function openEdit(d) {
 }
 
 function openCharge(d) {
+  if (noShift.value) { toast('Abre un turno de caja para fiar', 'warning'); return }
   activeDebtor.value = d
   editingCharge.value = null
   chargeCart.value = []

@@ -16,7 +16,7 @@
         </router-link>
 
         <router-link v-else to="/shifts" class="shift-banner shift-banner-warn">
-          <span>⚠️ Sin turno abierto — las ventas no quedarán registradas en ningún turno.</span>
+          <span>⚠️ Sin turno abierto — no se puede facturar ni fiar hasta abrir el turno.</span>
           <span class="shift-banner-link">Abrir turno →</span>
         </router-link>
 

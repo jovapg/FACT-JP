@@ -133,4 +133,17 @@ async function removeSaleFromShift(businessId, sale) {
   }
 }
 
-module.exports = { bucketOf, adjustShiftForSaleEdit, updateActiveShift, removeSaleFromShift };
+/**
+ * Regla de caja: sin turno abierto no se puede registrar nada que mueva plata
+ * (facturar, fiar, abonar). Se pone como paso previo en esas rutas.
+ */
+const NO_SHIFT_MSG = 'No hay un turno de caja abierto. Abre un turno para facturar, fiar o registrar abonos.';
+async function requireOpenShift(req, res, next) {
+  try {
+    const shifts = await readJSON(shiftsPath(req.params.businessId)) || [];
+    if (!shifts.some(s => s.status === 'open')) return res.status(409).json({ error: NO_SHIFT_MSG, code: 'NO_OPEN_SHIFT' });
+    next();
+  } catch (err) { next(err); }
+}
+
+module.exports = { requireOpenShift, NO_SHIFT_MSG, bucketOf, adjustShiftForSaleEdit, updateActiveShift, removeSaleFromShift };

@@ -38,7 +38,7 @@ const { readJSON, writeJSON, getBusinessPath } = require('../services/fileStorag
 const { authenticate } = require('../middleware/auth');
 const { deductFromSale, restoreFromSale, findOutOfStockItems } = require('../services/inventoryService');
 const { logAudit, cop } = require('../services/audit');
-const { updateActiveShift, adjustShiftForSaleEdit, removeSaleFromShift } = require('../services/shiftSales');
+const { requireOpenShift, updateActiveShift, adjustShiftForSaleEdit, removeSaleFromShift } = require('../services/shiftSales');
 
 const debtorsPath = (id) => path.join(getBusinessPath(id), 'debtors.json');
 const salesPath = (id) => path.join(getBusinessPath(id), 'sales.json');
@@ -270,7 +270,7 @@ router.delete('/debtors/:id', authenticate, async (req, res) => {
  * Body: { amount, description, items?: [{ recipeId|inventoryId, name, price, qty }] }
  * Si vienen items, descuenta el stock del inventario inmediatamente.
  */
-router.post('/debtors/:id/charge', authenticate, async (req, res) => {
+router.post('/debtors/:id/charge', authenticate, requireOpenShift, async (req, res) => {
   try {
     const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
     const idx = debtors.findIndex(d => d.id === req.params.id);
@@ -450,7 +450,7 @@ router.delete('/debtors/:id/charge/:txId', authenticate, async (req, res) => {
  * Body: { amount, description?, paidWith? }
  * Respuesta: { debtor, generatedSale }   (generatedSale = la factura del abono)
  */
-router.post('/debtors/:id/payment', authenticate, async (req, res) => {
+router.post('/debtors/:id/payment', authenticate, requireOpenShift, async (req, res) => {
   try {
     const debtors = await readJSON(debtorsPath(req.params.businessId)) || [];
     const idx = debtors.findIndex(d => d.id === req.params.id);

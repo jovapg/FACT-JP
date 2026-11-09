@@ -32,7 +32,7 @@ const tablesPath  = (id) => path.join(getBusinessPath(id), 'tables.json');
 const profilePath = (id) => path.join(getBusinessPath(id), 'profile.json');
 const shiftsPath  = (id) => path.join(getBusinessPath(id), 'shifts.json');
 
-const { bucketOf, adjustShiftForSaleEdit, updateActiveShift } = require('../services/shiftSales');
+const { bucketOf, adjustShiftForSaleEdit, updateActiveShift, requireOpenShift } = require('../services/shiftSales');
 
 /**
  * Genera el número de factura usando el prefijo del negocio y el contador actual.
@@ -112,7 +112,7 @@ router.get('/sales', authenticate, async (req, res) => {
  * El contador de facturas se incrementa DESPUÉS de guardar para evitar duplicados.
  * Retorna { sale, inventoryAlerts } — las alertas son ítems que quedaron con stock bajo.
  */
-router.post('/sales', authenticate, async (req, res) => {
+router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
   try {
     const { tableId, tableNumber, items, paymentMethod, cashier, notes, client, discount, total, orderId } = req.body;
 
