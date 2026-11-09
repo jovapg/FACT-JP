@@ -77,6 +77,53 @@ router.post('/inventory', authenticate, async (req, res) => {
 });
 
 /** PUT — Actualiza todos los campos de un ítem de inventario por ID */
+/**
+ * POST /inventory/import — Carga masiva de productos (pegados desde Excel, CSV o .xlsx).
+ * Campos: text (lista pegada) o file (.xlsx/.csv/.txt) · control: 'con' | 'sin' (stock de los nuevos) · updatePrices: '1'
+ *         area: 'bar' | 'restaurante' · dryRun: '1' (solo vista previa, no guarda nada)
+ * Sin dryRun crea los nuevos (y actualiza precios si se pidió) en UNA sola escritura. Solo admin.
+ */
+const importUpload = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+router.post('/inventory/import', authenticate, importUpload.single('file'), async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.user.role)) return res.status(403).json({ error: 'Solo el administrador puede cargar productos' });
+    const imp = require('../services/inventoryImport');
+    let raw;
+    if (req.file) {
+      if (req.file.originalname.toLowerCase().endsWith('.xlsx')) raw = await imp.parseXlsx(req.file.buffer);
+      else {
+        let t = req.file.buffer.toString('utf8'); if (t.includes(imp.BAD_CHAR)) t = req.file.buffer.toString('latin1'); // CSV guardado desde Excel en Windows
+        raw = imp.parseDelimited(imp.stripBom(t));
+      }
+    } else raw = imp.parseDelimited(imp.stripBom(String(req.body.text || '')));
+    if (!raw.length) return res.status(400).json({ error: 'No encontré productos en lo que enviaste' });
+
+    const bid = req.params.businessId;
+    const items = await readJSON(inventoryPath(bid)) || [];
+    const p = imp.plan(raw, items, { control: req.body.control, updatePrices: req.body.updatePrices === '1' || req.body.updatePrices === true, area: req.body.area });
+    if (req.body.dryRun === '1' || req.body.dryRun === true) return res.json({ dryRun: true, ...p });
+
+    const now = new Date().toISOString();
+    let created = 0, updated = 0;
+    for (const r of p.rows) {
+      if (r.status === 'nuevo') {
+        items.push({ id: uuidv4(), name: r.name, unit: r.unit, stock: r.stock, cost: r.cost, category: r.category, area: r.area, minStock: r.minStock,
+          supplierId: null, salePrice: r.salePrice, noStock: r.noStock, createdAt: now });
+        created++;
+      } else if (r.status === 'actualiza') {
+        const it = items.find(x => x.id === r.id); if (it) { it.salePrice = r.salePrice; updated++; }
+      }
+    }
+    if (created || updated) await writeJSON(inventoryPath(bid), items);
+    await logAudit(bid, { user: req.user.name || req.user.username, role: req.user.role, action: 'inventario_importar',
+      summary: `Carga masiva de productos: ${created} nuevos, ${updated} con precio actualizado, ${p.counts.existe} ya existían, ${p.counts.error} con error` });
+    res.json({ dryRun: false, created, updated, ...p });
+  } catch (err) {
+    if (err && String(err.message).startsWith('Máximo ')) return res.status(400).json({ error: err.message });
+    console.error(err); res.status(500).json({ error: 'No se pudo leer la lista. Revisa el formato.' });
+  }
+});
+
 router.put('/inventory/:id', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero') return res.status(403).json({ error: 'Forbidden' });

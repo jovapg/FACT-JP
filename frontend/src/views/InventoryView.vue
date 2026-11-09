@@ -9,6 +9,7 @@
             <button class="btn btn-outline" @click="openSyncModal" v-if="businessStore.usesRecipes && pendingSync.length > 0">
               🍺 Sincronizar al menú ({{ pendingSync.length }})
             </button>
+            <button class="btn btn-outline" @click="showImport = true">📥 Importar lista</button>
             <button class="btn btn-outline" @click="openCount">📋 Conteo físico</button>
             <button class="btn btn-primary" @click="openCreate">+ Nuevo producto</button>
           </div>
@@ -93,6 +94,8 @@
         </div>
 
         <!-- Create/Edit modal -->
+        <ImportProductsModal v-if="showImport" @close="showImport = false" @done="inventoryStore.fetchInventory()" />
+
         <div class="modal-overlay" v-if="showModal" @click.self="closeModal">
           <div class="modal">
             <div class="modal-header">
@@ -380,6 +383,7 @@ import { useSpaces } from '../composables/useSpaces.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
+import ImportProductsModal from '../components/ImportProductsModal.vue'
 import api from '../services/api.js'
 
 const inventoryStore = useInventoryStore()
@@ -779,6 +783,8 @@ async function doSync() {
     syncing.value = false
   }
 }
+
+const showImport = ref(false)   // cajita de "Importar lista"
 
 onMounted(async () => {
   // Cargar inventario y recetas en paralelo implícito (sin await individual)
