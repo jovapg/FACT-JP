@@ -164,18 +164,22 @@ test('el inventario: agotado se ve y se rechaza, y facturar descuenta el stock',
   assert.equal(sync.status, 200); assert.ok(sync.data.created > 100);
   assert.equal((await A('POST', '/carta/sync-inventory')).data.created, 0, 'no duplica');
   const carta = (await srv.api('GET', '/api/public/carta/poll')).data;
-  assert.equal(carta.products.find(p => p.name === 'Tinto').soldOut, true, 'stock 0 = agotado');
-  const o0 = await publicOrder(srv, 'poll', 'Tinto');
+  assert.equal(carta.products.find(p => p.name === 'Coca-Cola 400 ml').soldOut, true, 'bebida empacada con stock 0 = agotado');
+  assert.equal(carta.products.find(p => p.name === 'Tinto').soldOut, false, 'lo que se prepara al momento no controla stock');
+  const o0 = await publicOrder(srv, 'poll', 'Coca-Cola 400 ml');
   assert.equal(o0.status, 400); assert.match(o0.data.error, /agotado/);
-  const inv = list((await A('GET', '/inventory')).data); const tinto = inv.find(i => i.name === 'Tinto');
+  const inv = list((await A('GET', '/inventory')).data); const tinto = inv.find(i => i.name === 'Coca-Cola 400 ml');
   assert.equal((await A('PUT', `/inventory/${tinto.id}`, { ...tinto, stock: 5 })).status, 200);
-  const o = await publicOrder(srv, 'poll', 'Tinto'); assert.equal(o.status, 201);
+  const o = await publicOrder(srv, 'poll', 'Coca-Cola 400 ml'); assert.equal(o.status, 201);
   const ped = await deliver(o);
   assert.equal((await A('POST', `/pedidos/${ped.id}/facturar`)).status, 201);
-  const despues = list((await A('GET', '/inventory')).data).find(i => i.name === 'Tinto');
-  assert.equal(despues.stock, 4, 'facturar un tinto baja el stock de 5 a 4');
-  // sin control de stock nunca sale agotado
+  const despues = list((await A('GET', '/inventory')).data).find(i => i.name === 'Coca-Cola 400 ml');
+  assert.equal(despues.stock, 4, 'facturar una gaseosa baja el stock de 5 a 4');
+  // lo que se prepara al momento nunca sale agotado, y si se activa el control en 0 sí; al quitarlo vuelve
   const muslo = inv.find(i => i.name === 'Muslo');
+  assert.equal(muslo.noStock, true);
+  await A('PUT', `/inventory/${muslo.id}`, { ...muslo, noStock: false });
+  assert.equal((await srv.api('GET', '/api/public/carta/poll')).data.products.find(p => p.name === 'Muslo').soldOut, true);
   await A('PUT', `/inventory/${muslo.id}`, { ...muslo, noStock: true });
   assert.equal((await srv.api('GET', '/api/public/carta/poll')).data.products.find(p => p.name === 'Muslo').soldOut, false);
 });
@@ -226,4 +230,26 @@ test('lo importante del módulo queda en la bitácora', async () => {
   for (const accion of ['pedido_estado', 'pedido_entrega', 'pedido_factura', 'domicilio_salida', 'carta_ajustes', 'carta_inventario']) {
     assert.ok(arr.some(e => e.action === accion), 'falta en la bitácora: ' + accion);
   }
+});
+
+test('registrar la carta en inventario: lo que se prepara al momento no controla stock; lo empacado sí (stock 0)', async () => {
+  const sup = await srv.superToken();
+  const F = await createFranchise(srv, sup, { name: 'Inv Carta', slug: 'invcarta', template: 'polleria' });
+  const call = (m, u, b) => srv.api(m, `/api/${F.id}${u}`, { token: F.tokens.admin, body: b });
+  const r = await call('POST', '/carta/sync-inventory');
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.created, r.data.controlled + r.data.free);
+  assert.ok(r.data.free > 0 && r.data.controlled > 0, 'hay de los dos tipos');
+  const inv = (await call('GET', '/inventory')).data;
+  const item = (n) => inv.find(i => i.name === n);
+  for (const n of ['Muslo', 'Pechuga', 'Tinto']) assert.equal(item(n).noStock, true, n + ' se prepara al momento: sin control de stock');
+  assert.equal(item('Coca-Cola 400 ml').noStock, false, 'una gaseosa controla stock');
+  const bebidas = inv.filter(i => i.category === 'Gaseosas y jugos' || i.category === 'Cervezas' || i.category === 'Aguas');
+  assert.ok(bebidas.length > 10 && bebidas.every(i => i.noStock === false && i.stock === 0), 'las bebidas controlan stock y arrancan en 0');
+  for (const cat of ['Papas grandes', 'Papas y snacks pequeños', 'Pasteles, galletas y chicles']) assert.ok(inv.filter(i => i.category === cat).every(i => i.noStock === false), cat + ' controla stock');
+  assert.equal(inv.filter(i => i.noStock).length, r.data.free);
+  // la carta pública: lo que se prepara al momento se puede pedir; lo empacado sin stock sale agotado
+  const pub = (await srv.api('GET', '/api/public/carta/invcarta')).data.products;
+  assert.equal(pub.find(p => p.name === 'Muslo').soldOut, false);
+  assert.equal(pub.find(p => p.name === bebidas[0].name).soldOut, true);
 });

@@ -243,6 +243,14 @@ function defaultCarta() {
  * nombre lo reutiliza. Las bebidas y adiciones de los combos usan los mismos ítems (mismo nombre).
  * @returns { created, linked, total }
  */
+/**
+ * ¿Este producto de la carta se compra empacado y se cuenta por unidades? (bebidas, papas, snacks, pasteles, galletas)
+ * Esos CONTROLAN stock: salen agotados en la carta cuando llegan a 0. Lo que se prepara al momento (presas, combos, desayunos,
+ * consomés, alitas, adiciones, fritos...) NO controla stock: contar "presas de pollo" no tiene sentido y siempre está disponible.
+ */
+const PACKAGED_CATEGORIES = ['papas grandes', 'papas y snacks pequeños', 'pasteles, galletas y chicles'];
+const controlsStock = (cat) => !!cat && (cat.group === 'Bebidas' || cat.stock === true || PACKAGED_CATEGORIES.includes(String(cat.name).toLowerCase().trim()));
+
 async function syncInventory(businessId) {
   const c = await readCarta(businessId);
   if (!c) throw new Error('Este negocio no tiene carta');
@@ -250,20 +258,22 @@ async function syncInventory(businessId) {
   const inv = await readJSON(invPath) || [];
   const byName = new Map(inv.map(i => [String(i.name).toLowerCase().trim(), i]));
   const catName = Object.fromEntries(c.categories.map(x => [x.id, x.name]));
-  let created = 0, linked = 0;
+  const catById = Object.fromEntries(c.categories.map(x => [x.id, x]));
+  let created = 0, linked = 0, controlled = 0;
   for (const p of c.products) {
     const key = p.name.toLowerCase().trim();
     let item = byName.get(key);
     if (!item) {
       item = { id: uuidv4(), name: p.name, unit: 'unidad', stock: 0, cost: 0, category: catName[p.categoryId] || 'general', area: 'bar',
-        minStock: 0, supplierId: null, salePrice: p.price, noStock: false, createdAt: new Date().toISOString() };
+        minStock: 0, supplierId: null, salePrice: p.price, noStock: !controlsStock(catById[p.categoryId]), createdAt: new Date().toISOString() };
       inv.push(item); byName.set(key, item); created++;
+      if (!item.noStock) controlled++;
     }
     if (p.inventoryId !== item.id) { p.inventoryId = item.id; linked++; }
   }
   await writeJSON(invPath, inv);
   await writeJSON(cartaPath(businessId), c);
-  return { created, linked, total: c.products.length };
+  return { created, linked, total: c.products.length, controlled, free: created - controlled };
 }
 
 /**

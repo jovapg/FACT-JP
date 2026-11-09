@@ -138,7 +138,7 @@
 
         <section v-if="isAdmin" class="pv-set">
           <h3>Inventario</h3>
-          <small class="pv-hint">Crea en el inventario todos los productos de la carta (bebidas y comidas) con <b>stock 0</b>, para que tú lo cuadres. Al facturar un pedido, el stock de cada producto baja solo. No duplica los que ya existan.</small>
+          <small class="pv-hint">Crea en el inventario los productos de la carta. Lo que se <b>prepara al momento</b> (presas, combos, desayunos, fritos…) queda <b>sin control de stock</b>, siempre disponible. Lo <b>empacado</b> (bebidas, papas, snacks, pasteles) queda con <b>stock 0</b>: sale agotado hasta que cargues cuánto tienes. Al facturar, el stock baja solo. No duplica los que ya existan.</small>
           <button class="pv-btn main" :disabled="syncing" @click="syncInventory">{{ syncing ? 'Registrando…' : '📦 Registrar productos en inventario' }}</button>
         </section>
 
@@ -373,11 +373,11 @@ async function setSetting(body) {
 }
 const syncing = ref(false)
 async function syncInventory() {
-  if (!window.confirm('¿Registrar en el inventario todos los productos de la carta con stock 0?')) return
+  if (!window.confirm('¿Registrar la carta en el inventario? Lo empacado (bebidas, papas, snacks) quedará con stock 0 = agotado hasta que cargues stock; lo que se prepara al momento queda sin control de stock.')) return
   syncing.value = true
   try {
     const { data } = await api.post(`${base()}/carta/sync-inventory`)
-    toast(`Inventario listo: ${data.created} productos nuevos, ${data.linked} enlazados`, 'success')
+    toast(`Inventario listo: ${data.created} productos nuevos (${data.free} sin control de stock, ${data.controlled} con stock 0 por cargar), ${data.linked} enlazados`, 'success')
   } catch (e) { toast(e.response?.data?.error || 'No se pudo registrar en inventario', 'error') }
   finally { syncing.value = false }
 }

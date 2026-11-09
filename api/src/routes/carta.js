@@ -61,7 +61,7 @@ router.post('/carta/sync-inventory', authenticate, async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Forbidden' });
     const r = await carta.syncInventory(req.params.businessId);
     await logAudit(req.params.businessId, { ...who(req), action: 'carta_inventario',
-      summary: `Carta → inventario: ${r.created} producto(s) nuevos creados con stock 0, ${r.linked} enlazados (de ${r.total})` });
+      summary: `Carta → inventario: ${r.created} producto(s) nuevos (${r.controlled} controlan stock en 0, ${r.free} sin control de stock), ${r.linked} enlazados (de ${r.total})` });
     res.json(r);
   } catch (err) { console.error(err); res.status(500).json({ error: err.message || 'Internal server error' }); }
 });
