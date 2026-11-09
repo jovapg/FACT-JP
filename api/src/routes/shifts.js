@@ -107,6 +107,78 @@ router.get('/shifts/current', authenticate, async (req, res) => {
  *
  * Valida que no haya otro turno abierto antes de crear uno nuevo.
  */
+// ── Regularización: ventas hechas SIN turno abierto ──────────────────────────────────────────
+// Antes de la regla "sin turno no se factura", se podía facturar sin turno: esas ventas están en el historial pero ningún
+// cierre de caja las cuenta, así que no llegan a Finanzas. Aquí se agrupan y se cubren con turnos cerrados "de regularización".
+const COL_MS = 5 * 3600 * 1000; // hora de Colombia (UTC-5)
+const colDay = (t) => new Date(t - COL_MS).toISOString().slice(0, 10);
+
+/** Grupos de ventas que no caen dentro de ningún turno. Un grupo nunca cruza un día ni salta por encima de un turno real. */
+function unassignedGroups(sales, shifts) {
+  const ranges = shifts.map(s => [new Date(s.openedAt).getTime(), s.closedAt ? new Date(s.closedAt).getTime() : Infinity]).filter(r => !isNaN(r[0]));
+  const loose = sales.map(s => ({ s, t: new Date(s.createdAt).getTime() }))
+    .filter(x => !isNaN(x.t) && (Number(x.s.total) || 0) > 0 && !ranges.some(([a, b]) => x.t >= a && x.t <= b))
+    .sort((p, q) => p.t - q.t);
+  const groups = [];
+  for (const x of loose) {
+    const g = groups[groups.length - 1];
+    const cut = !g || colDay(x.t) !== g.day || ranges.some(([a]) => a > g.to && a < x.t);
+    if (cut) groups.push({ day: colDay(x.t), from: x.t, to: x.t, sales: [x.s] });
+    else { g.to = x.t; g.sales.push(x.s); }
+  }
+  return groups;
+}
+const sum = (list, f) => list.reduce((a, s) => a + f(s), 0);
+const summarizeGroup = (g) => ({
+  day: g.day, from: new Date(g.from).toISOString(), to: new Date(g.to).toISOString(), count: g.sales.length,
+  total: sum(g.sales, s => s.total || 0),
+  cash: sum(g.sales, s => (bucketOf(s.paymentMethod) === 'efectivo' ? s.total || 0 : 0)),
+  other: sum(g.sales, s => (bucketOf(s.paymentMethod) === 'banco' ? s.total || 0 : 0))
+});
+const canRegularize = (req) => ['admin', 'superadmin'].includes(req.user.role);
+
+router.get('/shifts/unassigned', authenticate, async (req, res) => {
+  try {
+    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el administrador puede regularizar ventas sin turno' });
+    const groups = unassignedGroups(await readJSON(salesPath(req.params.businessId)) || [], await readJSON(shiftsPath(req.params.businessId)) || []).map(summarizeGroup);
+    res.json({ count: sum(groups, g => g.count), total: sum(groups, g => g.total), groups });
+  } catch { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+router.post('/shifts/regularize', authenticate, async (req, res) => {
+  try {
+    if (!canRegularize(req)) return res.status(403).json({ error: 'Solo el administrador puede regularizar ventas sin turno' });
+    const bid = req.params.businessId;
+    const sales = await readJSON(salesPath(bid)) || [];
+    const shifts = await readJSON(shiftsPath(bid)) || [];
+    const onlyDays = Array.isArray(req.body?.days) ? req.body.days : null; // sin lista: todos los días
+    const groups = unassignedGroups(sales, shifts).filter(g => !onlyDays || onlyDays.includes(g.day));
+    const created = [];
+    for (const g of groups) {
+      const openedAt = new Date(g.from).toISOString(), closedAt = new Date(g.to).toISOString();
+      const sm = summarizeGroup(g);
+      const byArea = g.sales.reduce((a, s) => { const t = s.totalsByArea; if (t && ((t.bar || 0) + (t.restaurante || 0)) > 0) { a.bar += t.bar || 0; a.restaurante += t.restaurante || 0; } else a.bar += s.total || 0; return a; }, { bar: 0, restaurante: 0 });
+      const shift = {
+        id: uuidv4(), cashierId: req.user.id, cashierName: 'Regularización', openedAt, closedAt,
+        openingCash: 0, closingCash: sm.cash, expectedCash: sm.cash, difference: 0,
+        totalCashSales: sm.cash, totalOtherSales: sm.other, totalSales: sm.total, salesCount: sm.count,
+        totalDomicilios: sum(g.sales, s => Number(s.deliveryFee) || 0), salesByArea: byArea,
+        withdrawals: [], totalWithdrawals: 0, expenses: [], totalExpenses: 0,
+        incomeByAreaBucket: incomeByAreaBucket(g.sales, openedAt, closedAt),
+        fiadoAbonos: sum(g.sales.filter(s => s.type === 'abono_deuda'), s => s.total || 0),
+        notes: `Regularización: ventas del ${g.day} facturadas sin turno abierto (hecha por ${req.user.name || req.user.username}).`,
+        regularizacion: true, status: 'closed'
+      };
+      shifts.push(shift); created.push({ ...sm, shiftId: shift.id });
+    }
+    if (created.length) {
+      await writeJSON(shiftsPath(bid), shifts);
+      try { await require('../services/audit').logAudit(bid, { user: req.user.name || req.user.username, role: req.user.role, action: 'regularizacion', summary: `Se regularizaron ${sum(created, c => c.count)} ventas sin turno (${created.length} turno(s) de regularización).` }); } catch { /* la bitácora no frena el proceso */ }
+    }
+    res.json({ created, count: sum(created, c => c.count), total: sum(created, c => c.total) });
+  } catch (e) { console.error('[shifts] regularizar:', e); res.status(500).json({ error: 'Internal server error' }); }
+});
+
 router.post('/shifts/open', authenticate, async (req, res) => {
   try {
     if (req.user.role === 'cajero' && req.user.role !== 'admin' && req.user.role !== 'superadmin') {

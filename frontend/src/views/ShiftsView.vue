@@ -15,6 +15,22 @@
           </button>
         </div>
 
+        <!-- ── Ventas hechas sin turno abierto (solo admin): se cubren con turnos de regularización para que lleguen a Finanzas ── -->
+        <div v-if="canRegularize && unassigned.count > 0" class="regu-card mb-4">
+          <div class="regu-title">⚠️ {{ unassigned.count }} ventas ({{ formatCOP(unassigned.total) }}) se hicieron sin turno abierto</div>
+          <p class="regu-text">Están en el historial, pero ningún cierre de caja las cuenta, por eso <strong>no aparecen en Finanzas</strong>.
+            Al regularizar se crea un turno cerrado por cada día con esas ventas. No se borra ni se cambia ninguna venta.</p>
+          <ul class="regu-list">
+            <li v-for="g in unassigned.groups" :key="g.from">
+              <strong>{{ g.day }}</strong> · {{ g.count }} venta(s) · {{ formatCOP(g.total) }}
+              <span class="regu-sub">(💵 {{ formatCOP(g.cash) }} · 🏦 {{ formatCOP(g.other) }})</span>
+            </li>
+          </ul>
+          <button class="btn btn-primary" :disabled="!!reguBusy" @click="regularizar">
+            {{ reguBusy ? 'Regularizando…' : 'Regularizar estas ventas' }}
+          </button>
+        </div>
+
         <!-- ── Turno activo ──────────────────────────────────────── -->
         <div v-if="shiftsStore.currentShift" class="shift-active-card mb-4">
           <div class="shift-active-header">
@@ -80,7 +96,7 @@
           <AlertTriangle :size="18" />
           <div>
             <strong>No hay turno abierto.</strong>
-            Las ventas que se registren no estarán asociadas a ningún turno.
+            Abre un turno para poder facturar, fiar o registrar abonos.
           </div>
           <button class="btn btn-primary btn-sm" @click="openAbrirModal">
             <LogIn :size="13" /> Abrir ahora
@@ -444,6 +460,7 @@ import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { useShiftsStore } from '../stores/shifts.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
+import api from '../services/api.js'
 import {
   LogIn, LogOut, ArrowDownToLine, AlertTriangle, Clock, X, Receipt
 } from 'lucide-vue-next'
@@ -662,9 +679,30 @@ function shareShiftWhatsApp(shift) {
   window.open(`https://wa.me/?text=${text}`, '_blank')
 }
 
+// ── Regularización de ventas sin turno (solo admin) ─────────────
+const canRegularize = computed(() => ['admin', 'superadmin'].includes(auth.user?.role))
+const unassigned = ref({ count: 0, total: 0, groups: [] })
+const reguBusy = ref(false)
+async function loadUnassigned() {
+  if (!canRegularize.value) return
+  try { unassigned.value = (await api.get(`/api/${auth.currentBusiness.id}/shifts/unassigned`)).data } catch { /* sin permiso o sin datos */ }
+}
+async function regularizar() {
+  const u = unassigned.value
+  if (!confirm(`Se crearán ${u.groups.length} turno(s) de regularización con ${u.count} ventas por ${formatCOP(u.total)}. Esas ventas pasarán a contar en Finanzas. ¿Continuar?`)) return
+  reguBusy.value = true
+  try {
+    const { data } = await api.post(`/api/${auth.currentBusiness.id}/shifts/regularize`, {})
+    toast(`Listo: ${data.count} ventas regularizadas (${formatCOP(data.total)})`, 'success')
+    await shiftsStore.fetchShifts(); await loadUnassigned()
+  } catch (e) { toast(e.response?.data?.error || 'No se pudo regularizar', 'error') }
+  finally { reguBusy.value = false }
+}
+
 onMounted(async () => {
   await shiftsStore.fetchCurrentShift()
   await shiftsStore.fetchShifts()
+  loadUnassigned()
 })
 </script>
 
@@ -753,6 +791,11 @@ onMounted(async () => {
 }
 
 /* Sin turno */
+.regu-card { background: var(--warning-light); border: 1.5px solid #fcd34d; color: #92400e; border-radius: var(--radius); padding: 16px 20px; }
+.regu-title { font-weight: 700; margin-bottom: 6px; }
+.regu-text { margin: 0 0 10px; font-size: 14px; }
+.regu-list { margin: 0 0 12px; padding-left: 18px; font-size: 14px; }
+.regu-sub { opacity: .8; }
 .no-shift-banner {
   display: flex;
   align-items: center;
