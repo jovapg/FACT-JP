@@ -24,6 +24,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const docStore = require('./docStore');
 
 // Directorio raíz de los datos.
 // Prioridad: 1) variable de entorno DATA_PATH, 2) volumen Railway en /storage,
@@ -79,6 +80,41 @@ function ensureDir(dirPath) {
   }
 }
 
+// ── Motor de almacenamiento ──────────────────────────────────────────────────────────────
+// Con STORAGE_ENGINE=sqlite, los .json de cada negocio viven en su base negocio.db (ver docStore.js).
+// Todo lo demás (superadmin, lista de franquicias, fotos, claves) sigue siendo archivo.
+const docInfo = (filePath) => (docStore.ENGINE === 'sqlite' ? docStore.classify(filePath, DATA_PATH) : null);
+
+/** Texto crudo de un documento (o null si no existe), venga de la base o de un archivo */
+function readText(filePath) {
+  const info = docInfo(filePath);
+  if (info) return docStore.readDoc(info);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath, 'utf-8');
+}
+/** Guarda el texto crudo de un documento de forma segura (transacción o archivo atómico) */
+function writeText(filePath, text) {
+  const info = docInfo(filePath);
+  if (info) docStore.writeDoc(info, text); else writeFileAtomicSync(filePath, text);
+}
+/** ¿Existe el documento? */
+function existsDoc(filePath) {
+  const info = docInfo(filePath);
+  return info ? docStore.existsDoc(info) : fs.existsSync(filePath);
+}
+/** Todos los documentos de un negocio como { 'sales.json': texto, ... } (para respaldos) */
+function listBusinessDocs(businessId) {
+  const dir = getBusinessPath(businessId);
+  if (docStore.ENGINE === 'sqlite') {
+    const out = {};
+    for (const r of docStore.listDocs(path.resolve(dir))) out[r.name] = r.json;
+    return out;
+  }
+  const out = {};
+  try { for (const n of fs.readdirSync(dir)) if (/\.json$/i.test(n)) out[n] = fs.readFileSync(path.join(dir, n), 'utf8'); } catch { /* sin carpeta */ }
+  return out;
+}
+
 /**
  * Lee y parsea un archivo JSON.
  * Retorna null si el archivo no existe o tiene un error de parseo
@@ -86,8 +122,8 @@ function ensureDir(dirPath) {
  */
 async function readJSON(filePath) {
   try {
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = readText(filePath);
+    if (raw === null) return null;
     return JSON.parse(raw);
   } catch (err) {
     reportCorruptFile(filePath, err);
@@ -171,8 +207,9 @@ function cleanTempFiles(root = DATA_PATH) {
  * Crea el directorio padre si no existe.
  */
 async function writeJSON(filePath, data) {
-  const text = JSON.stringify(data, null, 2); // si los datos no se pueden convertir, falla ANTES de tocar el archivo
-  writeFileAtomicSync(filePath, text);
+  const info = docInfo(filePath);
+  const text = JSON.stringify(data, null, info ? 0 : 2); // si los datos no se pueden convertir, falla ANTES de tocar nada
+  writeText(filePath, text);
   reportedCorrupt.delete(path.resolve(filePath)); // el archivo quedó sano otra vez
 }
 
@@ -214,6 +251,12 @@ async function deleteFromJSON(filePath, id) {
 }
 
 module.exports = {
+  readText,
+  writeText,
+  existsDoc,
+  listBusinessDocs,
+  docInfo,
+  ENGINE: docStore.ENGINE,
   writeFileAtomicSync,
   cleanTempFiles,
   getDataPath,

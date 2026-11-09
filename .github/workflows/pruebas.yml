@@ -24,9 +24,14 @@ jobs:
       - name: Instalar
         working-directory: api
         run: npm ci
-      - name: Probar
+      - name: Probar (archivos JSON, el motor actual)
         working-directory: api
         run: npm test
+      - name: Probar (SQLite, una base por negocio)
+        working-directory: api
+        run: npm test
+        env:
+          STORAGE_ENGINE: sqlite
 
   pantalla:
     name: Compilar la pantalla (imports y estilos)

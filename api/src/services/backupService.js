@@ -54,7 +54,7 @@ function collectFiles(root) {
       const full = path.join(dir, e.name);
       const r = rel ? rel + '/' + e.name : e.name;
       if (e.isDirectory()) walk(full, r);
-      else if (e.name.toLowerCase().endsWith('.json')) files[r] = fs.readFileSync(full, 'utf8');
+      else if (e.name.toLowerCase().endsWith('.json')) { if (rel && !rel.includes('/')) continue; /* los documentos de cada negocio salen de su base (abajo) */ files[r] = fs.readFileSync(full, 'utf8'); }
       else if (IMG_RE.test(e.name)) {
         const size = fs.statSync(full).size;
         if (size > MAX_BLOB || blobBytes + size > MAX_BLOBS_TOTAL) { skipped++; continue; }
@@ -62,7 +62,16 @@ function collectFiles(root) {
       }
     }
   };
-  if (fs.existsSync(root)) walk(root, '');
+  if (fs.existsSync(root)) {
+    walk(root, '');
+    // Documentos de cada negocio (ventas, pedidos, inventario...): vengan de archivos o de su base SQLite, el respaldo
+    // los guarda siempre igual, como texto .json. Así el formato del respaldo no depende del motor de almacenamiento.
+    const st = require('./fileStorage');
+    for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!e.isDirectory() || e.name === 'backups' || !/^[a-zA-Z0-9_-]+$/.test(e.name)) continue;
+      for (const [name, text] of Object.entries(st.listBusinessDocs(e.name))) files[e.name + '/' + name] = text;
+    }
+  }
   return { files, blobs, skipped };
 }
 

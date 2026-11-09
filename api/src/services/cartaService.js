@@ -413,7 +413,7 @@ function cleanGroups(input, c) {
 /** ¿Hay un turno de caja abierto? Los pedidos entran siempre, pero SIN turno abierto no se pueden facturar. */
 function hasOpenShift(businessId) {
   try {
-    const shifts = JSON.parse(fs.readFileSync(path.join(getBusinessPath(businessId), 'shifts.json'), 'utf8'));
+    const shifts = JSON.parse(require('./fileStorage').readText(path.join(getBusinessPath(businessId), 'shifts.json')));
     return Array.isArray(shifts) && shifts.some(s => s.status === 'open');
   } catch { return false; }
 }
@@ -437,10 +437,9 @@ const counterPath = (id) => path.join(getBusinessPath(id), 'pedidos-counter.json
 function nextCode(businessId, mode, prefix) {
   const letter = mode === 'recoger' ? 'R' : 'D';
   let c = {};
-  try { c = JSON.parse(fs.readFileSync(counterPath(businessId), 'utf8')) || {}; } catch { c = {}; }
+  try { c = JSON.parse(require('./fileStorage').readText(counterPath(businessId))) || {}; } catch { c = {}; }
   c[letter] = (Number(c[letter]) || 0) + 1;
-  fs.mkdirSync(path.dirname(counterPath(businessId)), { recursive: true });
-  require('./fileStorage').writeFileAtomicSync(counterPath(businessId), JSON.stringify(c)); // contador de pedidos: nunca a medias
+  require('./fileStorage').writeText(counterPath(businessId), JSON.stringify(c)); // contador de pedidos: nunca a medias
   const pre = String(prefix || 'DC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'DC';
   return `${letter}-${pre}${String(c[letter]).padStart(2, '0')}`;
 }

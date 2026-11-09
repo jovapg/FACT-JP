@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { startServer, createFranchise } = require('./helpers');
+const { startServer, createFranchise, leerDoc, escribirDoc } = require('./helpers');
 const crypto_ = require('../src/services/backupCrypto');
 
 // ── Almacenamiento externo de mentira (imita lo básico de S3) ──
@@ -48,7 +48,7 @@ before(async () => {
 });
 after(async () => { if (srv) await srv.stop(); if (s3) s3.close(); });
 
-const readInv = (id) => JSON.parse(fs.readFileSync(path.join(srv.dataDir, id, 'inventory.json'), 'utf8'));
+const readInv = (id) => JSON.parse(leerDoc(srv.dataDir, id, 'inventory.json'));
 
 test('el cifrado: ida y vuelta, clave equivocada y archivo alterado', () => {
   const key = Buffer.alloc(32, 7); const texto = Buffer.from('datos de clientes: Ana 3001112233');
@@ -125,10 +125,10 @@ test('abrir un respaldo: clave equivocada, mal escrita o buena', async () => {
 test('restaurar UNA franquicia vuelve sus datos y no toca las otras', async () => {
   await SA('POST', '/api/backups/offsite/run'); // respaldo con el estado actual
   const name = (await SA('GET', '/api/backups/offsite/list')).data.items[0].key;
-  const antesB = fs.readFileSync(path.join(srv.dataDir, B.id, 'inventory.json'), 'utf8');
+  const antesB = leerDoc(srv.dataDir, B.id, 'inventory.json');
   // daño: se borra el inventario de A y se cambia el de B
-  fs.writeFileSync(path.join(srv.dataDir, A.id, 'inventory.json'), '[]');
-  fs.writeFileSync(path.join(srv.dataDir, B.id, 'inventory.json'), JSON.stringify([{ id: 'x', name: 'Cambio posterior', stock: 1 }]));
+  escribirDoc(srv.dataDir, A.id, 'inventory.json', '[]');
+  escribirDoc(srv.dataDir, B.id, 'inventory.json', JSON.stringify([{ id: 'x', name: 'Cambio posterior', stock: 1 }]));
   assert.equal(readInv(A.id).length, 0);
   const abierto = (await SA('POST', '/api/backups/inspect', { source: 'offsite', name, key: KEY })).data;
   assert.equal((await SA('POST', '/api/backups/restore', { token: abierto.token, scope: [A.id] })).status, 400, 'sin confirmar no restaura');
@@ -138,9 +138,9 @@ test('restaurar UNA franquicia vuelve sus datos y no toca las otras', async () =
   assert.ok(r.data.safetyBackup, 'se guardó un respaldo de seguridad antes');
   assert.equal(readInv(A.id).some(i => i.name === 'Producto de prueba A'), true, 'A volvió');
   assert.equal(readInv(B.id)[0].name, 'Cambio posterior', 'B NO se tocó');
-  assert.notEqual(fs.readFileSync(path.join(srv.dataDir, B.id, 'inventory.json'), 'utf8'), antesB);
+  assert.notEqual(leerDoc(srv.dataDir, B.id, 'inventory.json'), antesB);
   assert.equal((await SA('POST', '/api/backups/restore', { token: abierto.token, scope: [A.id], confirm: 'RESTAURAR' })).status, 410, 'cada apertura sirve una sola vez');
-  const bit = JSON.parse(fs.readFileSync(path.join(srv.dataDir, A.id, 'audit.json'), 'utf8'));
+  const bit = JSON.parse(leerDoc(srv.dataDir, A.id, 'audit.json'));
   assert.ok(bit.some(e => e.action === 'restauracion'), 'la restauración queda en la bitácora');
   // la franquicia sigue funcionando
   const nuevo = await srv.login(A.users[0].username, A.users[0].password);

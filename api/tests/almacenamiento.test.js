@@ -51,7 +51,8 @@ test('muchas escrituras al mismo tiempo nunca dejan el archivo a medias', async 
   assert.deepEqual(sobras(), []);
 });
 
-test('un archivo dañado no rompe la lectura y se guarda una copia para revisarlo', async () => {
+// Con SQLite este caso no existe: la base nunca queda "a medias" y solo se guardan documentos válidos.
+test('un archivo dañado no rompe la lectura y se guarda una copia para revisarlo', { skip: process.env.STORAGE_ENGINE === 'sqlite' && 'solo aplica a archivos .json' }, async () => {
   fs.writeFileSync(file('d.json'), '{"roto": [1, 2,');
   assert.equal(await st.readJSON(file('d.json')), null);
   const copias = fs.readdirSync(path.join(DIR, 'negocio')).filter(n => n.startsWith('d.json.corrupt-'));

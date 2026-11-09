@@ -101,4 +101,22 @@ async function publicOrder(srv, slug, productName, extra = {}) {
     privacyAccepted: true, items: [{ productId: p.id, qty: 1 }], ...extra } });
 }
 
-module.exports = { startServer, createFranchise, openShift, publicOrder, SA_USER, SA_PASS };
+/**
+ * Leer / escribir un documento de un negocio directamente en el disco (como si alguien tocara los datos por fuera de la app).
+ * Funciona con los dos motores: archivo .json o la base negocio.db de ese negocio.
+ */
+const sqliteMode = () => (process.env.STORAGE_ENGINE || 'json').toLowerCase() === 'sqlite';
+function leerDoc(dataDir, bizId, name) {
+  if (!sqliteMode()) return fs.readFileSync(path.join(dataDir, bizId, name), 'utf8');
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(dataDir, bizId, 'negocio.db'));
+  try { const r = db.prepare('SELECT json FROM docs WHERE name = ?').get(name); if (!r) throw new Error('No existe ' + name); return r.json; } finally { db.close(); }
+}
+function escribirDoc(dataDir, bizId, name, text) {
+  if (!sqliteMode()) { fs.writeFileSync(path.join(dataDir, bizId, name), text); return; }
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(dataDir, bizId, 'negocio.db'));
+  try { db.exec('PRAGMA busy_timeout = 5000'); db.prepare('INSERT INTO docs (name, json, updated) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET json = excluded.json, updated = excluded.updated').run(name, text, new Date().toISOString()); } finally { db.close(); }
+}
+
+module.exports = { leerDoc, escribirDoc, sqliteMode, startServer, createFranchise, openShift, publicOrder, SA_USER, SA_PASS };

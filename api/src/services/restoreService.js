@@ -34,6 +34,8 @@ function summarize(payload) {
 }
 
 function writeAtomic(dest, data) {
+  const st = require('./fileStorage');
+  if (st.docInfo(dest)) { st.writeText(dest, String(data)); return; } // documento de un negocio: va a su base de datos
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + '.restore-tmp';
   fs.writeFileSync(tmp, data);
