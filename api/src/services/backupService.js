@@ -149,7 +149,10 @@ async function offsiteIfDue() {
 function openBundle(buf, keyStr) {
   let data = buf;
   if (crypto_.isEncrypted(data)) {
-    const key = crypto_.parseKey(keyStr) || crypto_.getKey();
+    const typed = String(keyStr || '').trim();
+    // Si escribes una clave, se usa ESA (y debe tener el formato correcto): así se prueba tu copia de la clave y no la del servidor.
+    const key = typed ? crypto_.parseKey(typed) : crypto_.getKey();
+    if (typed && !key) throw new Error('La clave no tiene el formato correcto: son 64 letras y números (con o sin guiones). Revisa que la copiaste completa.');
     if (!key) throw new Error('Este respaldo está cifrado: escribe la clave de respaldos');
     data = crypto_.decrypt(data, key);
   }
