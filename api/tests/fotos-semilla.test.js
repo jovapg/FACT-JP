@@ -58,3 +58,27 @@ test('las fotos reales de Deli-Combos: cada archivo existe y cada producto del m
     for (const n of p.products) assert.ok(nombres.has(n.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()), 'producto de la carta: ' + n);
   }
 });
+
+test('portada y destacados: se ponen una sola vez y se respeta lo que se cambie a mano', async () => {
+  const id = 'biz-carta';
+  await st.writeJSON(path.join(DIR, 'businesses.json'), [{ id: 'biz-uno', slug: 'mi-negocio' }, { id, slug: 'con-carta', name: 'Con Carta' }]);
+  const carta = require('../src/services/cartaService').defaultCarta();
+  await st.writeJSON(path.join(DIR, id, 'carta.json'), carta);
+  await st.writeJSON(path.join(DIR, id, 'inventory.json'), [{ id: 'x1', name: 'Alitas x12' }]);
+  const d = path.join(SEED, 'con-carta'); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'p.webp'), 'foto'); fs.writeFileSync(path.join(d, 'h.webp'), 'portada');
+  fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify({ slug: 'con-carta', hero: 'h.webp', featured: ['alitas x12', 'Pollo entero'], photos: [{ file: 'p.webp', products: ['Alitas x12'] }] }));
+  const r = (await seed.run(SEED)).find(x => x.slug === 'con-carta');
+  assert.equal(r.hero, true); assert.equal(r.featured, 2);
+  let c = await st.readJSON(path.join(DIR, id, 'carta.json'));
+  assert.match(c.settings.heroImage, /^\/uploads\/biz-carta\/hero\.webp\?v=\d+$/);
+  assert.deepEqual(c.products.filter(p => p.featured).map(p => p.name).sort(), ['Alitas x12', 'Pollo entero']);
+  assert.equal(fs.readFileSync(path.join(DIR, id, 'hero.webp'), 'utf8'), 'portada');
+  // la dueña quita un destacado y cambia la portada: otro arranque NO lo vuelve a poner
+  c.products.find(p => p.name === 'Pollo entero').featured = false; c.settings.heroImage = '/uploads/biz-carta/otra.webp';
+  await st.writeJSON(path.join(DIR, id, 'carta.json'), c);
+  await seed.run(SEED);
+  c = await st.readJSON(path.join(DIR, id, 'carta.json'));
+  assert.equal(c.settings.heroImage, '/uploads/biz-carta/otra.webp');
+  assert.equal(c.products.find(p => p.name === 'Pollo entero').featured, false);
+});

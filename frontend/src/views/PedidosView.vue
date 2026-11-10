@@ -155,6 +155,7 @@
             <b v-else>{{ money(p.price) }}</b>
             <label class="pv-sw sm"><input type="checkbox" :checked="p.soldOut" @change="patch(p, { soldOut: $event.target.checked })" /><span>Agotado</span></label>
             <label v-if="isAdmin" class="pv-sw sm"><input type="checkbox" :checked="p.active" @change="patch(p, { active: $event.target.checked })" /><span>Visible</span></label>
+            <label v-if="isAdmin" class="pv-sw sm" title="Sale en “Los más pedidos” de la carta (necesita foto)"><input type="checkbox" :checked="p.featured" @change="patch(p, { featured: $event.target.checked })" /><span>Más pedido</span></label>
           </div>
         </div>
         </template>

@@ -40,6 +40,28 @@ async function applyToBusiness(businessId, manifest, dir) {
     }
   }
   if (changed) await writeJSON(invPath, inv);
+
+  // Portada de la carta y productos destacados ("Los más pedidos"): solo si el negocio aún no los tiene (se respeta lo que se cambie a mano)
+  if (manifest.hero || (manifest.featured && manifest.featured.length)) {
+    try {
+      const cartaPath = path.join(getBusinessPath(businessId), 'carta.json');
+      const c = await readJSON(cartaPath);
+      if (c && Array.isArray(c.products)) {
+        let cc = false;
+        const heroSrc = manifest.hero && path.join(dir, manifest.hero);
+        if (heroSrc && fs.existsSync(heroSrc) && !c.settings.heroImage) {
+          fs.copyFileSync(heroSrc, path.join(getBusinessPath(businessId), 'hero.webp'));
+          c.settings.heroImage = `/uploads/${businessId}/hero.webp?v=${Date.now()}`; cc = true; out.hero = true;
+        }
+        if (manifest.featured && manifest.featured.length && !c.settings.featuredSeeded && !c.products.some(p => p.featured)) {
+          const names = new Set(manifest.featured.map(norm));
+          for (const p of c.products) if (names.has(norm(p.name))) { p.featured = true; out.featured = (out.featured || 0) + 1; }
+          c.settings.featuredSeeded = true; cc = true;
+        }
+        if (cc) await writeJSON(cartaPath, c);
+      }
+    } catch (e) { console.error('[fotos] portada/destacados:', e.message); }
+  }
   return out;
 }
 

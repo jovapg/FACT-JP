@@ -124,6 +124,7 @@ router.put('/carta/products/:id', authenticate, async (req, res) => {
         p.categoryId = b.categoryId;
       }
       if (typeof b.alcohol === 'boolean') { if (b.alcohol) p.alcohol = true; else delete p.alcohol; }
+      if (typeof b.featured === 'boolean') { if (b.featured) p.featured = true; else delete p.featured; } // "Los más pedidos" de la carta
       if (b.groups !== undefined) {
         try { p.groups = carta.cleanGroups(b.groups, c); } catch (e) { return res.status(400).json({ error: e.message }); }
       }

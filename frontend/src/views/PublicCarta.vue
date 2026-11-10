@@ -42,6 +42,17 @@
       <main class="pc-list">
         <!-- Inicio: categorías como botones grandes -->
         <template v-if="!q.trim() && !cur">
+          <div v-if="data.settings.heroImage" class="pc-hero" :style="{ backgroundImage: 'url(' + data.settings.heroImage + ')' }" role="img" :aria-label="'Pollo asado de ' + data.business.name"></div>
+          <template v-if="featured.length">
+            <h2 class="pc-h">Los más pedidos</h2>
+            <div class="pc-feat">
+              <button v-for="p in featured" :key="p.id" class="pc-fcard" :disabled="p.soldOut" @click="openProduct(p)">
+                <span class="pc-fimg" :style="{ backgroundImage: 'url(' + p.image + ')' }"></span>
+                <b>{{ p.name }}</b>
+                <small v-if="p.soldOut" class="pc-sold">Agotado</small><small v-else>{{ money(p.price) }}</small>
+              </button>
+            </div>
+          </template>
           <h2 class="pc-h">¿Qué se te antoja?</h2>
           <div class="pc-tiles">
             <button v-for="(g, i) in groups" :key="g.id" class="pc-tile" :style="tileStyle(g, i)" @click="openGroup(g)">
@@ -346,12 +357,13 @@ const groups = computed(() => {
 const catEmoji = computed(() => Object.fromEntries(cats.value.map(c => [c.id, c.emoji || emojiFor(c.group || c.name)])))
 const emojiOf = (p) => catEmoji.value[p.categoryId] || '🍗'
 const TILE = [['#ffedd5', '#7c2d12'], ['#fef3c7', '#78350f'], ['#fee2e2', '#7f1d1d'], ['#dcfce7', '#14532d'], ['#fef9c3', '#713f12'], ['#e0f2fe', '#0c4a6e'], ['#fae8ff', '#701a75'], ['#ccfbf1', '#134e4a']]
+// Mosaicos parejos y de color (sin fotos): las fotos se ven en "Los más pedidos" y dentro de cada categoría
 function tileStyle(g, i) {
-  const photo = g.cats.flatMap(c => productsOf(c.id)).find(p => p.image)?.image
-  if (photo) return { backgroundImage: `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url(${photo})`, backgroundSize: 'cover', backgroundPosition: 'center', color: '#fff' }
   const [bg, fg] = TILE[i % TILE.length]
   return { background: bg, color: fg }
 }
+// "Los más pedidos": productos destacados que tienen foto (máx. 8)
+const featured = computed(() => data.value.products.filter(p => p.featured && p.image).slice(0, 8))
 // Lo que se muestra: resultados de búsqueda o los productos de la categoría abierta
 const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 const sections = computed(() => {
@@ -533,6 +545,13 @@ function waLink(d) {
 .pc-search:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
 .pc-h { font-size: 18px; margin: 16px 4px 10px; }
 .pc-subh { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--red2); margin: 16px 4px 6px; }
+.pc-hero { height: 150px; border-radius: 16px; background-size: cover; background-position: center; margin: 4px 0 14px; background-color: #fde7c8; }
+.pc-feat { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 12px; margin: 0 -2px 6px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+.pc-feat { scrollbar-width: none; } .pc-feat::-webkit-scrollbar { display: none; }
+.pc-fcard { flex: 0 0 132px; scroll-snap-align: start; border: 0; background: transparent; padding: 0; text-align: left; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 3px; color: inherit; }
+.pc-fcard:disabled { opacity: .55; cursor: default; }
+.pc-fimg { display: block; height: 100px; border-radius: 12px; background-size: cover; background-position: center; background-color: #fde7c8; }
+.pc-fcard b { font-size: 13px; line-height: 1.2; } .pc-fcard small { font-size: 12px; opacity: .8; }
 .pc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pc-tile { border: 0; border-radius: 16px; padding: 14px 12px; min-height: 108px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; text-align: left; cursor: pointer; font-family: inherit; }
 .pc-tile-emoji { font-size: 30px; line-height: 1; margin-bottom: 6px; }

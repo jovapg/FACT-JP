@@ -1,6 +1,8 @@
 {
   "slug": "deli-combos",
   "nota": "Fotos reales enviadas por la dueña (9-nov-2026). Se asignan a los productos del inventario por nombre, solo si aún no tienen foto.",
+  "hero": "asador.webp",
+  "featured": ["Alitas x12", "Tragón con papas francesas", "Deditos", "¼ de pollo (muslo y contramuslo)"],
   "photos": [
     {
       "file": "alitas-salsas.webp",
