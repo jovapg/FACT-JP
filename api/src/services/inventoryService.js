@@ -32,6 +32,7 @@ const { readJSON, writeJSON, getBusinessPath } = require('./fileStorage');
  *   - null                                  → no hay stock que rastrear
  */
 function resolveStockTarget(saleItem, recipes, invById, invByName) {
+  if (saleItem && saleItem.kind === 'domicilio') return null; // el domicilio no es un producto: no mueve inventario
   // Ítem de inventario vendido directamente (sin receta)
   if (saleItem.inventoryId && !saleItem.recipeId) {
     const item = invById.get(saleItem.inventoryId);

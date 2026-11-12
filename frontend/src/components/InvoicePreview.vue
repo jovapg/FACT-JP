@@ -36,22 +36,23 @@
               <span>Total</span>
               <span></span>
             </div>
-            <div class="inv-item-wrap" v-for="item in editableItems" :key="item.recipeId">
+            <div class="inv-item-wrap" v-for="item in editableItems" :key="item.recipeId || item.name">
               <div class="inv-item">
                 <span class="item-name">
                   {{ item.name }}
                 </span>
-                <div class="item-qty-ctrl">
+                <div class="item-qty-ctrl" v-if="item.kind !== 'domicilio'">
                   <button @click="decreaseQty(item)" class="qty-mini-btn">−</button>
                   <span>{{ item.qty }}</span>
                   <button @click="item.qty++" class="qty-mini-btn">+</button>
                 </div>
+                <div class="item-qty-ctrl" v-else><span>🛵</span></div>
                 <span>{{ formatCOP(item.price) }}</span>
                 <span class="item-line-total">{{ formatCOP(item.qty * item.price) }}</span>
                 <button class="remove-mini-btn" @click="removeItem(item)">×</button>
               </div>
               <!-- Descuento por producto: botón que abre un campo de valor -->
-              <div class="inv-item-disc">
+              <div class="inv-item-disc" v-if="item.kind !== 'domicilio'">
                 <button
                   v-if="!item._showDisc && !(item.discount > 0)"
                   class="disc-add-btn"

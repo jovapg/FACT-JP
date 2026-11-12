@@ -396,9 +396,9 @@ onMounted(async () => {
 
 .order-panel {
   width: 100%;
-  max-width: 560px;
+  max-width: 616px;   /* 560 + 10% */
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;   /* lo que se desplaza es la lista de productos y la orden; el pie queda fijo */
   background: var(--surface);
   box-shadow: -4px 0 20px rgba(0,0,0,0.15);
 }

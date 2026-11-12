@@ -45,11 +45,11 @@
     <div class="cart-items-section">
       <div class="cart-items-header">
         <h4>Orden actual</h4>
-        <span class="items-count">{{ cartItems.length }} items</span>
+        <span class="items-count">{{ productItems.length }} items</span>
       </div>
 
-      <div class="cart-items" v-if="cartItems.length > 0">
-        <div class="cart-item" v-for="item in cartItems" :key="item.recipeId">
+      <div class="cart-items" v-if="productItems.length > 0">
+        <div class="cart-item" v-for="item in productItems" :key="item._itemId">
           <div class="item-info">
             <span class="item-name">{{ item.name }}</span>
             <span class="item-unit-price">{{ formatCOP(item.price) }} c/u</span>
@@ -68,15 +68,33 @@
         <span>Sin items en la orden</span>
       </div>
 
-      <div class="cart-total" v-if="cartItems.length > 0">
-        <span>Subtotal</span>
-        <span class="total-amount">{{ formatCOP(cartTotal) }}</span>
-      </div>
     </div>
 
-    <!-- Client name -->
+    <!-- Pie fijo: subtotal siempre visible, cliente, domicilio y acciones -->
+    <div class="cart-footer">
+    <div class="cart-total" v-if="productItems.length > 0">
+      <template v-if="domiItem">
+        <div class="tot-line"><span>Subtotal</span><span>{{ formatCOP(productsTotal) }}</span></div>
+        <div class="tot-line"><span>🛵 Domicilio</span><span>{{ formatCOP(domiFee) }}</span></div>
+        <div class="tot-main"><span>Total a cobrar</span><span class="total-amount">{{ formatCOP(cartTotal) }}</span></div>
+      </template>
+      <div v-else class="tot-main"><span>Subtotal</span><span class="total-amount">{{ formatCOP(cartTotal) }}</span></div>
+    </div>
+
+    <!-- Cliente y domicilio -->
     <div class="client-field">
       <input v-model="clientName" class="form-control" placeholder="👤 Nombre del cliente (opcional)" />
+      <label :class="['domi-switch', { on: !!domiItem }]" title="Pedido para llevar a domicilio (no vino por la carta en línea)">
+        <input type="checkbox" :checked="!!domiItem" @change="toggleDomicilio($event.target.checked)" />
+        <span class="domi-track"></span><span>🛵 Domicilio</span>
+      </label>
+    </div>
+    <div v-if="domiItem" class="domi-row">
+      <span>Valor del domicilio</span>
+      <div class="domi-input"><span>$</span>
+        <input inputmode="numeric" class="form-control" placeholder="0" :value="domiFee ? domiFee.toLocaleString('es-CO') : ''" @input="setDomiFee($event)" />
+      </div>
+      <small>Si es gratis, déjalo en 0.</small>
     </div>
 
     <!-- Actions -->
@@ -85,7 +103,7 @@
         v-if="!table._direct"
         class="btn btn-outline btn-sm"
         @click="saveOrder"
-        :disabled="saving || (cartItems.length === 0 && !(table._orderId && clientName))"
+        :disabled="saving || (productItems.length === 0 && !(table._orderId && clientName))"
       >
         💾 Guardar orden
       </button>
@@ -99,11 +117,12 @@
       <button
         class="btn btn-primary"
         @click="showInvoice = true"
-        :disabled="cartItems.length === 0"
+        :disabled="productItems.length === 0"
         style="flex:1"
       >
         🧾 Previsualizar factura
       </button>
+    </div>
     </div>
 
     <!-- Invoice Preview -->
@@ -279,6 +298,24 @@ const filteredRecipes = computed(() => {
 })
 
 /** Suma total de todos los ítems en el carrito (qty × precio) */
+// El domicilio es una línea más de la orden (kind 'domicilio'), igual que en los pedidos de la carta en línea:
+// viaja por guardar orden, factura, turno, Finanzas y bolsillo Domicilios sin formato nuevo.
+const domiItem = computed(() => cartItems.value.find(i => i.kind === 'domicilio'))
+const productItems = computed(() => cartItems.value.filter(i => i.kind !== 'domicilio'))
+const domiFee = computed(() => Number(domiItem.value?.price) || 0)
+const productsTotal = computed(() => productItems.value.reduce((sum, i) => sum + i.qty * i.price, 0))
+function toggleDomicilio(on) {
+  if (on && !domiItem.value) {
+    cartItems.value.push({ _itemId: '__domicilio', recipeId: '__domicilio', name: 'Domicilio', price: 0, qty: 1, discount: 0, area: 'bar', kind: 'domicilio' })
+  } else if (!on) {
+    cartItems.value = cartItems.value.filter(i => i.kind !== 'domicilio')
+  }
+}
+function setDomiFee(e) {
+  const digits = String(e.target.value).replace(/[^0-9]/g, '').slice(0, 9)
+  if (domiItem.value) domiItem.value.price = Number(digits) || 0
+  e.target.value = digits ? Number(digits).toLocaleString('es-CO') : ''
+}
 const cartTotal = computed(() =>
   cartItems.value.reduce((sum, item) => sum + item.qty * item.price, 0)
 )
@@ -389,6 +426,7 @@ async function handleSaleConfirmed() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background: var(--surface);
   color: var(--text);
 }
@@ -441,7 +479,10 @@ async function handleSaleConfirmed() {
 
 /* Products section */
 .products-section {
-  flex-shrink: 0;
+  flex: 1 1 0;           /* se encoge para que el pie (subtotal, cliente, botones) siempre quepa */
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
@@ -479,9 +520,10 @@ async function handleSaleConfirmed() {
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   padding: 10px 12px;
-  /* Altura dinámica: mínimo 180px, ideal 35% del viewport, máximo 280px */
-  max-height: clamp(180px, 35vh, 280px);
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;      /* la lista de productos es lo que se desplaza */
+  align-content: start;
 }
 
 .product-btn {
@@ -542,10 +584,13 @@ async function handleSaleConfirmed() {
 
 /* Cart items */
 .cart-items-section {
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 30%;       /* la orden se desplaza dentro de este espacio, sin empujar el pie */
+  min-height: 64px;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px 12px;
 }
+.cart-footer { flex-shrink: 0; background: var(--surface); box-shadow: 0 -6px 12px rgba(0,0,0,.06); }
 
 .cart-items-header {
   display: flex;
@@ -607,23 +652,35 @@ async function handleSaleConfirmed() {
 }
 
 .cart-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
+  padding: 8px 12px 4px;
   border-top: 2px solid var(--border);
-  margin-top: 8px;
   font-size: 15px;
   font-weight: 700;
 }
+.tot-line { display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; color: var(--text-muted); padding: 1px 0; }
+.tot-main { display: flex; justify-content: space-between; align-items: center; }
 .total-amount { font-size: 20px; color: var(--success); }
 
 .client-field {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
+  padding: 6px 12px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
   flex-shrink: 0;
 }
-.client-field .form-control { font-size: 13px; min-height: 38px; }
+.client-field .form-control { font-size: 13px; min-height: 38px; flex: 1; min-width: 0; }
+.domi-switch { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; min-height: 38px; user-select: none; }
+.domi-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.domi-track { width: 28px; height: 16px; border-radius: 99px; background: var(--border); position: relative; flex: none; transition: background .15s; }
+.domi-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: left .15s; }
+.domi-switch.on { border-color: var(--success); }
+.domi-switch.on .domi-track { background: var(--success); }
+.domi-switch.on .domi-track::after { left: 14px; }
+.domi-switch input:focus-visible + .domi-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.domi-row { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 6px 10px; border: 1px solid var(--success); border-radius: 8px; background: rgba(22,163,74,.08); font-size: 12px; font-weight: 600; flex-wrap: wrap; }
+.domi-row small { flex-basis: 100%; font-weight: 400; color: var(--text-muted); margin-top: -2px; }
+.domi-input { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.domi-input .form-control { width: 110px; text-align: right; min-height: 34px; font-size: 14px; font-weight: 700; }
 
 /* Actions */
 .cart-actions {
@@ -661,9 +718,8 @@ async function handleSaleConfirmed() {
 
 @media (max-width: 480px) {
   .products-grid { grid-template-columns: 1fr 1fr; }
-
-  /* En celulares: área de productos un poco más alta */
-  .products-grid { max-height: clamp(200px, 40vh, 320px); }
+  .client-field { flex-wrap: wrap; }
+  .domi-switch { flex: 1; justify-content: center; }
 
   /* Botones de cantidad ocupan más espacio táctil */
   .qty-btn { width: 44px; height: 44px; }

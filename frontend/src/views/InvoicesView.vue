@@ -36,12 +36,12 @@
                   <td><code style="font-size:12px">{{ inv.invoiceNumber }}</code></td>
                   <td>{{ formatDateTime(inv.createdAt) }}</td>
                   <td>
-                    <template v-if="inv.tableNumber">{{ spaces.label + ' ' + inv.tableNumber }}</template>
+                    <template v-if="inv.tableNumber">{{ spaces.label + ' ' + inv.tableNumber }} <span v-if="orderKind(inv) === 'Domicilio'" class="kind-tag">🛵 Domicilio</span></template>
                     <span v-else-if="orderKind(inv)" :class="['kind-tag', orderKind(inv) === 'Recoger' && 'pick']">{{ orderKind(inv) === 'Recoger' ? '🏪' : '🛵' }} {{ orderKind(inv) }}<b v-if="orderKind(inv) === 'Domicilio'"> #{{ domiNumber[inv.id] }}</b></span>
                     <template v-else>-</template>
                   </td>
                   <td>{{ inv.cashier }}</td>
-                  <td>{{ inv.items?.length || 0 }} items</td>
+                  <td>{{ (inv.items || []).filter(i => i.kind !== 'domicilio').length }} items</td>
                   <td>
                     <span :class="['badge', paymentBadge(inv.paymentMethod)]">{{ paymentLabel(inv.paymentMethod) }}</span>
                   </td>
@@ -312,7 +312,7 @@ const editTotal = computed(() =>
  */
 // Pedidos en línea: Domicilio / Recoger (las facturas viejas lo traen en la nota)
 function orderKind(inv) {
-  if (inv.source !== 'carta') return ''
+  if (inv.source !== 'carta') return (inv.items || []).some(i => i.kind === 'domicilio') ? 'Domicilio' : '' // venta manual con domicilio
   const recoger = inv.mode ? inv.mode === 'recoger' : /recoger/i.test(inv.notes || '')
   return recoger ? 'Recoger' : 'Domicilio'
 }
