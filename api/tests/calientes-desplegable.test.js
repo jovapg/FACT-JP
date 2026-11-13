@@ -103,3 +103,50 @@ test('un pedido de una presa con la única opción (Apanado) se acepta y queda r
   const sin = await srv.api('POST', '/api/public/pedidos/calientes', { body: { name: 'Ana', phone: '3001112234', address: 'Calle 1 # 2-3', mode: 'domicilio', payment: 'efectivo', privacyAccepted: true, items: [{ productId: p.id, qty: 1 }] } });
   assert.equal(sin.status, 400, 'sin escoger preparación el servidor sigue exigiéndola');
 });
+
+test('Salsas de la casa: desplegable después de Calientes y jugos, con precios y picante, que se cobra y llega a la carta ya guardada', async () => {
+  const esperado = { 'Queso azul': 4000, 'BBQ dulce': 4000, 'Diabla': 4000, 'Explosión amarilla': 4000, 'Miel mostaza': 2500, 'Chipotle': 2500, 'Teriyaki': 2500, 'Ajo o cilantro': 2500 };
+  const sauces = (p) => p.groups.find(g => g.name === 'Salsas de la casa');
+  let c = await pub();
+  const conBebidas = c.products.filter(p => p.groups.some(g => g.name === 'Bebidas'));
+  for (const p of conBebidas) {
+    const n = p.groups.map(g => g.name);
+    if (n.includes('Calientes y jugos')) assert.equal(n.indexOf('Salsas de la casa'), n.indexOf('Calientes y jugos') + 1, p.name + ': después de Calientes y jugos');
+    const g = sauces(p); assert.ok(g, p.name + ' tiene el desplegable'); assert.equal(g.type, 'qty'); assert.equal(g.collapsed, true);
+  }
+  const g = sauces(conBebidas.find(p => p.name === 'Combo personal pechuga'));
+  assert.deepEqual(Object.fromEntries(g.options.map(o => [o.name, o.price])), esperado);
+  assert.equal(g.options.find(o => o.name === 'Diabla').note, 'Picante 🔥🔥🔥🔥 · 2 onzas');
+  assert.equal(g.options.find(o => o.name === 'Queso azul').note, '2 onzas');
+
+  // se cobra
+  const combo = c.products.find(p => p.name === 'Combo personal pechuga'); const prep = combo.groups.find(x => x.name === 'Preparación');
+  const pedir = (nombre, qty) => srv.api('POST', '/api/public/pedidos/calientes', { body: { name: 'Ana', phone: '3001112233', address: 'Calle 1 # 2-3', mode: 'domicilio', payment: 'efectivo', privacyAccepted: true,
+    items: [{ productId: combo.id, qty: 1, choices: { [prep.id]: [{ optionId: prep.options[0].id, qty: 1 }], [g.id]: [{ optionId: g.options.find(o => o.name === nombre).id, qty }] } }] } });
+  assert.equal((await pedir('Diabla', 2)).data.subtotal, combo.price + 8000);
+  assert.equal((await pedir('Chipotle', 3)).data.subtotal, combo.price + 7500);
+
+  // carta ya guardada sin el desplegable: lo recibe una vez, sin tocar el resto
+  const carta = JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json'));
+  for (const p of carta.products) p.groups = (p.groups || []).filter(x => x.name !== 'Salsas de la casa');
+  delete carta.saucesVersion;
+  const antes = JSON.stringify(carta.products.map(p => [p.name, p.price, p.groups.map(x => x.name)]));
+  escribirDoc(srv.dataDir, F.id, 'carta.json', JSON.stringify(carta));
+  c = await pub(); await pub();
+  const guardada = JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json'));
+  assert.equal(guardada.saucesVersion, 1);
+  assert.ok(guardada.products.filter(p => p.groups.some(x => x.name === 'Salsas de la casa')).length >= 20);
+  assert.equal(JSON.stringify(guardada.products.map(p => [p.name, p.price, p.groups.filter(x => x.name !== 'Salsas de la casa').map(x => x.name)])), antes, 'lo demás quedó igual');
+  for (const p of guardada.products) assert.ok(p.groups.filter(x => x.name === 'Salsas de la casa').length <= 1, 'sin duplicados');
+
+  // si la dueña lo quita de un producto, no se lo vuelven a poner
+  const adm = (await A('GET', '/carta')).data; const prod = adm.products.find(p => p.name === 'Comelón');
+  assert.equal((await A('PUT', `/carta/products/${prod.id}`, { groups: prod.groups.filter(x => x.name !== 'Salsas de la casa') })).status, 200);
+  await pub();
+  assert.equal((await pub()).products.find(p => p.name === 'Comelón').groups.some(x => x.name === 'Salsas de la casa'), false);
+
+  // el editor conserva la nota (picante / onzas) al guardar
+  const prod2 = (await A('GET', '/carta')).data.products.find(p => p.name === 'Pollo entero');
+  assert.equal((await A('PUT', `/carta/products/${prod2.id}`, { groups: prod2.groups })).status, 200);
+  assert.equal(sauces((await pub()).products.find(p => p.name === 'Pollo entero')).options.find(o => o.name === 'Diabla').note, 'Picante 🔥🔥🔥🔥 · 2 onzas');
+});

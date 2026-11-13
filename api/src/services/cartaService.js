@@ -73,6 +73,31 @@ function applyDrinks(c) {
 
 const SNACKS_VERSION = 1;    // 1 = papas, snacks, pasteles, galletas y chicles
 const HOT_VERSION = 1;       // 1 = desplegable "Calientes y jugos" junto al de Bebidas
+const SAUCES_VERSION = 1;    // 1 = desplegable "Salsas de la casa" (adición de salsa de 2 onzas) después de Calientes y jugos
+
+/** Salsas de la casa: extra de pago de 2 onzas. [nombre, precio, picante (0 = no pica)] */
+const HOUSE_SAUCES_NAME = 'Salsas de la casa';
+const HOUSE_SAUCES = [
+  ['Queso azul', 4000, 0], ['BBQ dulce', 4000, 0], ['Diabla', 4000, 4], ['Explosión amarilla', 4000, 1],
+  ['Miel mostaza', 2500, 0], ['Chipotle', 2500, 2], ['Teriyaki', 2500, 1], ['Ajo o cilantro', 2500, 0]
+];
+const houseSaucesGroup = () => ({ id: uuidv4(), name: HOUSE_SAUCES_NAME, type: 'qty', collapsed: true,
+  options: HOUSE_SAUCES.map(([name, price, hot]) => ({ id: uuidv4(), name, price, note: (hot ? 'Picante ' + '🔥'.repeat(hot) + ' · ' : '') + '2 onzas' })) });
+
+/** Agrega "Salsas de la casa" después de "Calientes y jugos" (o de "Bebidas") en cada producto que tiene esos desplegables. Una sola vez por carta. */
+function applyHouseSauces(c) {
+  for (const p of c.products) {
+    const gs = p.groups || [];
+    if (gs.some(g => g.name === HOUSE_SAUCES_NAME)) continue;
+    let i = gs.findIndex(g => g.type === 'qty' && g.name === 'Calientes y jugos');
+    if (i === -1) i = gs.findIndex(g => g.type === 'qty' && g.name === 'Bebidas');
+    if (i === -1) continue;
+    gs.splice(i + 1, 0, houseSaucesGroup());
+    p.groups = gs;
+  }
+  c.saucesVersion = SAUCES_VERSION;
+}
+
 const PRESA_VERSION = 1;     // 1 = "Presa, papa y arepa" solo se prepara apanada (sin la opción asado)
 
 /** Quita la opción "Asado" de la Preparación de los productos de "Presa, papa y arepa". Una sola vez por carta. */
@@ -136,6 +161,7 @@ function migrateCarta(c) {
   if (c.snacksVersion !== SNACKS_VERSION) { applySnacks(c); changed = true; }
   if (c.hotDrinksVersion !== HOT_VERSION) { applyHotDrinks(c); changed = true; }
   if (c.presaVersion !== PRESA_VERSION) { applyPresaApanado(c); changed = true; }
+  if (c.saucesVersion !== SAUCES_VERSION) { applyHouseSauces(c); changed = true; } // después de Calientes y jugos: el orden de migraciones importa
   // Las categorías de bebidas se juntan en un solo botón del menú ("grupo"); las cartas viejas no lo tenían
   for (const cat of c.categories) if (!cat.group && drinksLib.SECTIONS.includes(cat.name)) { cat.group = 'Bebidas'; changed = true; }
   if (c.settingsVersion !== SETTINGS_VERSION) {
@@ -250,7 +276,7 @@ function defaultCarta() {
     if (kind === 'p') groups.push(cat === 'presa' ? prepApanado() : prep());
     if (kind === 'e') groups.push(prepEntero());
     if (/^s\d$/.test(kind)) groups.push(salsas(Number(kind.slice(1))));
-    if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); groups.push(hotGroup(cid.calientes)); }
+    if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); groups.push(hotGroup(cid.calientes)); groups.push(houseSaucesGroup()); }
     return { id: uuidv4(), categoryId: cid[cat], order: i, name, description, price, active: true, soldOut: false,
       ...(alcohol ? { alcohol: true } : {}), groups };
   });
@@ -272,7 +298,7 @@ function defaultCarta() {
     },
     categories: cats.map(({ key, ...c }) => c),
     products,
-    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION
+    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION
   };
   applySnacks(carta);
   return carta;
@@ -411,7 +437,7 @@ function blankCarta(settings = {}) {
   return {
     settings: { enabled: true, open: true, paused: false, pickup: true, freeDeliveryFrom: 0, welcome: '', whatsapp: '', address: '', hours: '',
       bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings },
-    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION
+    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION
   };
 }
 
