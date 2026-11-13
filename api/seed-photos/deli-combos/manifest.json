@@ -1,8 +1,71 @@
 {
   "slug": "deli-combos",
-  "nota": "Fotos reales enviadas por la dueña (9-nov-2026). Se asignan a los productos del inventario por nombre, solo si aún no tienen foto.",
+  "nota": "Fotos reales enviadas por la dueña (9-nov-2026). Se asignan a los productos del inventario por nombre, solo si aún no tienen foto. Incluye el inventario de las salsas de la casa (adición de 2 onzas, sin control de stock).",
   "hero": "asador.webp",
-  "featured": ["Alitas x12", "Tragón con papas francesas", "Deditos", "¼ de pollo (muslo y contramuslo)"],
+  "featured": [
+    "Alitas x12",
+    "Tragón con papas francesas",
+    "Deditos",
+    "¼ de pollo (muslo y contramuslo)"
+  ],
+  "inventory": [
+    {
+      "name": "Salsa Queso azul",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 4000,
+      "noStock": true
+    },
+    {
+      "name": "Salsa BBQ dulce",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 4000,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Diabla",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 4000,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Explosión amarilla",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 4000,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Miel mostaza",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 2500,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Chipotle",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 2500,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Teriyaki",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 2500,
+      "noStock": true
+    },
+    {
+      "name": "Salsa Ajo o cilantro",
+      "category": "Salsas de la casa",
+      "unit": "porción 2 oz",
+      "salePrice": 2500,
+      "noStock": true
+    }
+  ],
   "photos": [
     {
       "file": "alitas-salsas.webp",

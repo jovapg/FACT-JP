@@ -82,3 +82,35 @@ test('portada y destacados: se ponen una sola vez y se respeta lo que se cambie 
   assert.equal(c.settings.heroImage, '/uploads/biz-carta/otra.webp');
   assert.equal(c.products.find(p => p.name === 'Pollo entero').featured, false);
 });
+
+test('inventario de la semilla: crea los que faltan (sin control de stock), no toca los que ya existen y no duplica', async () => {
+  const id = 'biz-inv';
+  await st.writeJSON(path.join(DIR, 'businesses.json'), [{ id: 'biz-uno', slug: 'mi-negocio' }, { id: 'biz-carta', slug: 'con-carta' }, { id, slug: 'con-inventario' }]);
+  await st.writeJSON(path.join(DIR, id, 'inventory.json'), [{ id: 'e1', name: 'Salsa  BBQ dulce', salePrice: 9999, stock: 7, noStock: false, category: 'Mía' }]);
+  const d = path.join(SEED, 'con-inventario'); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify({ slug: 'con-inventario', inventory: [
+    { name: 'Salsa BBQ dulce', category: 'Salsas', salePrice: 4000, noStock: true }, { name: 'Salsa Diabla', category: 'Salsas', unit: 'porción 2 oz', salePrice: 4000, noStock: true }, { name: 'Salsa Chipotle', salePrice: 2500 }] }));
+  const r = (await seed.run(SEED)).find(x => x.slug === 'con-inventario');
+  assert.equal(r.created, 2, 'solo las 2 que faltaban');
+  const inv = await st.readJSON(path.join(DIR, id, 'inventory.json'));
+  assert.equal(inv.length, 3);
+  const bbq = inv.find(i => i.id === 'e1');
+  assert.deepEqual([bbq.salePrice, bbq.stock, bbq.noStock, bbq.category], [9999, 7, false, 'Mía'], 'el que ya existía no se toca (ni con otro espacio en el nombre)');
+  const diabla = inv.find(i => i.name === 'Salsa Diabla');
+  assert.deepEqual([diabla.salePrice, diabla.noStock, diabla.stock, diabla.unit, diabla.category], [4000, true, 0, 'porción 2 oz', 'Salsas']);
+  assert.equal(inv.find(i => i.name === 'Salsa Chipotle').noStock, true, 'sin control de stock por defecto');
+  assert.equal((await seed.run(SEED)).find(x => x.slug === 'con-inventario').created, 0, 'repetir no duplica');
+});
+
+test('las salsas de la semilla de Deli-Combos coinciden con las de la carta (mismos nombres y precios)', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(__dirname, '../seed-photos/deli-combos/manifest.json'), 'utf8'));
+  const carta = require('../src/services/cartaService').defaultCarta();
+  const g = carta.products.find(p => p.name === 'Pollo entero').groups.find(x => x.name === 'Salsas de la casa');
+  const deCarta = Object.fromEntries(g.options.map(o => [o.name, o.price]));
+  assert.equal(m.inventory.length, 8);
+  for (const it of m.inventory) {
+    const base = it.name.replace(/^Salsa /, '');
+    assert.equal(deCarta[base], it.salePrice, base + ': mismo precio que en la carta');
+    assert.equal(it.noStock, true); assert.equal(it.category, 'Salsas de la casa');
+  }
+});

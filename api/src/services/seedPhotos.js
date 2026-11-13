@@ -12,6 +12,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { readJSON, writeJSON, getBusinessPath, getDataPath, ensureBusinessDir } = require('./fileStorage');
 
 const SEED_DIR = path.join(__dirname, '../../seed-photos');
@@ -20,13 +21,24 @@ const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 /** Aplica las fotos de una carpeta de semillas a UN negocio. Devuelve { set, skippedHasPhoto, missing } */
 async function applyToBusiness(businessId, manifest, dir) {
   const invPath = path.join(getBusinessPath(businessId), 'inventory.json');
-  const inv = await readJSON(invPath);
-  const out = { set: 0, skippedHasPhoto: 0, missing: [] };
-  if (!Array.isArray(inv) || !inv.length) { out.missing = manifest.photos.flatMap(p => p.products); return out; }
+  const raw = await readJSON(invPath);
+  const out = { set: 0, skippedHasPhoto: 0, missing: [], created: 0 };
+  if (raw !== null && !Array.isArray(raw)) return out; // formato inesperado: no se toca nada
+  const inv = raw || [];
   const byName = new Map(inv.map(i => [norm(i.name), i]));
   ensureBusinessDir(businessId);
   let changed = false;
-  for (const photo of manifest.photos) {
+
+  // Productos de inventario que viajan con la app (manifest.inventory): se crean los que FALTAN por nombre; un producto que ya exista no se toca nunca
+  for (const it of manifest.inventory || []) {
+    const key = norm(it.name);
+    if (!key || byName.has(key)) continue;
+    const item = { id: uuidv4(), name: String(it.name).trim().slice(0, 100), unit: it.unit || 'unidad', stock: 0, cost: Number(it.cost) || 0, category: it.category || 'general',
+      area: it.area === 'restaurante' ? 'restaurante' : 'bar', minStock: 0, supplierId: null, salePrice: Number(it.salePrice) || 0, noStock: it.noStock !== false, createdAt: new Date().toISOString() };
+    inv.push(item); byName.set(key, item); out.created++; changed = true;
+  }
+
+  for (const photo of manifest.photos || []) {
     const src = path.join(dir, photo.file);
     if (!fs.existsSync(src)) continue;
     for (const name of photo.products) {
@@ -75,11 +87,12 @@ async function run(seedDir = SEED_DIR) {
       if (!d.isDirectory()) continue;
       const dir = path.join(seedDir, d.name);
       let manifest; try { manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); } catch { continue; }
-      if (!manifest || !Array.isArray(manifest.photos)) continue;
+      if (!manifest || typeof manifest !== 'object') continue;
       const biz = businesses.find(b => b.slug === (manifest.slug || d.name));
       if (!biz) continue;
       const r = await applyToBusiness(biz.id, manifest, dir);
       results.push({ slug: biz.slug, ...r });
+      if (r.created) console.log(`[semilla] ${biz.slug}: ${r.created} producto(s) creados en el inventario`);
       if (r.set) console.log(`[fotos] ${biz.slug}: ${r.set} foto(s) asignadas a productos` + (r.missing.length ? ` (faltan en el inventario: ${[...new Set(r.missing)].join(', ')})` : ''));
     }
     return results;
