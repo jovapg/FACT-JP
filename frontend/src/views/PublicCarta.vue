@@ -284,8 +284,21 @@ async function load() {
     const r = await fetch(`${API}/carta/${encodeURIComponent(slug)}`, { cache: 'no-store' })
     if (!r.ok) throw new Error(r.status === 404 ? 'Esta carta no existe o no está disponible.' : 'Intenta de nuevo en un momento.')
     data.value = await r.json()
+    brandTab()
     restore()
   } catch (e) { error.value = e.message } finally { loading.value = false }
+}
+/** Pestaña del navegador: "Carta de <negocio>" y su logo como ícono */
+function brandTab() {
+  try {
+    const b = data.value.business
+    document.title = 'Carta de ' + b.name
+    if (b.logo) {
+      let icon = document.querySelector('link[rel="icon"]')
+      if (!icon) { icon = document.createElement('link'); icon.rel = 'icon'; document.head.appendChild(icon) }
+      icon.removeAttribute('type'); icon.href = b.logo
+    }
+  } catch { /* la pestaña conserva el título normal */ }
 }
 let timer = null
 onMounted(() => { load(); timer = setInterval(refreshState, 60000); window.addEventListener('popstate', onPop) })

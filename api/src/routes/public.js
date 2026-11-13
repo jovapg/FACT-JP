@@ -39,7 +39,7 @@ function publicView(biz, c, profile = {}, isOut = () => false) {
   const inHours = carta.withinHours(c.settings);
   const cats = [...c.categories].sort((a, b) => a.order - b.order);
   return {
-    business: { name: biz.name, slug: biz.slug },
+    business: { name: biz.name, slug: biz.slug, logo: profile.logo || '' },
     // Fuera del horario de pedidos la tienda se ve cerrada
     settings: { whatsapp, open: !!open && inHours, paused, pickup, freeDeliveryFrom, hours, welcome, address, bankInfo, deliveryNote, openFrom, openTo, outOfHours: !inHours,
       paymentQr: profile.paymentQr || '', heroImage: c.settings.heroImage || '' },

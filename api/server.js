@@ -619,6 +619,8 @@ app.get('/api/admin/storage', authenticate, (req, res) => {
 // Esto permite desplegar con un solo puerto sin necesitar Nginx.
 const DIST_PATH = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(DIST_PATH)) {
+  // Enlace de la carta: tarjeta con logo y "Carta de <negocio>" al compartirlo (WhatsApp lee el HTML, no ejecuta la pantalla)
+  app.get('/carta/:slug', require('./src/routes/share').shareCarta(DIST_PATH));
   app.use(express.static(DIST_PATH));
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(DIST_PATH, 'index.html'));
