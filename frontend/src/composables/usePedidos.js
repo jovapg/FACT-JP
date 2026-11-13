@@ -18,6 +18,44 @@ let audioCtx = null
 
 function readSound() { try { return localStorage.getItem('facjp_pedidos_sound') !== 'off' } catch { return true } }
 
+// Aviso de pedido nuevo: un canto de gallo real (public/sounds/pedido-nuevo.mp3) que suena DOS veces y fuerte.
+// Si el archivo no carga, se usa el pitido de siempre.
+const SOUND_URL = '/sounds/pedido-nuevo.mp3'
+const REPEATS = 2        // cuántas veces suena
+const GAP = 0.4          // pausa entre repeticiones (segundos)
+const VOLUME = 1.9       // más fuerte que el original; el limitador evita que se distorsione
+let alertBuffer = null
+let alertTried = false
+
+async function loadAlert() {
+  if (alertBuffer || alertTried) return alertBuffer
+  alertTried = true
+  try {
+    const res = await fetch(SOUND_URL)
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    alertBuffer = await audioCtx.decodeAudioData(await res.arrayBuffer())
+  } catch { alertBuffer = null }
+  return alertBuffer
+}
+
+export async function playAlert() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+    if (audioCtx.state === 'suspended') await audioCtx.resume()
+    const buf = await loadAlert()
+    if (!buf) { beep(); return }
+    const limiter = audioCtx.createDynamicsCompressor()
+    limiter.threshold.value = -8; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.1
+    const gain = audioCtx.createGain(); gain.gain.value = VOLUME
+    gain.connect(limiter); limiter.connect(audioCtx.destination)
+    let t = audioCtx.currentTime + 0.05
+    for (let i = 0; i < REPEATS; i++) {
+      const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(gain); src.start(t)
+      t += buf.duration + GAP
+    }
+  } catch { beep() }
+}
+
 function beep() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
@@ -49,7 +87,7 @@ export function usePedidos() {
       pedidos.value = data
       loaded.value = true
       const n = data.filter(p => p.status === 'por_confirmar').length
-      if (lastPending >= 0 && n > lastPending && soundOn.value) beep()
+      if (lastPending >= 0 && n > lastPending && soundOn.value) playAlert()
       lastPending = n
     } catch { /* sin conexión: se reintenta en 10 s */ }
   }
@@ -65,7 +103,7 @@ export function usePedidos() {
   function toggleSound() {
     soundOn.value = !soundOn.value
     try { localStorage.setItem('facjp_pedidos_sound', soundOn.value ? 'on' : 'off') } catch { /* no guarda */ }
-    if (soundOn.value) beep()
+    if (soundOn.value) playAlert()
   }
 
   async function update(id, body) {
@@ -74,5 +112,5 @@ export function usePedidos() {
     return data
   }
 
-  return { pedidos, loaded, pending, active, soundOn, refresh, start, stop, toggleSound, update }
+  return { pedidos, loaded, pending, active, soundOn, refresh, start, stop, toggleSound, testSound: playAlert, update }
 }

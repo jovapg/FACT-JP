@@ -9,6 +9,7 @@
         </div>
         <div class="pv-actions">
           <button class="pv-chip" :class="{ on: soundOn }" @click="pend.toggleSound()">{{ soundOn ? '🔔 Sonido' : '🔕 Sin sonido' }}</button>
+          <button class="pv-chip" title="Escucha cómo suena un pedido nuevo" @click="pend.testSound()">🔊 Probar sonido</button>
           <button v-if="!readOnly" class="pv-chip" @click="copyLink">🔗 Copiar link de la carta</button>
         </div>
       </div>

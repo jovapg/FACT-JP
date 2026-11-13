@@ -24,7 +24,7 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,mp3}'],
         // Cuando el navegador abre /api/... directamente (link de PDF, etc.),
         // el service worker NO debe interceptar esa navegación — debe pasar al servidor.
         navigateFallback: 'index.html',
