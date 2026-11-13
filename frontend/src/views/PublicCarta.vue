@@ -399,12 +399,14 @@ const threshold = computed(() => data.value?.settings.freeDeliveryFrom || 0)
 function openProduct(p) {
   const pick = {}
   for (const g of p.groups) pick[g.id] = g.type === 'one' ? '' : g.type === 'many' ? [] : {}
+  // Si solo hay UNA opción obligatoria (ej. Presa, papa y arepa → Apanado), ya viene escogida
+  for (const g of p.groups) if (g.type === 'one' && g.required && g.options.length === 1 && !g.options[0].soldOut) pick[g.id] = g.options[0].id
   sel.value = { product: p, pick, qty: 1, note: '', err: '', open: {}, search: {} }
 }
 // Desplegables (bebidas, adiciones): cerrados o abiertos según la carta; el cliente los abre al tocarlos
 // Opciones de un desplegable (bebidas) filtradas por lo que se escribe en su buscador
 function optsOf(g) {
-  const words = norm(sel.value.search[g.id] || '').split(/s+/).filter(Boolean)
+  const words = norm(sel.value.search[g.id] || '').split(/\s+/).filter(Boolean)
   return words.length ? g.options.filter(o => words.every(w => norm(o.name + ' ' + (o.section || '')).includes(w))) : g.options
 }
 const isOpen = (g) => sel.value.open[g.id] ?? !g.collapsed

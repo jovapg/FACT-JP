@@ -72,6 +72,46 @@ function applyDrinks(c) {
 }
 
 const SNACKS_VERSION = 1;    // 1 = papas, snacks, pasteles, galletas y chicles
+const HOT_VERSION = 1;       // 1 = desplegable "Calientes y jugos" junto al de Bebidas
+const PRESA_VERSION = 1;     // 1 = "Presa, papa y arepa" solo se prepara apanada (sin la opción asado)
+
+/** Quita la opción "Asado" de la Preparación de los productos de "Presa, papa y arepa". Una sola vez por carta. */
+function applyPresaApanado(c) {
+  const cat = c.categories.find(x => String(x.name).toLowerCase().trim() === 'presa, papa y arepa');
+  if (cat) {
+    for (const p of c.products) {
+      if (p.categoryId !== cat.id) continue;
+      for (const g of p.groups || []) {
+        if (g.type !== 'one' || String(g.name).toLowerCase().trim() !== 'preparación' && String(g.name).toLowerCase().trim() !== 'preparacion') continue;
+        g.options = (g.options || []).filter(o => String(o.name).toLowerCase().trim() !== 'asado');
+        if (!g.options.length) g.options = [{ id: uuidv4(), name: 'Apanado', price: 0 }];
+      }
+    }
+  }
+  c.presaVersion = PRESA_VERSION;
+}
+
+/** Desplegable "Calientes y jugos": sus opciones salen EN VIVO de la categoría del mismo nombre (si cambias un precio allá, cambia aquí) */
+const HOT_NAME = 'Calientes y jugos';
+const hotGroup = (catId) => ({ id: uuidv4(), name: HOT_NAME, type: 'qty', collapsed: true, source: { categories: [catId] } });
+
+/**
+ * Agrega el desplegable "Calientes y jugos" justo después del de "Bebidas" en cada producto que ya tiene ese desplegable.
+ * No toca nada más, no duplica y solo corre una vez por carta (hotDrinksVersion).
+ */
+function applyHotDrinks(c) {
+  const cat = c.categories.find(x => String(x.name).toLowerCase().trim() === HOT_NAME.toLowerCase());
+  if (cat) {
+    for (const p of c.products) {
+      const gs = p.groups || [];
+      const i = gs.findIndex(g => g.type === 'qty' && g.name === 'Bebidas');
+      if (i === -1 || gs.some(g => g.name === HOT_NAME)) continue;
+      gs.splice(i + 1, 0, hotGroup(cat.id));
+      p.groups = gs;
+    }
+  }
+  c.hotDrinksVersion = HOT_VERSION;
+}
 
 /** Agrega las categorías de snacks (antes de las bebidas) sin tocar nada de lo que ya existe */
 function applySnacks(c) {
@@ -94,6 +134,8 @@ function migrateCarta(c) {
   let changed = false;
   if (c.drinksVersion !== DRINKS_VERSION) { applyDrinks(c); changed = true; }
   if (c.snacksVersion !== SNACKS_VERSION) { applySnacks(c); changed = true; }
+  if (c.hotDrinksVersion !== HOT_VERSION) { applyHotDrinks(c); changed = true; }
+  if (c.presaVersion !== PRESA_VERSION) { applyPresaApanado(c); changed = true; }
   // Las categorías de bebidas se juntan en un solo botón del menú ("grupo"); las cartas viejas no lo tenían
   for (const cat of c.categories) if (!cat.group && drinksLib.SECTIONS.includes(cat.name)) { cat.group = 'Bebidas'; changed = true; }
   if (c.settingsVersion !== SETTINGS_VERSION) {
@@ -112,6 +154,7 @@ function migrateCarta(c) {
 
 function defaultCarta() {
   const prep   = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true, options: [opt('Asado'), opt('Apanado')] });
+  const prepApanado = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true, options: [opt('Apanado')] }); // Presa, papa y arepa: solo apanado
   const prepEntero = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true,
     options: [opt('Asado'), opt('Apanado', 2000), opt('Mitad y mitad', 3000)] });
   const salsas = (n) => ({ id: uuidv4(), name: 'Salsas', type: 'many', required: false, max: n,
@@ -204,10 +247,10 @@ function defaultCarta() {
   const extrasOf = Object.fromEntries(cats.map(c => [c.key, c.extras]));
   const products = rows.map(([cat, name, description, price, kind, alcohol], i) => {
     const groups = [];
-    if (kind === 'p') groups.push(prep());
+    if (kind === 'p') groups.push(cat === 'presa' ? prepApanado() : prep());
     if (kind === 'e') groups.push(prepEntero());
     if (/^s\d$/.test(kind)) groups.push(salsas(Number(kind.slice(1))));
-    if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); }
+    if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); groups.push(hotGroup(cid.calientes)); }
     return { id: uuidv4(), categoryId: cid[cat], order: i, name, description, price, active: true, soldOut: false,
       ...(alcohol ? { alcohol: true } : {}), groups };
   });
@@ -229,7 +272,7 @@ function defaultCarta() {
     },
     categories: cats.map(({ key, ...c }) => c),
     products,
-    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION
+    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION
   };
   applySnacks(carta);
   return carta;
@@ -368,7 +411,7 @@ function blankCarta(settings = {}) {
   return {
     settings: { enabled: true, open: true, paused: false, pickup: true, freeDeliveryFrom: 0, welcome: '', whatsapp: '', address: '', hours: '',
       bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings },
-    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION
+    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION
   };
 }
 
