@@ -111,7 +111,7 @@ test('Salsas de la casa: desplegable después de Calientes y jugos, con precios 
   const conBebidas = c.products.filter(p => p.groups.some(g => g.name === 'Bebidas'));
   for (const p of conBebidas) {
     const n = p.groups.map(g => g.name);
-    if (n.includes('Calientes y jugos')) assert.equal(n.indexOf('Salsas de la casa'), n.indexOf('Calientes y jugos') + 1, p.name + ': después de Calientes y jugos');
+    if (n.includes('Calientes y jugos') && !n.includes('Salsas')) assert.equal(n.indexOf('Salsas de la casa'), n.indexOf('Calientes y jugos') + 1, p.name + ': después de Calientes y jugos (las alitas la llevan debajo de Salsas)');
     const g = sauces(p); assert.ok(g, p.name + ' tiene el desplegable'); assert.equal(g.type, 'qty'); assert.equal(g.collapsed, true);
   }
   const g = sauces(conBebidas.find(p => p.name === 'Combo personal pechuga'));
@@ -186,4 +186,31 @@ test('Alitas: las salsas incluidas son BBQ dulce, Miel mostaza dulce, Miel mosta
   const gs = a6.groups.map(x => x.name === 'Salsas' ? { ...x, options: [...x.options, { name: 'Rosada', price: 0 }] } : x);
   assert.equal((await A('PUT', `/carta/products/${a6.id}`, { groups: gs })).status, 200);
   await pub(); assert.equal(salsasDe(await pub(), 'Alitas x6').options.some(o => o.name === 'Rosada'), true);
+});
+
+test('Alitas: "Salsas de la casa" va justo debajo de "Salsas"; el resto de platos conserva su orden; carta guardada se reordena una vez', async () => {
+  const orden = (c, n) => c.products.find(p => p.name === n).groups.map(g => g.name);
+  let c = await pub();
+  for (const n of ['Alitas x6', 'Alitas x12', 'Alitas x18', 'Alitas x24']) {
+    assert.deepEqual(orden(c, n), ['Salsas', 'Salsas de la casa', 'Adiciones', 'Bebidas', 'Calientes y jugos'], n);
+  }
+  assert.deepEqual(orden(c, 'Deditos'), ['Adiciones', 'Bebidas', 'Calientes y jugos', 'Salsas de la casa'], 'Deditos no cambia');
+  assert.deepEqual(orden(c, 'Combo personal pechuga'), ['Preparación', 'Adiciones', 'Bebidas', 'Calientes y jugos', 'Salsas de la casa'], 'el combo personal no cambia');
+
+  // carta ya guardada con el orden anterior (Salsas de la casa al final)
+  const carta = JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json'));
+  for (const p of carta.products) { const i = p.groups.findIndex(g => g.name === 'Salsas de la casa'); if (i > -1) { const [h] = p.groups.splice(i, 1); p.groups.push(h); } }
+  delete carta.alitasOrderVersion;
+  const idsAntes = JSON.stringify(carta.products.find(p => p.name === 'Alitas x12').groups.map(g => [g.name, g.options?.length]).sort());
+  escribirDoc(srv.dataDir, F.id, 'carta.json', JSON.stringify(carta));
+  c = await pub();
+  assert.deepEqual(orden(c, 'Alitas x12'), ['Salsas', 'Salsas de la casa', 'Adiciones', 'Bebidas', 'Calientes y jugos']);
+  assert.equal(JSON.stringify(carta.products.find(p => p.name === 'Alitas x12').groups.map(g => [g.name, g.options?.length]).sort()), idsAntes, 'mismos grupos y opciones');
+  assert.equal(JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json')).alitasOrderVersion, 1);
+
+  // si la dueña lo reordena a mano en el editor, no se lo vuelven a mover
+  const adm = (await A('GET', '/carta')).data; const a6 = adm.products.find(p => p.name === 'Alitas x6');
+  const alFinal = [...a6.groups.filter(g => g.name !== 'Salsas de la casa'), a6.groups.find(g => g.name === 'Salsas de la casa')];
+  assert.equal((await A('PUT', `/carta/products/${a6.id}`, { groups: alFinal })).status, 200);
+  await pub(); assert.deepEqual(orden(await pub(), 'Alitas x6'), ['Salsas', 'Adiciones', 'Bebidas', 'Calientes y jugos', 'Salsas de la casa']);
 });

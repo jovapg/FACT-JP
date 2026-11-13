@@ -92,6 +92,23 @@ function applyAlitasSauces(c) {
   c.alitasVersion = ALITAS_VERSION;
 }
 
+const ALITAS_ORDER_VERSION = 1;  // 1 = en las alitas, "Salsas de la casa" va justo debajo de "Salsas" (las incluidas)
+
+/** Si el producto tiene "Salsas" (incluidas) y "Salsas de la casa" (de pago), deja la segunda justo debajo de la primera. Devuelve la lista reordenada. */
+function placeHouseSaucesAfterSalsas(groups) {
+  const gs = [...groups];
+  const inc = gs.findIndex(g => g.type === 'many' && String(g.name).toLowerCase().trim() === 'salsas');
+  const house = gs.findIndex(g => g.name === 'Salsas de la casa');
+  if (inc === -1 || house === -1 || house === inc + 1) return gs;
+  const [h] = gs.splice(house, 1);
+  gs.splice(gs.findIndex(g => g.type === 'many' && String(g.name).toLowerCase().trim() === 'salsas') + 1, 0, h);
+  return gs;
+}
+function applyAlitasOrder(c) {
+  for (const p of c.products) if (p.groups) p.groups = placeHouseSaucesAfterSalsas(p.groups);
+  c.alitasOrderVersion = ALITAS_ORDER_VERSION;
+}
+
 const SAUCES_VERSION = 1;    // 1 = desplegable "Salsas de la casa" (adición de salsa de 2 onzas) después de Calientes y jugos
 
 /** Salsas de la casa: extra de pago de 2 onzas. [nombre, precio, picante (0 = no pica)] */
@@ -112,7 +129,7 @@ function applyHouseSauces(c) {
     if (i === -1) i = gs.findIndex(g => g.type === 'qty' && g.name === 'Bebidas');
     if (i === -1) continue;
     gs.splice(i + 1, 0, houseSaucesGroup());
-    p.groups = gs;
+    p.groups = placeHouseSaucesAfterSalsas(gs); // en las alitas va justo debajo de Salsas
   }
   c.saucesVersion = SAUCES_VERSION;
 }
@@ -181,7 +198,8 @@ function migrateCarta(c) {
   if (c.hotDrinksVersion !== HOT_VERSION) { applyHotDrinks(c); changed = true; }
   if (c.presaVersion !== PRESA_VERSION) { applyPresaApanado(c); changed = true; }
   if (c.alitasVersion !== ALITAS_VERSION) { applyAlitasSauces(c); changed = true; }
-  if (c.saucesVersion !== SAUCES_VERSION) { applyHouseSauces(c); changed = true; } // después de Calientes y jugos: el orden de migraciones importa
+  if (c.saucesVersion !== SAUCES_VERSION) { applyHouseSauces(c); changed = true; }
+  if (c.alitasOrderVersion !== ALITAS_ORDER_VERSION) { applyAlitasOrder(c); changed = true; } // después de crear Salsas de la casa // después de Calientes y jugos: el orden de migraciones importa
   // Las categorías de bebidas se juntan en un solo botón del menú ("grupo"); las cartas viejas no lo tenían
   for (const cat of c.categories) if (!cat.group && drinksLib.SECTIONS.includes(cat.name)) { cat.group = 'Bebidas'; changed = true; }
   if (c.settingsVersion !== SETTINGS_VERSION) {
@@ -298,7 +316,7 @@ function defaultCarta() {
     if (/^s\d$/.test(kind)) groups.push(salsas(Number(kind.slice(1))));
     if (extrasOf[cat]) { groups.push(adiciones()); groups.push(bebidas()); groups.push(hotGroup(cid.calientes)); groups.push(houseSaucesGroup()); }
     return { id: uuidv4(), categoryId: cid[cat], order: i, name, description, price, active: true, soldOut: false,
-      ...(alcohol ? { alcohol: true } : {}), groups };
+      ...(alcohol ? { alcohol: true } : {}), groups: placeHouseSaucesAfterSalsas(groups) };
   });
 
   const carta = {
@@ -318,7 +336,7 @@ function defaultCarta() {
     },
     categories: cats.map(({ key, ...c }) => c),
     products,
-    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION
+    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION, alitasOrderVersion: ALITAS_ORDER_VERSION
   };
   applySnacks(carta);
   return carta;
@@ -457,7 +475,7 @@ function blankCarta(settings = {}) {
   return {
     settings: { enabled: true, open: true, paused: false, pickup: true, freeDeliveryFrom: 0, welcome: '', whatsapp: '', address: '', hours: '',
       bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings },
-    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION
+    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION, alitasOrderVersion: ALITAS_ORDER_VERSION
   };
 }
 
