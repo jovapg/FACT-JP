@@ -150,3 +150,40 @@ test('Salsas de la casa: desplegable después de Calientes y jugos, con precios 
   assert.equal((await A('PUT', `/carta/products/${prod2.id}`, { groups: prod2.groups })).status, 200);
   assert.equal(sauces((await pub()).products.find(p => p.name === 'Pollo entero')).options.find(o => o.name === 'Diabla').note, 'Picante 🔥🔥🔥🔥 · 2 onzas');
 });
+
+test('Alitas: las salsas incluidas son BBQ dulce, Miel mostaza dulce, Miel mostaza picante, Chipotle y Teriyaki (sin Rosada ni Roja); también en la carta ya guardada', async () => {
+  const esperado = ['BBQ dulce', 'Miel mostaza dulce', 'Miel mostaza picante', 'Chipotle', 'Teriyaki'];
+  const salsasDe = (c, n) => c.products.find(p => p.name === n).groups.find(g => g.name === 'Salsas');
+  let c = await pub();
+  for (const [n, max] of [['Alitas x6', 1], ['Alitas x12', 2], ['Alitas x18', 3], ['Alitas x24', 4]]) {
+    const g = salsasDe(c, n);
+    assert.deepEqual(g.options.map(o => o.name), esperado, n); assert.equal(g.max, max, n + ': el máximo no cambia');
+    assert.ok(g.options.every(o => o.price === 0), 'son gratis');
+  }
+  assert.equal(salsasDe(c, 'Alitas x6').options.find(o => o.name === 'Chipotle').note, 'Picante 🔥🔥');
+  // las incluidas se piden gratis (hasta el máximo) y Rosada/Roja ya no existen
+  const p = c.products.find(x => x.name === 'Alitas x12'); const g = salsasDe(c, 'Alitas x12');
+  const pedir = (nombres) => srv.api('POST', '/api/public/pedidos/calientes', { body: { name: 'Ana', phone: '3001112233', address: 'Calle 1 # 2-3', mode: 'domicilio', payment: 'efectivo', privacyAccepted: true,
+    items: [{ productId: p.id, qty: 1, choices: { [g.id]: nombres.map(n => ({ optionId: g.options.find(o => o.name === n).id, qty: 1 })) } }] } });
+  assert.equal((await pedir(['Chipotle', 'Teriyaki'])).data.subtotal, p.price, 'las incluidas no cobran');
+  assert.equal((await pedir(['Chipotle', 'Teriyaki', 'BBQ dulce'])).status, 400, 'pasarse del máximo (2) se rechaza');
+
+  // carta ya guardada con las salsas viejas: se corrige una vez y conserva los ids de las que se quedan
+  const carta = JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json'));
+  const idsViejos = {};
+  for (const pr of carta.products) { const gg = (pr.groups || []).find(x => x.name === 'Salsas'); if (gg) { gg.options = [{ id: 'bbq-' + pr.name, name: 'BBQ dulce', price: 0 }, { id: 'mm-' + pr.name, name: 'Miel mostaza dulce', price: 0 }, { id: 'ro-' + pr.name, name: 'Rosada', price: 0 }, { id: 'rj-' + pr.name, name: 'Roja', price: 0 }]; idsViejos[pr.name] = 'bbq-' + pr.name; } }
+  delete carta.alitasVersion;
+  escribirDoc(srv.dataDir, F.id, 'carta.json', JSON.stringify(carta));
+  c = await pub();
+  for (const n of ['Alitas x6', 'Alitas x24']) {
+    const gg = salsasDe(c, n);
+    assert.deepEqual(gg.options.map(o => o.name), esperado, n + ' (carta vieja)');
+    assert.equal(gg.options[0].id, idsViejos[n], 'BBQ dulce conserva su id'); assert.equal(gg.max, n === 'Alitas x6' ? 1 : 4);
+  }
+  assert.equal(JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json')).alitasVersion, 1);
+  // si la dueña cambia las salsas a mano, no se las vuelven a pisar
+  const adm = (await A('GET', '/carta')).data; const a6 = adm.products.find(x => x.name === 'Alitas x6');
+  const gs = a6.groups.map(x => x.name === 'Salsas' ? { ...x, options: [...x.options, { name: 'Rosada', price: 0 }] } : x);
+  assert.equal((await A('PUT', `/carta/products/${a6.id}`, { groups: gs })).status, 200);
+  await pub(); assert.equal(salsasDe(await pub(), 'Alitas x6').options.some(o => o.name === 'Rosada'), true);
+});

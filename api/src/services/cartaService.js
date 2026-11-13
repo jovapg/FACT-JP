@@ -73,6 +73,25 @@ function applyDrinks(c) {
 
 const SNACKS_VERSION = 1;    // 1 = papas, snacks, pasteles, galletas y chicles
 const HOT_VERSION = 1;       // 1 = desplegable "Calientes y jugos" junto al de Bebidas
+const ALITAS_VERSION = 1;    // 1 = salsas incluidas de las alitas: BBQ dulce, Miel mostaza dulce, Miel mostaza picante, Chipotle y Teriyaki
+
+/** Salsas INCLUIDAS en las alitas (gratis, hasta el máximo de cada producto). Las demás salsas se cobran aparte ("Salsas de la casa"). */
+const INCLUDED_SAUCES = [['BBQ dulce', ''], ['Miel mostaza dulce', ''], ['Miel mostaza picante', 'Picante'], ['Chipotle', 'Picante 🔥🔥'], ['Teriyaki', 'Picante 🔥']];
+const includedSauces = () => INCLUDED_SAUCES.map(([name, note]) => ({ id: uuidv4(), name, price: 0, ...(note ? { note } : {}) }));
+
+/** Deja en cada grupo "Salsas" (alitas) las salsas incluidas nuevas. Las que ya estaban conservan su id; Rosada y Roja salen. Una sola vez por carta. */
+function applyAlitasSauces(c) {
+  for (const p of c.products) for (const g of p.groups || []) {
+    if (g.type !== 'many' || String(g.name).toLowerCase().trim() !== 'salsas') continue;
+    const have = new Map((g.options || []).map(o => [String(o.name).toLowerCase().trim(), o]));
+    g.options = INCLUDED_SAUCES.map(([name, note]) => {
+      const prev = have.get(name.toLowerCase());
+      return prev ? { ...prev, ...(note ? { note } : {}) } : { id: uuidv4(), name, price: 0, ...(note ? { note } : {}) };
+    });
+  }
+  c.alitasVersion = ALITAS_VERSION;
+}
+
 const SAUCES_VERSION = 1;    // 1 = desplegable "Salsas de la casa" (adición de salsa de 2 onzas) después de Calientes y jugos
 
 /** Salsas de la casa: extra de pago de 2 onzas. [nombre, precio, picante (0 = no pica)] */
@@ -161,6 +180,7 @@ function migrateCarta(c) {
   if (c.snacksVersion !== SNACKS_VERSION) { applySnacks(c); changed = true; }
   if (c.hotDrinksVersion !== HOT_VERSION) { applyHotDrinks(c); changed = true; }
   if (c.presaVersion !== PRESA_VERSION) { applyPresaApanado(c); changed = true; }
+  if (c.alitasVersion !== ALITAS_VERSION) { applyAlitasSauces(c); changed = true; }
   if (c.saucesVersion !== SAUCES_VERSION) { applyHouseSauces(c); changed = true; } // después de Calientes y jugos: el orden de migraciones importa
   // Las categorías de bebidas se juntan en un solo botón del menú ("grupo"); las cartas viejas no lo tenían
   for (const cat of c.categories) if (!cat.group && drinksLib.SECTIONS.includes(cat.name)) { cat.group = 'Bebidas'; changed = true; }
@@ -184,7 +204,7 @@ function defaultCarta() {
   const prepEntero = () => ({ id: uuidv4(), name: 'Preparación', type: 'one', required: true,
     options: [opt('Asado'), opt('Apanado', 2000), opt('Mitad y mitad', 3000)] });
   const salsas = (n) => ({ id: uuidv4(), name: 'Salsas', type: 'many', required: false, max: n,
-    options: [opt('BBQ dulce'), opt('Miel mostaza dulce'), opt('Rosada'), opt('Roja')] });
+    options: includedSauces() });
   const adiciones = () => ({ id: uuidv4(), name: 'Adiciones', type: 'qty', options: [
     opt('Papa francesa', 6000), opt('Ensalada', 6000), opt('Papa al vapor x5', 2000), opt('Arepa x5', 2000), opt('Arroz', 3000)] });
   const bebidas = () => ({ id: uuidv4(), name: 'Bebidas', type: 'qty', collapsed: true, options: drinksLib.drinkOptions() });
@@ -298,7 +318,7 @@ function defaultCarta() {
     },
     categories: cats.map(({ key, ...c }) => c),
     products,
-    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION
+    drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION
   };
   applySnacks(carta);
   return carta;
@@ -437,7 +457,7 @@ function blankCarta(settings = {}) {
   return {
     settings: { enabled: true, open: true, paused: false, pickup: true, freeDeliveryFrom: 0, welcome: '', whatsapp: '', address: '', hours: '',
       bankInfo: '', deliveryNote: '', deliveryPerKm: 0, openFrom: '', openTo: '', ...settings },
-    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION
+    categories: [], products: [], drinksVersion: DRINKS_VERSION, settingsVersion: SETTINGS_VERSION, snacksVersion: SNACKS_VERSION, hotDrinksVersion: HOT_VERSION, presaVersion: PRESA_VERSION, saucesVersion: SAUCES_VERSION, alitasVersion: ALITAS_VERSION
   };
 }
 
