@@ -13,9 +13,7 @@
       <article v-for="d in store.list" :key="d.id" :class="['dm-card', { sent: d.status === 'en_camino' }]">
         <div class="dm-row">
           <strong class="dm-name">{{ d.name }}</strong>
-          <button class="dm-pill" :class="d.status === 'en_camino' ? 'go' : 'wait'" :title="d.status === 'en_camino' ? 'Toca para volver a “Por enviar”' : 'Toca para marcar “En camino”'" @click="toggle(d)">
-            {{ d.status === 'en_camino' ? 'En camino' : 'Por enviar' }}
-          </button>
+          <span class="dm-pill" :class="d.status === 'en_camino' ? 'go' : 'wait'">{{ d.status === 'en_camino' ? 'En camino' : 'Por enviar' }}</span>
         </div>
         <p v-if="d.phone || d.address" class="dm-info">
           <span v-if="d.phone">📞 {{ d.phone }}</span>
@@ -26,6 +24,8 @@
           <span class="dm-meta">🛵 {{ money(fee(d)) }} · {{ ago(d.createdAt) }}</span>
           <strong class="dm-total">{{ money(total(d)) }}</strong>
         </div>
+        <button v-if="d.status !== 'en_camino'" class="dm-ship" @click="toggle(d)">🛵 Marcar en camino</button>
+        <button v-else class="dm-ship back" @click="toggle(d)">↩ Aún no salió</button>
         <div class="dm-actions">
           <button class="btn btn-outline btn-sm" @click="$emit('open', d)">Abrir</button>
           <button class="btn btn-primary btn-sm" @click="$emit('bill', d)">Facturar</button>
@@ -93,7 +93,10 @@ onUnmounted(() => { clearInterval(tick); clearInterval(poll) })
 .dm-card.sent { border-left-color: var(--success, #16a34a); }
 .dm-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .dm-name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-pill { border: 0; border-radius: 99px; padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.dm-pill { border-radius: 99px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.dm-ship { border: 1px dashed var(--success, #16a34a); background: rgba(22, 163, 74, .08); color: #15803d; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.dm-ship:hover { background: rgba(22, 163, 74, .16); }
+.dm-ship.back { border-color: var(--border); background: transparent; color: var(--text-muted); font-weight: 500; }
 .dm-pill.wait { background: rgba(245, 158, 11, .18); color: #b45309; }
 .dm-pill.go { background: rgba(22, 163, 74, .16); color: #15803d; }
 .dm-info { margin: 0; font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 1px; }

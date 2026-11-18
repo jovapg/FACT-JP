@@ -72,10 +72,15 @@
 
     <!-- Pie fijo: subtotal siempre visible, cliente, domicilio y acciones -->
     <div class="cart-footer">
-    <div class="cart-total" v-if="productItems.length > 0">
+    <div class="cart-total" v-if="productItems.length > 0 || isDom">
       <template v-if="domiItem">
         <div class="tot-line"><span>Subtotal</span><span>{{ formatCOP(productsTotal) }}</span></div>
-        <div class="tot-line"><span>🛵 Domicilio</span><span>{{ formatCOP(domiFee) }}</span></div>
+        <div class="tot-line tot-domi">
+          <span>🛵 Valor del domicilio</span>
+          <div class="domi-input"><span>$</span>
+            <input inputmode="numeric" class="form-control" placeholder="0 = gratis" :value="domiFee ? domiFee.toLocaleString('es-CO') : ''" @input="setDomiFee($event)" />
+          </div>
+        </div>
         <div class="tot-main"><span>Total a cobrar</span><span class="total-amount">{{ formatCOP(cartTotal) }}</span></div>
       </template>
       <div v-else class="tot-main"><span>Subtotal</span><span class="total-amount">{{ formatCOP(cartTotal) }}</span></div>
@@ -92,13 +97,6 @@
     <div v-if="isDom" class="domi-contact">
       <input v-model="phone" class="form-control" inputmode="tel" maxlength="30" placeholder="📞 Celular (opcional)" />
       <input v-model="address" class="form-control" maxlength="160" placeholder="📍 Dirección o referencia (opcional)" />
-    </div>
-    <div v-if="domiItem" class="domi-row">
-      <span>Valor del domicilio</span>
-      <div class="domi-input"><span>$</span>
-        <input inputmode="numeric" class="form-control" placeholder="0" :value="domiFee ? domiFee.toLocaleString('es-CO') : ''" @input="setDomiFee($event)" />
-      </div>
-      <small>Si es gratis, déjalo en 0.</small>
     </div>
 
     <!-- Actions -->
@@ -528,7 +526,7 @@ async function handleSaleConfirmed() {
 /* Products section */
 .products-section {
   flex: 1 1 0;           /* se encoge para que el pie (subtotal, cliente, botones) siempre quepa */
-  min-height: 150px;
+  min-height: 210px;      /* la lista de productos nunca queda en una franja, aunque el pie sea alto */
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -633,8 +631,8 @@ async function handleSaleConfirmed() {
 /* Cart items */
 .cart-items-section {
   flex: 0 1 auto;
-  max-height: 30%;       /* la orden se desplaza dentro de este espacio, sin empujar el pie */
-  min-height: 64px;
+  max-height: 20%;       /* la orden se desplaza dentro de este espacio, sin empujar el pie */
+  min-height: 52px;
   overflow-y: auto;
   padding: 10px 12px;
 }
@@ -700,7 +698,7 @@ async function handleSaleConfirmed() {
 }
 
 .cart-total {
-  padding: 8px 12px 4px;
+  padding: 6px 12px 2px;
   border-top: 2px solid var(--border);
   font-size: 15px;
   font-weight: 700;
@@ -710,14 +708,14 @@ async function handleSaleConfirmed() {
 .total-amount { font-size: 20px; color: var(--success); }
 
 .client-field {
-  padding: 6px 12px 8px;
+  padding: 4px 12px 6px;
   display: flex;
   gap: 8px;
   align-items: center;
   flex-shrink: 0;
 }
-.client-field .form-control { font-size: 13px; min-height: 38px; flex: 1; min-width: 0; }
-.domi-switch { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; min-height: 38px; user-select: none; }
+.client-field .form-control { font-size: 13px; min-height: 34px; flex: 1; min-width: 0; }
+.domi-switch { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; min-height: 34px; user-select: none; }
 .domi-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .domi-track { width: 28px; height: 16px; border-radius: 99px; background: var(--border); position: relative; flex: none; transition: background .15s; }
 .domi-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: left .15s; }
@@ -725,19 +723,20 @@ async function handleSaleConfirmed() {
 .domi-switch.on .domi-track { background: var(--success); }
 .domi-switch.on .domi-track::after { left: 14px; }
 .domi-switch input:focus-visible + .domi-track { outline: 2px solid var(--accent); outline-offset: 2px; }
-.domi-row { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 6px 10px; border: 1px solid var(--success); border-radius: 8px; background: rgba(22,163,74,.08); font-size: 12px; font-weight: 600; flex-wrap: wrap; }
-.domi-row small { flex-basis: 100%; font-weight: 400; color: var(--text-muted); margin-top: -2px; }
-.domi-contact { display: flex; gap: 8px; padding: 0 12px 8px; }
-.domi-contact .form-control { flex: 1; min-width: 0; font-size: 13px; min-height: 36px; }
+.domi-row { display: flex; align-items: center; gap: 8px; margin: 0 12px 6px; padding: 4px 10px; border: 1px solid var(--success); border-radius: 8px; background: rgba(22,163,74,.08); font-size: 12px; font-weight: 600; flex-wrap: wrap; }
+.domi-contact { display: flex; gap: 8px; padding: 0 12px 6px; }
+.domi-contact .form-control { flex: 1; min-width: 0; font-size: 13px; min-height: 34px; }
 @media (max-width: 480px) { .domi-contact { flex-wrap: wrap; } .domi-contact .form-control { flex-basis: 100%; } }
 .domi-input { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.domi-input .form-control { width: 110px; text-align: right; min-height: 34px; font-size: 14px; font-weight: 700; }
+.domi-input .form-control { width: 110px; text-align: right; min-height: 30px; padding: 2px 8px; font-size: 14px; font-weight: 700; }
+.tot-domi { align-items: center; color: var(--success, #16a34a); font-weight: 600; }
+.tot-domi .domi-input { margin-left: auto; }
 
 /* Actions */
 .cart-actions {
   display: flex;
   gap: 8px;
-  padding: 12px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   flex-wrap: wrap;

@@ -416,7 +416,8 @@ onMounted(async () => {
   width: 100%;
   max-width: 616px;   /* 560 + 10% */
   height: 100%;
-  overflow: hidden;   /* lo que se desplaza es la lista de productos y la orden; el pie queda fijo */
+  overflow-y: auto;   /* normalmente no se desplaza (lo que se mueve es la lista de productos y la orden; el pie queda fijo); en pantallas muy pequeñas evita esconder los botones */
+  overflow-x: hidden;
   background: var(--surface);
   box-shadow: -4px 0 20px rgba(0,0,0,0.15);
 }
