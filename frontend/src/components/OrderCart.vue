@@ -83,11 +83,15 @@
 
     <!-- Cliente y domicilio -->
     <div class="client-field">
-      <input v-model="clientName" class="form-control" placeholder="👤 Nombre del cliente (opcional)" />
-      <label :class="['domi-switch', { on: !!domiItem }]" title="Pedido para llevar a domicilio (no vino por la carta en línea)">
+      <input v-model="clientName" :class="['form-control', { 'input-error': isDom && nameTouched && !clientName.trim() }]" :placeholder="isDom ? '👤 Nombre del cliente (obligatorio)' : '👤 Nombre del cliente (opcional)'" @blur="nameTouched = true" />
+      <label v-if="!isDom" :class="['domi-switch', { on: !!domiItem }]" title="Pedido para llevar a domicilio (no vino por la carta en línea)">
         <input type="checkbox" :checked="!!domiItem" @change="toggleDomicilio($event.target.checked)" />
         <span class="domi-track"></span><span>🛵 Domicilio</span>
       </label>
+    </div>
+    <div v-if="isDom" class="domi-contact">
+      <input v-model="phone" class="form-control" inputmode="tel" maxlength="30" placeholder="📞 Celular (opcional)" />
+      <input v-model="address" class="form-control" maxlength="160" placeholder="📍 Dirección o referencia (opcional)" />
     </div>
     <div v-if="domiItem" class="domi-row">
       <span>Valor del domicilio</span>
@@ -103,20 +107,21 @@
         v-if="!table._direct"
         class="btn btn-outline btn-sm"
         @click="saveOrder"
-        :disabled="saving || (productItems.length === 0 && !(table._orderId && clientName))"
+        :disabled="saving || (isDom ? (productItems.length === 0 || !clientName.trim()) : (productItems.length === 0 && !(table._orderId && clientName)))"
       >
-        💾 Guardar orden
+        {{ isDom ? '💾 Guardar domicilio' : '💾 Guardar orden' }}
       </button>
+      <button v-if="isDom && table._domicilioId" class="btn btn-danger btn-sm" @click="cancelDomicilio">🗑️ Cancelar domicilio</button>
       <button
         class="btn btn-danger btn-sm"
         @click="clearOrder"
-        v-if="table.status === 'ocupada' && !table._direct"
+        v-if="table.status === 'ocupada' && !table._direct && !isDom"
       >
         {{ table._orderId ? '🗑️ Eliminar venta' : '🗑️ Limpiar ' + spaces.label.toLowerCase() }}
       </button>
       <button
         class="btn btn-primary"
-        @click="showInvoice = true"
+        @click="openInvoice"
         :disabled="productItems.length === 0"
         style="flex:1"
       >
@@ -131,6 +136,7 @@
       :table="table"
       :items="cartItems"
       :initialClient="clientName"
+      :delivery="isDom ? { domicilioId: table._domicilioId || null, phone: phone.trim(), address: address.trim() } : null"
       @close="showInvoice = false"
       @confirmed="handleSaleConfirmed"
     />
@@ -165,6 +171,7 @@
 import { ref, reactive, computed, watch, onMounted, inject } from 'vue'
 import { useInventoryStore } from '../stores/inventory.js'
 import { useTablesStore } from '../stores/tables.js'
+import { useDomiciliosStore } from '../stores/domicilios.js'
 import InvoicePreview from './InvoicePreview.vue'
 import { useSpaces } from '../composables/useSpaces.js'
 
@@ -178,6 +185,7 @@ const spaces = useSpaces()
 /** Título del panel: "Campo Alfa · Venta 2", "Mesa 3" o "Venta directa" */
 const headerTitle = computed(() => {
   if (props.table._direct) return 'Venta directa'
+  if (props.table._domicilio) return props.table._domicilioId ? 'Domicilio' : 'Nuevo domicilio'
   return spaces.nameOf(props.table) + (props.table._orderName ? ' · ' + props.table._orderName : '')
 })
 
@@ -192,6 +200,11 @@ const search = ref('')       // Texto del campo de búsqueda para filtrar produc
 const showInvoice = ref(false)
 const saving = ref(false)
 const clientName = ref('')
+const phone = ref('')          // domicilio: celular (opcional)
+const address = ref('')        // domicilio: dirección o referencia (opcional)
+const nameTouched = ref(false)
+const isDom = computed(() => !!props.table._domicilio)
+const domiStore = useDomiciliosStore()
 
 /**
  * Al montar el componente, restaura los ítems y el nombre del cliente
@@ -206,8 +219,11 @@ onMounted(() => {
   if (props.table.order?.items) {
     cartItems.value = props.table.order.items.map(normalizeCartItem)
     clientName.value = props.table.order.client || ''
+    phone.value = props.table.order.phone || ''
+    address.value = props.table.order.address || ''
   }
-  if (props.startInvoice && cartItems.value.length > 0) showInvoice.value = true
+  if (isDom.value && !domiItem.value) toggleDomicilio(true) // un domicilio siempre lleva su línea de domicilio (el valor se escribe abajo)
+  if (props.startInvoice && productItems.value.length > 0) showInvoice.value = true
 })
 
 /**
@@ -219,10 +235,14 @@ watch(() => props.table, (newTable) => {
   if (newTable.order?.items) {
     cartItems.value = newTable.order.items.map(normalizeCartItem)
     clientName.value = newTable.order.client || ''
+    phone.value = newTable.order.phone || ''
+    address.value = newTable.order.address || ''
   } else if (newTable.status === 'libre') {
     cartItems.value = []
     clientName.value = ''
+    phone.value = ''; address.value = ''; nameTouched.value = false
   }
+  if (newTable._domicilio && !cartItems.value.some(i => i.kind === 'domicilio')) toggleDomicilio(true)
 }, { deep: true })
 
 /**
@@ -383,6 +403,7 @@ function removeFromCart(item) {
  * Efecto secundario: actualiza el estado de la mesa en tablesStore.
  */
 async function saveOrder() {
+  if (isDom.value) return saveDomicilio()
   saving.value = true
   try {
     await tablesStore.updateOrder(props.table.id, cartItems.value, clientName.value, undefined, props.table._orderId)
@@ -393,6 +414,33 @@ async function saveOrder() {
   } finally {
     saving.value = false
   }
+}
+
+/** Domicilio hecho a mano: se guarda como tarjeta debajo de las mesas (solo el nombre es obligatorio) */
+async function saveDomicilio() {
+  nameTouched.value = true
+  if (!clientName.value.trim()) { toast('Escribe el nombre del cliente', 'warning'); return }
+  saving.value = true
+  try {
+    await domiStore.save({ id: props.table._domicilioId, name: clientName.value, phone: phone.value, address: address.value, items: cartItems.value })
+    toast('Domicilio guardado', 'success')
+    emit('saved'); emit('close')
+  } catch (e) {
+    toast(e.response?.data?.error || 'No se pudo guardar el domicilio', 'error')
+  } finally { saving.value = false }
+}
+
+/** Cancela un domicilio guardado: no se factura y queda constancia en la bitácora */
+async function cancelDomicilio() {
+  if (!window.confirm(`¿Cancelar el domicilio de ${clientName.value || 'este cliente'}? No se factura y no se puede deshacer.`)) return
+  try { await domiStore.cancel(props.table._domicilioId); toast('Domicilio cancelado', 'success'); emit('saved'); emit('close') }
+  catch (e) { toast(e.response?.data?.error || 'No se pudo cancelar', 'error') }
+}
+
+/** Previsualizar factura: un domicilio necesita el nombre del cliente */
+function openInvoice() {
+  if (isDom.value && !clientName.value.trim()) { nameTouched.value = true; toast('Escribe el nombre del cliente para el domicilio', 'warning'); return }
+  showInvoice.value = true
 }
 
 /**
@@ -679,6 +727,9 @@ async function handleSaleConfirmed() {
 .domi-switch input:focus-visible + .domi-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .domi-row { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 6px 10px; border: 1px solid var(--success); border-radius: 8px; background: rgba(22,163,74,.08); font-size: 12px; font-weight: 600; flex-wrap: wrap; }
 .domi-row small { flex-basis: 100%; font-weight: 400; color: var(--text-muted); margin-top: -2px; }
+.domi-contact { display: flex; gap: 8px; padding: 0 12px 8px; }
+.domi-contact .form-control { flex: 1; min-width: 0; font-size: 13px; min-height: 36px; }
+@media (max-width: 480px) { .domi-contact { flex-wrap: wrap; } .domi-contact .form-control { flex-basis: 100%; } }
 .domi-input { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .domi-input .form-control { width: 110px; text-align: right; min-height: 34px; font-size: 14px; font-weight: 700; }
 

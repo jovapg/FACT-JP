@@ -96,8 +96,9 @@ router.get('/sales', authenticate, async (req, res) => {
  * Retorna { sale, inventoryAlerts } — las alertas son ítems que quedaron con stock bajo.
  */
 router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
+  let domiClaimed = null; // domicilio manual reservado para esta factura (se libera si algo falla)
   try {
-    const { tableId, tableNumber, items, paymentMethod, cashier, notes, client, discount, total, orderId } = req.body;
+    const { tableId, tableNumber, items, paymentMethod, cashier, notes, client, discount, total, orderId, domicilioId, clientPhone, deliveryAddress } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'No items in sale' });
@@ -109,6 +110,13 @@ router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
       return res.status(400).json({
         error: `Producto agotado, stock en ceros: ${outOfStock.join(', ')}. No se puede facturar.`
       });
+    }
+
+    // Domicilio hecho a mano: se reserva para que dos personas no lo facturen a la vez
+    if (domicilioId) {
+      const c = await require('../services/domicilios').claim(req.params.businessId, String(domicilioId));
+      if (!c.ok) return res.status(c.code).json({ error: c.error });
+      domiClaimed = String(domicilioId);
     }
 
     const profile = await readJSON(profilePath(req.params.businessId)) || {};
@@ -165,9 +173,16 @@ router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
       notes: notes || '',
       createdAt: new Date().toISOString()
     };
+    // Datos de entrega de un domicilio hecho a mano (quedan en la factura)
+    const phone = String(clientPhone || '').replace(/\s+/g, ' ').trim().slice(0, 30), address = String(deliveryAddress || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (phone) sale.clientPhone = phone;
+    if (address) sale.deliveryAddress = address;
+    if (domiClaimed) sale.domicilioId = domiClaimed;
+    if ((domiClaimed || phone || address) && !sale.notes) sale.notes = 'Domicilio' + (address ? ': ' + address : '') + (phone ? ' · Cel ' + phone : '');
 
     // Guardar la venta primero
     salesColl(req.params.businessId).insert(sale);
+    if (domiClaimed) { await require('../services/domicilios').finish(req.params.businessId, domiClaimed); domiClaimed = null; }
 
     // Incrementar contador de facturas DESPUÉS de guardar exitosamente
     // (evita que un error deje el contador adelantado sin venta guardada)
@@ -207,6 +222,7 @@ router.post('/sales', authenticate, requireOpenShift, async (req, res) => {
 
     res.status(201).json({ sale, inventoryAlerts });
   } catch (err) {
+    if (domiClaimed) { try { await require('../services/domicilios').release(req.params.businessId, domiClaimed); } catch { /* se libera solo en un minuto */ } }
     console.error(err); res.status(500).json({ error: "Internal server error" });
   }
 });

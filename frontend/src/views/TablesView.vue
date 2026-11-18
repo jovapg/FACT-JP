@@ -92,6 +92,9 @@
           </div>
         </div>
 
+        <!-- Domicilios hechos a mano (no entraron por la carta): solo en negocios con pedidos en línea -->
+        <DomiciliosSection v-if="domiOn" @new="newDomicilio" @open="openDomicilio" @bill="billDomicilio" />
+
         <!-- Init tables modal -->
         <div class="modal-overlay" v-if="showInitModal" @click.self="showInitModal = false">
           <div class="modal">
@@ -159,6 +162,9 @@ import { useShiftsStore } from '../stores/shifts.js'
 import PageLayout from '../components/PageLayout.vue'
 import TableCard from '../components/TableCard.vue'
 import OrderCart from '../components/OrderCart.vue'
+import DomiciliosSection from '../components/DomiciliosSection.vue'
+import { useBusinessStore } from '../stores/business.js'
+import { useDomiciliosStore } from '../stores/domicilios.js'
 import { useSpaces } from '../composables/useSpaces.js'
 
 const auth = useAuthStore()
@@ -167,6 +173,9 @@ const inventoryStore = useInventoryStore()
 const shiftsStore = useShiftsStore()
 const spaces = useSpaces()
 const toast = inject('toast')
+const businessStore = useBusinessStore()
+const domiStore = useDomiciliosStore()
+const domiOn = computed(() => businessStore.profile?.cartaOnline === true) // solo donde están activos los pedidos en línea
 
 const activeFilter = ref('all')
 const showInitModal = ref(false)
@@ -249,6 +258,11 @@ async function removeOrder(o) {
   }
 }
 
+/** Domicilios hechos a mano: nuevo, abrir uno guardado o facturarlo directo */
+function newDomicilio() { startInvoice.value = false; tablesStore.selectDomicilio(null); loadMenu() }
+function openDomicilio(d) { startInvoice.value = false; tablesStore.selectDomicilio(d); loadMenu() }
+function billDomicilio(d) { startInvoice.value = true; tablesStore.selectDomicilio(d); loadMenu() }
+
 /** Venta directa: sin espacio, para quien solo compra algo y se va */
 function startDirect() {
   startInvoice.value = false
@@ -274,15 +288,18 @@ function formatTime(iso) {
 function closePanel() {
   startInvoice.value = false
   tablesStore.clearSelection()
+  if (domiOn.value) domiStore.fetch() // por si se guardó o canceló un domicilio
 }
 
 async function handleOrderSaved() {
   await tablesStore.fetchTables()
+  if (domiOn.value) domiStore.fetch()
 }
 
 async function handleSaleConfirmed() {
   await tablesStore.fetchTables()
   tablesStore.clearSelection()
+  if (domiOn.value) domiStore.fetch() // si era un domicilio, su tarjeta desaparece
 }
 
 async function initTables() {
@@ -296,7 +313,8 @@ function formatCOP(v) { return '$' + Number(v || 0).toLocaleString('es-CO') }
 onMounted(async () => {
   await Promise.all([
     tablesStore.fetchTables(),
-    shiftsStore.fetchCurrentShift()
+    shiftsStore.fetchCurrentShift(),
+    businessStore.profile ? Promise.resolve() : businessStore.fetchProfile()
   ])
 })
 </script>

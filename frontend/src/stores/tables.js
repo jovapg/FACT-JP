@@ -77,6 +77,14 @@ export const useTablesStore = defineStore('tables', () => {
     selectedTable.value = { id: null, number: '', name: '', status: 'libre', order: null, _direct: true }
   }
 
+  /** Abre el panel para un domicilio hecho a mano: nuevo (dom = null) o uno guardado */
+  function selectDomicilio(dom) {
+    selectedTable.value = {
+      id: null, number: '', name: 'Domicilio', status: dom ? 'ocupada' : 'libre', _domicilio: true, _domicilioId: dom ? dom.id : null,
+      order: dom ? { items: dom.items, client: dom.name, phone: dom.phone || '', address: dom.address || '' } : null
+    }
+  }
+
   /** Crea una venta guardada nueva en un espacio. Devuelve { table, order } */
   async function createOrder(tableId) {
     const res = await api.post(`/api/${bizId()}/tables/${tableId}/orders`, {})
@@ -135,7 +143,7 @@ export const useTablesStore = defineStore('tables', () => {
   return {
     tables, selectedTable, loading,
     occupiedCount, freeCount,
-    fetchTables, initTables, selectTable, selectOrder, selectDirect, createOrder, clearSelection,
+    fetchTables, initTables, selectTable, selectOrder, selectDirect, selectDomicilio, createOrder, clearSelection,
     updateOrder, clearTable
   }
 })

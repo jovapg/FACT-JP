@@ -318,7 +318,8 @@ import { openProtected } from '../utils/download.js'
 const props = defineProps({
   table: { type: Object, required: true },
   items: { type: Array, required: true },
-  initialClient: { type: String, default: '' }
+  initialClient: { type: String, default: '' },
+  delivery: { type: Object, default: null } // domicilio hecho a mano: { domicilioId, phone, address }
 })
 
 const emit = defineEmits(['close', 'confirmed'])
@@ -389,7 +390,7 @@ async function confirmSale() {
     const result = await salesStore.createSale({
       tableId: props.table.id || null,
       orderId: props.table._orderId,   // venta guardada que se está facturando (espacios con varias ventas)
-      tableNumber: props.table._direct ? null : (props.table.name || props.table.number),
+      tableNumber: (props.table._direct || props.table._domicilio) ? null : (props.table.name || props.table.number),
       // Cada ítem viaja con su bolsillo (area) y su descuento individual
       items: editableItems.value.map(i => ({
         ...i,
@@ -400,7 +401,8 @@ async function confirmSale() {
       cashier: auth.user?.name || auth.user?.username,
       client: clientName.value || '',
       discount: totalDiscount.value,
-      total: finalTotal.value
+      total: finalTotal.value,
+      ...(props.delivery ? { domicilioId: props.delivery.domicilioId || undefined, clientPhone: props.delivery.phone || undefined, deliveryAddress: props.delivery.address || undefined } : {})
     })
 
     if (result.inventoryAlerts?.length > 0) {

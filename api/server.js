@@ -272,6 +272,7 @@ function cartaGuard() {
 }
 app.use('/api/:businessId/carta', bizAccess, cartaGuard());
 app.use('/api/:businessId/pedidos', bizAccess, cartaGuard());
+app.use('/api/:businessId/domicilios', bizAccess, cartaGuard(), require('./src/routes/domicilios')); // domicilios hechos a mano (solo con pedidos en línea)
 
 app.use('/api/:businessId/inventory/:id/image', bizAccess, uploadProductImg.single('image'));
 app.use('/api/:businessId', bizAccess, inventoryRoutes);
