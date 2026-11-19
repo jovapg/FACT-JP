@@ -394,6 +394,9 @@ async function stockCheck(businessId) {
   const img = new Map(inv.filter(i => i.imageUrl).map(i => [key(i.name), i.imageUrl]));
   const fn = (name) => out.has(key(name));
   fn.image = (name) => img.get(key(name)) || ''; // foto del producto, la que se sube en Inventario
+  // Si el producto de inventario cambió de nombre pero sigue enlazado a la carta, la foto se encuentra por ese enlace
+  const imgById = new Map(inv.filter(i => i.imageUrl).map(i => [i.id, i.imageUrl]));
+  fn.imageById = (id) => (id ? imgById.get(id) || '' : '');
   return fn;
 }
 

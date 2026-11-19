@@ -102,8 +102,26 @@ test('un manifiesto sin "unify" (como hoy) no cambia nada', async () => {
   assert.equal((await st.readJSON(path.join(DIR, id, 'inventory.json'))).length, 4);
 });
 
-test('la propuesta real de Deli-Combos es un archivo válido y todos sus campos son texto', () => {
-  const ops = JSON.parse(fs.readFileSync(path.join(__dirname, '../seed-photos/deli-combos/unify-propuesta.json'), 'utf8'));
+test('la lista real de Deli-Combos (manifest.unify) es válida y todos sus campos son texto', () => {
+  const ops = JSON.parse(fs.readFileSync(path.join(__dirname, '../seed-photos/deli-combos/manifest.json'), 'utf8')).unify;
   assert.equal(ops.length, 8);
   for (const o of ops) { assert.ok(o.canonical && o.keepInventory, o.canonical); for (const k of ['dropInventory', 'dropRecipes', 'carta']) assert.ok(o[k] === undefined || (Array.isArray(o[k]) && o[k].every(x => typeof x === 'string')), k); }
+});
+
+test('la carta pública encuentra la foto por el enlace con el inventario aunque el producto de inventario tenga otro nombre', async () => {
+  const { startServer, createFranchise, leerDoc, escribirDoc } = require('./helpers');
+  const srv = await startServer();
+  try {
+    const F = await createFranchise(srv, await srv.superToken(), { name: 'Foto Enlace', slug: 'foto-enlace', template: 'polleria' });
+    await srv.api('POST', `/api/${F.id}/carta/sync-inventory`, { token: F.tokens.admin });
+    const carta = JSON.parse(leerDoc(srv.dataDir, F.id, 'carta.json'));
+    const p = carta.products.find(x => x.name === 'Pollo entero');
+    const inv = JSON.parse(leerDoc(srv.dataDir, F.id, 'inventory.json'));
+    const it = inv.find(i => i.id === p.inventoryId);
+    it.name = 'Pollo entero asado'; it.imageUrl = `/uploads/${F.id}/foto.webp`; // la dueña lo renombró y tiene foto
+    escribirDoc(srv.dataDir, F.id, 'inventory.json', JSON.stringify(inv));
+    const pub = (await srv.api('GET', '/api/public/carta/foto-enlace')).data;
+    assert.equal(pub.products.find(x => x.name === 'Pollo entero').image, `/uploads/${F.id}/foto.webp`, 'la foto aparece por el enlace');
+    assert.equal(pub.products.find(x => x.name === 'Muslo').image, '', 'un producto sin foto sigue sin foto');
+  } finally { await srv.stop(); }
 });

@@ -6,7 +6,7 @@
  */
 const fs = require('fs'), zlib = require('zlib'), os = require('os'), path = require('path');
 const backup = process.argv[2];
-const opsFile = process.argv[3] || path.join(__dirname, '../seed-photos/deli-combos/unify-propuesta.json');
+const opsFile = process.argv[3] || path.join(__dirname, '../seed-photos/deli-combos/manifest.json');
 if (!backup || !fs.existsSync(backup)) { console.error('Uso: node scripts/simular-unificacion.js <respaldo.json.gz> [operaciones.json]'); process.exit(1); }
 const p = JSON.parse(zlib.gunzipSync(fs.readFileSync(backup)).toString());
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unificar-'));
@@ -17,7 +17,8 @@ const { findOutOfStockItems } = require('../src/services/inventoryService');
 const cartaSvc = require('../src/services/cartaService');
 const biz = JSON.parse(p.files['businesses.json']).find(b => b.slug === 'deli-combos');
 const rd = (n, d) => JSON.parse(fs.readFileSync(path.join(dir, biz.id, n), 'utf8') || 'null') ?? d;
-const ops = JSON.parse(fs.readFileSync(opsFile, 'utf8'));
+const ops0 = JSON.parse(fs.readFileSync(opsFile, 'utf8'));
+const ops = Array.isArray(ops0) ? ops0 : ops0.unify; // acepta un archivo de operaciones o el manifiesto
 const low = (s) => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
 const FAM = /cuarto|¼|½|medio|pollo entero|trag/i;
 

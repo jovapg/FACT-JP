@@ -46,7 +46,7 @@ function publicView(biz, c, profile = {}, isOut = () => false) {
     categories: cats.map(({ id, name, order, emoji, group }) => ({ id, name, order, emoji: emoji || '', group: group || '' })),
     products: c.products.filter(p => p.active).sort((a, b) => a.order - b.order).map(p => ({
       id: p.id, categoryId: p.categoryId, name: p.name, description: p.description, price: p.price,
-      soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol, featured: !!p.featured, image: isOut.image ? isOut.image(p.name) : '',
+      soldOut: !!p.soldOut || isOut(p.name), alcohol: !!p.alcohol, featured: !!p.featured, image: isOut.image ? (isOut.image(p.name) || (isOut.imageById ? isOut.imageById(p.inventoryId) : '')) : '',
       groups: (p.groups || []).map(g => ({ id: g.id, name: g.name, type: g.type, required: !!g.required, max: g.max || 0, collapsed: !!g.collapsed,
         options: g.options.map(o => ({ id: o.id, name: o.name, price: o.price, alcohol: !!o.alcohol, section: o.section || '', note: o.note || '', soldOut: g.type === 'qty' && (!!o.soldOut || isOut(o.name)) })) }))
     }))

@@ -51,7 +51,8 @@ test('las fotos reales de Deli-Combos: cada archivo existe y cada producto del m
   const dir = path.join(__dirname, '../seed-photos/deli-combos');
   const m = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
   const carta = require('../src/services/cartaService').defaultCarta();
-  const nombres = new Set(carta.products.map(p => p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()));
+  // nombres de la carta nueva, o nombres finales de la unificación de repetidos
+  const nombres = new Set([...carta.products.map(p => p.name), ...(m.unify || []).map(o => o.canonical)].map(n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()));
   for (const p of m.photos) {
     assert.ok(fs.existsSync(path.join(dir, p.file)), p.file + ' existe');
     assert.ok(fs.statSync(path.join(dir, p.file)).size < 120 * 1024, p.file + ' pesa poco');
