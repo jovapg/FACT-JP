@@ -14,11 +14,17 @@ const CLAIM_MS = 60 * 1000; // una factura en curso "reserva" el domicilio por u
 
 const txt = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
+// Registros de pagos del bolsillo que pudieran estar aún en este archivo (viejos): no son domicilios, se respetan al guardar
+const isPayout = (x) => x && x.date && x.bucket && (x.kind === 'pago' || x.kind === 'moto');
 async function readAll(businessId) {
   const list = await readJSON(file(businessId));
-  return Array.isArray(list) ? list : [];
+  return Array.isArray(list) ? list.filter(x => !isPayout(x)) : [];
 }
-const writeAll = (businessId, list) => writeJSON(file(businessId), list);
+async function writeAll(businessId, list) {
+  const disk = await readJSON(file(businessId));
+  const keep = Array.isArray(disk) ? disk.filter(isPayout) : [];
+  return writeJSON(file(businessId), [...keep, ...list]);
+}
 
 /** Valida y deja solo lo necesario de cada producto. Lanza Error con un mensaje claro si algo no sirve. */
 function cleanItems(input) {

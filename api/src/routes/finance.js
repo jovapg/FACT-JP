@@ -231,10 +231,22 @@ async function buildMovements(id) {
 }
 
 // ───────────────────────── Bolsillo Domicilios ─────────────────────────
-const domiciliosPath = (id) => path.join(getBusinessPath(id), 'domicilios.json');
+// Pagos y gastos del bolsillo: archivo propio (domicilio-pagos.json). domicilios.json es de los domicilios hechos a mano.
+const domiciliosPath = (id) => path.join(getBusinessPath(id), 'domicilio-pagos.json');
+const legacyPath = (id) => path.join(getBusinessPath(id), 'domicilios.json');
+const isPayout = (x) => x && typeof x === 'object' && x.date && Number.isFinite(Number(x.amount)) && (x.kind === 'pago' || x.kind === 'moto');
 async function loadDomicilios(id) {
   const d = await readJSON(domiciliosPath(id));
-  return Array.isArray(d) ? d : [];
+  const list = Array.isArray(d) ? d : [];
+  // Migración: pagos que quedaron guardados antes en domicilios.json (mezclados con los domicilios a mano)
+  const old = await readJSON(legacyPath(id));
+  if (Array.isArray(old) && old.some(isPayout)) {
+    const known = new Set(list.map(x => x.id));
+    for (const p of old.filter(isPayout)) if (!known.has(p.id)) list.push(p);
+    await writeJSON(domiciliosPath(id), list);
+    await writeJSON(legacyPath(id), old.filter(x => !isPayout(x)));
+  }
+  return list.filter(isPayout);
 }
 /** Día calendario colombiano (UTC-5) de una fecha ISO: 'yyyy-mm-dd' */
 const cotDay = (iso) => new Date(new Date(iso).getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
