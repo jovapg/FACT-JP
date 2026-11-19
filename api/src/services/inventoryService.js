@@ -97,7 +97,7 @@ async function deductFromSale(businessId, saleItems) {
       // Receta con ingredientes: descontar cada insumo × cantidad vendida
       for (const ingredient of target.list) {
         const inv = invById.get(ingredient.inventoryId);
-        if (!inv) continue; // Si el ingrediente no está en inventario, omitir
+        if (!inv || inv.noStock) continue; // sin ingrediente en inventario, o sin control de stock: nada que descontar
         inv.stock = Math.max(0, (inv.stock || 0) - ingredient.quantity * qty);
         pushAlertIfLow(inv);
       }
@@ -141,7 +141,7 @@ async function restoreFromSale(businessId, saleItems) {
       // Receta con ingredientes: devolver cada insumo × cantidad vendida
       for (const ingredient of target.list) {
         const inv = invById.get(ingredient.inventoryId);
-        if (!inv) continue;
+        if (!inv || inv.noStock) continue;
         inv.stock = (inv.stock || 0) + ingredient.quantity * qty;
       }
     }
@@ -186,7 +186,7 @@ async function findOutOfStockItems(businessId, items) {
       // Receta con ingredientes: agotada si falta alguno
       for (const ing of target.list) {
         const inv = invById.get(ing.inventoryId);
-        if (inv && (inv.stock || 0) <= 0) { out.push(target.name); break; }
+        if (inv && !inv.noStock && (inv.stock || 0) <= 0) { out.push(target.name); break; } // sin control de stock = nunca agotado
       }
     }
   }
