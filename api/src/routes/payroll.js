@@ -72,8 +72,8 @@ function employeeBalance(data, employeeId) {
   }
   for (const p of data.payments) {
     if (p.employeeId !== employeeId) continue;
-    paidBar += p.amountBar || 0;
-    paidRest += p.amountRest || 0;
+    paidBar += (p.amountBar || 0) - (p.extraBar || 0); // las horas extra no son deuda de días: no bajan el saldo
+    paidRest += (p.amountRest || 0) - (p.extraRest || 0);
   }
   return {
     owedBar, owedRest, paidBar, paidRest,
@@ -401,4 +401,72 @@ router.post('/payroll/pay', authenticate, async (req, res) => {
   }
 });
 
+/** Día calendario colombiano (UTC-5) de una fecha ISO: 'yyyy-mm-dd' */
+const cotDate = (d) => new Date(new Date(d).getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+
+/** Quién puede recibir un pago de nómina: usuarios del negocio (menos superadmin) + trabajadores por días ya registrados. */
+async function listEmployees(businessId) {
+  const users = (await readJSON(path.join(getBusinessPath(businessId), 'users.json')) || []).filter(u => u.role !== 'superadmin');
+  const map = new Map(users.map(u => [u.id, { id: u.id, name: u.name || u.username }]));
+  const data = await loadPayroll(businessId);
+  for (const e of data.entries) if (!map.has(e.employeeId)) map.set(e.employeeId, { id: e.employeeId, name: e.employeeName });
+  return [...map.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+/**
+ * Pago de nómina hecho desde la caja o desde Finanzas: el día completo (+ horas extra) de UNA persona.
+ * Deja todo en payroll.json (el acumulado del mes sale de ahí): el día queda aprobado y pagado, y las horas extra aparte.
+ * opts: { employeeId, dayAmount, overtime, overtimeHours, method, date?, note?, paidBy, viaShift?, shiftId? }
+ * Devuelve { ok, payment } o { ok:false, error }.
+ */
+async function payFromCaja(businessId, opts) {
+  const dayAmount = Math.max(0, Math.round(Number(opts.dayAmount) || 0));
+  const overtime = Math.max(0, Math.round(Number(opts.overtime) || 0));
+  if (dayAmount + overtime <= 0) return { ok: false, error: 'Escribe el pago del día o las horas extra' };
+  const prof = await readJSON(path.join(getBusinessPath(businessId), 'profile.json')) || {};
+  if (prof.modules && prof.modules.payroll === false) return { ok: false, error: 'El módulo de Nómina no está activo en este negocio' };
+  const emps = await listEmployees(businessId);
+  const emp = emps.find(e => e.id === opts.employeeId);
+  if (!emp) return { ok: false, error: 'Escoge el trabajador (debe estar creado en Nómina)' };
+  const data = await loadPayroll(businessId);
+  const when = (opts.date && !isNaN(new Date(opts.date).getTime())) ? new Date(opts.date).toISOString() : new Date().toISOString();
+  const day = cotDate(when);
+  const mine = data.entries.filter(e => e.employeeId === emp.id);
+  const prev = mine.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+  const area = (mine.find(e => e.date === day) || prev || {}).area || 'ambos';
+  const now = new Date().toISOString();
+  if (dayAmount > 0) {
+    const sameDay = mine.find(e => e.date === day && e.status !== 'pagado');
+    if (sameDay) {
+      if (sameDay.status === 'pendiente') { sameDay.status = 'aprobado'; sameDay.approvedBy = opts.paidBy; sameDay.approvedAt = now; }
+    } else {
+      const split = splitByArea(dayAmount, area);
+      data.entries.push({
+        id: uuidv4(), employeeId: emp.id, employeeName: emp.name, status: 'aprobado', createdAt: now, createdBy: opts.paidBy,
+        approvedBy: opts.paidBy, approvedAt: now, date: day, type: 'completo', area, from: null, to: null, hours: null,
+        amount: dayAmount, amountBar: split.bar, amountRest: split.rest, note: 'Pagado desde caja'
+      });
+    }
+  }
+  const sd = splitByArea(dayAmount, area), so = splitByArea(overtime, area);
+  const payment = {
+    id: uuidv4(), employeeId: emp.id, employeeName: emp.name,
+    amountBar: sd.bar + so.bar, amountRest: sd.rest + so.rest, extraBar: so.bar, extraRest: so.rest,
+    overtime, overtimeHours: Math.max(0, Number(opts.overtimeHours) || 0),
+    method: opts.method === 'banco' ? 'banco' : 'efectivo', date: when, note: String(opts.note || '').slice(0, 120),
+    paidBy: opts.paidBy, source: opts.source || 'caja',
+    ...(opts.viaShift ? { viaShift: true, shiftId: opts.shiftId } : {})
+  };
+  data.payments.push(payment);
+  await savePayroll(businessId, data);
+  return { ok: true, payment };
+}
+
+/** GET /payroll/employees — lista (id, nombre) para escoger a quién se le paga desde caja o Finanzas */
+router.get('/payroll/employees', authenticate, async (req, res) => {
+  try { res.json(await listEmployees(req.params.businessId)); }
+  catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
 module.exports = router;
+module.exports.payFromCaja = payFromCaja;

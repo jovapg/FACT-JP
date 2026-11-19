@@ -324,8 +324,9 @@
             </div>
           </div>
 
+          <NominaFields v-if="manualNomina" :form="manualForm.nomina" @unavailable="nominaOk = false" style="margin-bottom:12px" />
           <div class="grid grid-2">
-            <div class="form-group">
+            <div class="form-group" v-if="!manualNomina">
               <label class="form-label">Monto (COP) *</label>
               <input v-model.number="manualForm.amount" type="number" min="0" class="form-control" placeholder="0" />
             </div>
@@ -391,6 +392,7 @@ import { useFinanceStore } from '../stores/finance.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
 import DomiciliosPocket from '../components/DomiciliosPocket.vue'
+import NominaFields from '../components/NominaFields.vue'
 import { useBusinessStore } from '../stores/business.js'
 
 const businessStore = useBusinessStore()
@@ -663,16 +665,26 @@ async function saveRef() {
 }
 
 // ── Movimiento manual ──
-const manualForm = ref({ type: 'egreso', category: 'reponer', area: 'bar', bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: '' })
+const nominaOk = ref(true) // false si el módulo de Nómina está apagado
+const manualForm = ref({ type: 'egreso', category: 'reponer', area: 'bar', bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: '', nomina: { employeeId: '', dayAmount: null, overtime: null, overtimeHours: null } })
+const manualNomina = computed(() => manualForm.value.type === 'egreso' && manualForm.value.category === 'nomina' && nominaOk.value)
 function openManual() {
-  manualForm.value = { type: 'egreso', category: 'reponer', area: area.value === 'total' ? 'bar' : area.value, bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: new Date().toISOString().slice(0, 10) }
+  manualForm.value = { type: 'egreso', category: 'reponer', area: area.value === 'total' ? 'bar' : area.value, bucket: 'efectivo', from: 'efectivo', amount: 0, description: '', date: new Date().toISOString().slice(0, 10), nomina: { employeeId: '', dayAmount: null, overtime: null, overtimeHours: null } }
   showManual.value = true
 }
 async function saveManual() {
-  if (!(Number(manualForm.value.amount) > 0)) { toast('El monto debe ser mayor a 0', 'warning'); return }
+  let payload = { ...manualForm.value }
+  if (manualNomina.value) {
+    const n = manualForm.value.nomina
+    if (!n.employeeId) { toast('Escoge el trabajador', 'warning'); return }
+    const total = (Number(n.dayAmount) || 0) + (Number(n.overtime) || 0)
+    if (!(total > 0)) { toast('Escribe el pago del día o las horas extra', 'warning'); return }
+    payload = { ...payload, amount: total, employeeId: n.employeeId, dayAmount: n.dayAmount || 0, overtime: n.overtime || 0, overtimeHours: n.overtimeHours || 0 }
+  } else if (!(Number(manualForm.value.amount) > 0)) { toast('El monto debe ser mayor a 0', 'warning'); return }
+  delete payload.nomina
   saving.value = true
   try {
-    await finance.addManual({ ...manualForm.value })
+    await finance.addManual(payload)
     showManual.value = false
     toast('Movimiento registrado', 'success')
     await load()

@@ -361,6 +361,28 @@ router.post('/shifts/:id/expense', authenticate, async (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Turno no encontrado' });
     if (shifts[idx].status !== 'open') return res.status(400).json({ error: 'El turno ya está cerrado' });
 
+    // Pago de nómina: se guarda en Nómina a nombre del trabajador (día completo + horas extra); si es en efectivo, sale de la caja
+    if (req.body.category === 'nomina' && req.body.employeeId) {
+      const bucket = req.body.bucket === 'banco' ? 'banco' : 'efectivo';
+      const who = req.user.name || req.user.username;
+      const r = await require('./payroll').payFromCaja(req.params.businessId, {
+        employeeId: req.body.employeeId, dayAmount: req.body.dayAmount, overtime: req.body.overtime, overtimeHours: req.body.overtimeHours,
+        method: bucket, note: req.body.description, paidBy: who, source: 'caja', viaShift: bucket === 'efectivo', shiftId: shifts[idx].id
+      });
+      if (!r.ok) return res.status(400).json({ error: r.error });
+      const p = r.payment, total = p.amountBar + p.amountRest;
+      if (bucket === 'efectivo') {
+        shifts[idx].expenses = [...(shifts[idx].expenses || []), {
+          id: uuidv4(), amount: total, category: 'nomina', kind: 'nomina', payrollPaymentId: p.id, employeeName: p.employeeName,
+          description: p.employeeName + (p.overtime ? ' (incluye horas extra ' + p.overtime + ')' : '') + (p.note ? ': ' + p.note : ''),
+          date: p.date, registeredBy: who
+        }];
+        shifts[idx].totalExpenses = (shifts[idx].totalExpenses || 0) + total;
+        await writeJSON(shiftsPath(req.params.businessId), shifts);
+      }
+      return res.json(shifts[idx]);
+    }
+
     const amount = Number(req.body.amount) || 0;
     if (amount <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
 

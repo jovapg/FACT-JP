@@ -83,6 +83,41 @@
         </div>
       </div>
 
+      <!-- Acumulado del mes: cuánto se ha pagado por persona y en total -->
+      <div class="card month-card" v-if="byEmployee.length">
+        <div class="mc-head">
+          <h3 class="mc-title">Nómina del mes</h3>
+          <input type="month" v-model="paidMonth" :max="maxMonth" class="ov-month" />
+        </div>
+        <div class="mc-kpis">
+          <div class="mc-kpi ok"><span class="mc-k-l">Pagado en el mes</span><b>{{ fmtCOP(monthSummary.total) }}</b></div>
+          <div class="mc-kpi"><span class="mc-k-l">Del día</span><b>{{ fmtCOP(monthSummary.day) }}</b></div>
+          <div class="mc-kpi"><span class="mc-k-l">Horas extra</span><b>{{ fmtCOP(monthSummary.extra) }}</b><small v-if="monthSummary.hours">{{ monthSummary.hours }} h</small></div>
+          <div class="mc-kpi warn"><span class="mc-k-l">Por pagar</span><b>{{ fmtCOP(overview.balance) }}</b></div>
+        </div>
+        <div class="mc-scroll">
+          <table class="mc-table">
+            <thead><tr><th>Persona</th><th>Días</th><th>Del día</th><th>H. extra</th><th>Total pagado</th><th>Por pagar</th></tr></thead>
+            <tbody>
+              <tr v-for="r in monthSummary.rows" :key="r.id">
+                <td class="mc-name">{{ r.name }}</td>
+                <td>{{ r.days }}</td>
+                <td>{{ fmtCOP(r.day) }}</td>
+                <td>{{ fmtCOP(r.extra) }}<small v-if="r.hours" class="mc-sub">{{ r.hours }} h</small></td>
+                <td class="mc-paid">{{ fmtCOP(r.total) }}</td>
+                <td :class="{ 'mc-due': r.balance > 0 }">{{ fmtCOP(r.balance) }}</td>
+              </tr>
+              <tr class="mc-total">
+                <td>Total</td><td>{{ monthSummary.days }}</td><td>{{ fmtCOP(monthSummary.day) }}</td>
+                <td>{{ fmtCOP(monthSummary.extra) }}<small v-if="monthSummary.hours" class="mc-sub">{{ monthSummary.hours }} h</small></td>
+                <td class="mc-paid">{{ fmtCOP(monthSummary.total) }}</td><td>{{ fmtCOP(overview.balance) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mc-foot">Pagado en efectivo {{ fmtCOP(monthSummary.cash) }} · por banco {{ fmtCOP(monthSummary.bank) }}</p>
+      </div>
+
       <div v-if="byEmployee.length === 0" class="empty-state">
         <div class="empty-state-icon">👥</div>
         <p class="empty-state-text">Nadie ha reportado días todavía.</p>
@@ -462,8 +497,8 @@ const byEmployee = computed(() => {
   // Abonos/pagos ya hechos
   for (const p of store.payments) {
     const emp = g(p.employeeId, p.employeeName)
-    emp.paidBar += p.amountBar || 0
-    emp.paidRest += p.amountRest || 0
+    emp.paidBar += (p.amountBar || 0) - (p.extraBar || 0) // las horas extra no bajan el saldo de días
+    emp.paidRest += (p.amountRest || 0) - (p.extraRest || 0)
   }
   // Saldos
   for (const emp of Object.values(map)) {
@@ -497,6 +532,28 @@ const paidInMonth = computed(() =>
     .filter(p => (p.date || '').slice(0, 7) === paidMonth.value)
     .reduce((s, p) => s + (p.amountBar || 0) + (p.amountRest || 0), 0)
 )
+
+// Acumulado del mes elegido: por persona y total (lo pagado, con las horas extra aparte)
+const monthSummary = computed(() => {
+  const m = paidMonth.value
+  const rows = new Map()
+  const row = (id, name) => rows.get(id) || (rows.set(id, { id, name: name || 'Empleado', days: 0, day: 0, extra: 0, hours: 0, total: 0, balance: 0 }), rows.get(id))
+  for (const e of store.entries) {
+    if ((e.date || '').slice(0, 7) === m && (e.status === 'aprobado' || e.status === 'pagado')) row(e.employeeId, e.employeeName).days++
+  }
+  const t = { days: 0, day: 0, extra: 0, hours: 0, total: 0, cash: 0, bank: 0 }
+  for (const p of store.payments) {
+    if ((p.date || '').slice(0, 7) !== m) continue
+    const all = (p.amountBar || 0) + (p.amountRest || 0), extra = (p.extraBar || 0) + (p.extraRest || 0)
+    const x = row(p.employeeId, p.employeeName)
+    x.total += all; x.extra += extra; x.day += all - extra; x.hours += Number(p.overtimeHours) || 0
+    if (p.method === 'banco') t.bank += all; else t.cash += all
+  }
+  for (const emp of byEmployee.value) { const x = rows.get(emp.id); if (x) x.balance = emp.balanceTotal }
+  const list = [...rows.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+  for (const x of list) { t.days += x.days; t.day += x.day; t.extra += x.extra; t.hours += x.hours; t.total += x.total }
+  return { ...t, rows: list }
+})
 
 // Expandir/colapsar los días de cada persona
 const expanded = reactive(new Set())
@@ -739,6 +796,27 @@ onMounted(() => store.fetch())
 .icon-btn.danger:hover { border-color:var(--danger); }
 
 /* Admin — tira de indicadores */
+.month-card { padding: 16px 18px; margin-bottom: 18px; }
+.mc-head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.mc-title { margin:0; font-size:16px; font-weight:800; }
+.mc-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+.mc-kpi { background:var(--bg, #f3f4f6); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
+.mc-kpi b { font-size:19px; font-weight:800; letter-spacing:-0.02em; }
+.mc-kpi small { font-size:11px; color:var(--text-muted); }
+.mc-k-l { font-size:12px; color:var(--text-muted); }
+.mc-kpi.ok b { color:#15803d; } .mc-kpi.warn b { color:#b45309; }
+.mc-scroll { overflow-x:auto; }
+.mc-table { width:100%; border-collapse:collapse; font-size:13px; min-width:520px; }
+.mc-table th { text-align:right; font-weight:600; color:var(--text-muted); font-size:12px; padding:6px 8px; }
+.mc-table td { text-align:right; padding:9px 8px; border-top:1px solid var(--border); }
+.mc-table th:first-child, .mc-table td:first-child { text-align:left; padding-left:0; }
+.mc-name { font-weight:700; }
+.mc-paid { color:#15803d; font-weight:600; }
+.mc-due { color:#b45309; font-weight:600; }
+.mc-sub { display:block; font-size:11px; color:var(--text-muted); }
+.mc-total td { border-top:2px solid var(--border); font-weight:800; }
+.mc-foot { margin:10px 0 0; font-size:12px; color:var(--text-muted); }
+@media (max-width: 640px) { .mc-kpis { grid-template-columns:repeat(2,1fr); } }
 .ov-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
 .ov-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; display:flex; flex-direction:column; gap:3px; }
 .ov-val { font-size:22px; font-weight:800; color:var(--text); letter-spacing:-0.02em; }

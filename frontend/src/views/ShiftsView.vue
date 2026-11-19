@@ -321,19 +321,45 @@
             </div>
             <div class="modal-body">
               <p class="modal-desc">Registra el dinero que sacas de la caja (un gasto, pago a proveedor, etc.).</p>
-              <div class="form-group">
+              <div class="form-group" v-if="isNomina">
+                <label class="form-label">Tipo</label>
+                <select v-model="sacarForm.category" class="form-control">
+                  <option value="insumos">🧹 Insumos (hielo, servilletas…)</option>
+                  <option value="servicios">⚡ Servicios (domicilio, transporte…)</option>
+                  <option value="mercado">🛒 Mercado / compra rápida</option>
+                  <option value="proveedor">🚚 Pago a proveedor</option>
+                  <option value="nomina">👥 Pago de nómina</option>
+                  <option value="otros">📌 Otros</option>
+                </select>
+              </div>
+              <template v-if="isNomina">
+                <NominaFields :form="sacarForm.nomina" @unavailable="nominaOk = false" />
+                <div class="form-group" style="margin-top:12px">
+                  <label class="form-label">Se paga en</label>
+                  <select v-model="sacarForm.bucket" class="form-control">
+                    <option value="efectivo">💵 Efectivo (sale de la caja)</option>
+                    <option value="banco">🏦 Banco</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Nota (opcional)</label>
+                  <input v-model="sacarForm.description" type="text" class="form-control" placeholder="Ej: turno de la noche" />
+                </div>
+                <p v-if="sacarSubmitted && nominaError" style="color:var(--danger);font-size:13px;font-weight:600;margin:0">{{ nominaError }}</p>
+              </template>
+              <div class="form-group" v-if="!isNomina">
                 <label class="form-label">¿Cuánto sacaste?</label>
                 <input v-model.number="sacarForm.amount" type="number" class="form-control"
                   :class="{ 'input-error': sacarSubmitted && !sacarForm.amount }"
                   min="1" step="1000" placeholder="Ej: 20000" ref="sacarInput" />
               </div>
-              <div class="form-group">
+              <div class="form-group" v-if="!isNomina">
                 <label class="form-label">¿Para qué?</label>
                 <input v-model="sacarForm.description" type="text" class="form-control"
                   :class="{ 'input-error': sacarSubmitted && !sacarForm.description }"
                   placeholder="Ej: Bolsa de hielo, pago domicilio, proveedor..." />
               </div>
-              <div class="form-group">
+              <div class="form-group" v-if="!isNomina">
                 <label class="form-label">Tipo (opcional)</label>
                 <select v-model="sacarForm.category" class="form-control">
                   <option value="insumos">🧹 Insumos (hielo, servilletas…)</option>
@@ -464,6 +490,7 @@ import { ref, computed, onMounted, nextTick, inject } from 'vue'
 import { useShiftsStore } from '../stores/shifts.js'
 import { useAuthStore } from '../stores/auth.js'
 import PageLayout from '../components/PageLayout.vue'
+import NominaFields from '../components/NominaFields.vue'
 import api from '../services/api.js'
 import {
   LogIn, LogOut, ArrowDownToLine, AlertTriangle, Clock, X, Receipt
@@ -491,7 +518,15 @@ const closingInput = ref(null)
 
 const abrirForm  = ref({ openingCash: 0, notes: '' })
 const cierreForm = ref({ closingCash: '' })
-const sacarForm  = ref({ amount: '', category: 'insumos', description: '' })
+const sacarForm  = ref({ amount: '', category: 'insumos', description: '', bucket: 'efectivo', nomina: { employeeId: '', dayAmount: null, overtime: null, overtimeHours: null } })
+const nominaOk = ref(true) // false si el módulo de Nómina está apagado: se usa el formulario sencillo
+const isNomina = computed(() => sacarForm.value.category === 'nomina' && nominaOk.value)
+const nominaError = computed(() => {
+  const n = sacarForm.value.nomina
+  if (!n.employeeId) return 'Escoge el trabajador'
+  if (!((Number(n.dayAmount) || 0) + (Number(n.overtime) || 0) > 0)) return 'Escribe el pago del día o las horas extra'
+  return ''
+})
 
 // ── Computeds ────────────────────────────────────────────────────
 const closedShifts = computed(() =>
@@ -565,7 +600,7 @@ function openCierreModal() {
 }
 
 function openSacarModal() {
-  sacarForm.value = { amount: '', category: 'insumos', description: '' }
+  sacarForm.value = { amount: '', category: 'insumos', description: '', bucket: 'efectivo', nomina: { employeeId: '', dayAmount: null, overtime: null, overtimeHours: null } }
   sacarSubmitted.value = false
   showSacarModal.value = true
   nextTick(() => sacarInput.value?.focus())
@@ -612,6 +647,22 @@ async function handleCloseShift() {
 
 async function handleSacar() {
   sacarSubmitted.value = true
+  if (isNomina.value) {
+    if (nominaError.value) return
+    saving.value = true
+    try {
+      const n = sacarForm.value.nomina
+      const r = await api.post(`/api/${auth.currentBusiness.id}/shifts/${shiftsStore.currentShift.id}/expense`, {
+        category: 'nomina', employeeId: n.employeeId, dayAmount: n.dayAmount || 0, overtime: n.overtime || 0, overtimeHours: n.overtimeHours || 0,
+        bucket: sacarForm.value.bucket, description: sacarForm.value.description
+      })
+      shiftsStore.currentShift = r.data
+      showSacarModal.value = false
+      toast('Pago de nómina registrado', 'success')
+    } catch (err) { toast(err.response?.data?.error || 'Error al registrar', 'error') }
+    finally { saving.value = false }
+    return
+  }
   if (!sacarForm.value.amount || !sacarForm.value.description) return
   saving.value = true
   try {

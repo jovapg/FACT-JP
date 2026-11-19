@@ -128,7 +128,7 @@ async function buildMovements(id) {
     for (const e of (s.expenses || [])) moves.push({
       id: `ex-${e.id}`, date: e.date || when, type: 'egreso', area: 'general',
       bucket: 'efectivo', amount: e.amount || 0,
-      label: e.kind === 'domicilio' ? `Bolsillo Domicilios${e.description ? ': ' + e.description : ''}` : e.category === 'nomina' ? `Nómina (pagada de caja)${e.description ? ': ' + e.description : ''}` : `Caja menor${e.description ? ': ' + e.description : ''}`,
+      label: e.kind === 'domicilio' ? `Bolsillo Domicilios${e.description ? ': ' + e.description : ''}` : e.category === 'nomina' ? (e.employeeName ? `Nómina: ${e.description}` : `Nómina (pagada de caja)${e.description ? ': ' + e.description : ''}`) : `Caja menor${e.description ? ': ' + e.description : ''}`,
       kind: e.kind || (e.category === 'nomina' ? 'nomina' : 'cajamenor'), source: 'shift', locked: true
     });
   }
@@ -207,6 +207,7 @@ async function buildMovements(id) {
   // 5b. Nómina (modelo nuevo): cada abono/pago genera egresos Bar y Restaurante
   // por el monto pagado en cada bolsillo, con su forma de pago (efectivo/banco).
   for (const p of await payrollPayments(id)) {
+    if (p.viaShift) continue; // pagado de la caja del turno: ya sale por el gasto del turno (no se cuenta dos veces)
     const bucket = bucketOfMethod(p.method);
     if ((p.amountBar || 0) > 0) moves.push({
       id: `nom-pay-${p.id}-bar`, date: p.date, type: 'egreso', area: 'bar',
@@ -534,6 +535,15 @@ router.post('/finance/manual', authenticate, adminOnly, async (req, res) => {
     const value = Number(amount) || 0;
     if (value <= 0) return res.status(400).json({ error: 'El monto debe ser positivo' });
 
+    // Salida de nómina con trabajador: queda como pago en Nómina (de ahí sale el movimiento y el acumulado del mes)
+    if (type === 'egreso' && req.body.category === 'nomina' && req.body.employeeId) {
+      const r = await require('./payroll').payFromCaja(req.params.businessId, {
+        employeeId: req.body.employeeId, dayAmount: req.body.dayAmount, overtime: req.body.overtime, overtimeHours: req.body.overtimeHours,
+        method: bucket === 'banco' ? 'banco' : 'efectivo', date, note: description, paidBy: req.user.name || req.user.username, source: 'finanzas'
+      });
+      if (!r.ok) return res.status(400).json({ error: r.error });
+      return res.status(201).json({ id: r.payment.id, type: 'egreso', category: 'nomina', amount: r.payment.amountBar + r.payment.amountRest, bucket: r.payment.method, payroll: true });
+    }
     const cfg = await loadConfig(req.params.businessId);
     const mov = {
       id: uuidv4(),
