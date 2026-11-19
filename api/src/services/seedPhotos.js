@@ -90,6 +90,12 @@ async function run(seedDir = SEED_DIR) {
       if (!manifest || typeof manifest !== 'object') continue;
       const biz = businesses.find(b => b.slug === (manifest.slug || d.name));
       if (!biz) continue;
+      // Productos repetidos que se unifican (manifest.unify): primero, para que fotos e inventario trabajen sobre los nombres ya limpios
+      if (Array.isArray(manifest.unify) && manifest.unify.length) {
+        const u = await require('./unifyNames').applyToBusiness(biz.id, manifest.unify);
+        if (u.cambio) console.log(`[semilla] ${biz.slug}: ${u.acciones.length} cambio(s) al unificar productos repetidos`);
+        for (const a of u.avisos) console.log(`[semilla] ${biz.slug}: aviso al unificar: ${a}`);
+      }
       const r = await applyToBusiness(biz.id, manifest, dir);
       results.push({ slug: biz.slug, ...r });
       if (r.created) console.log(`[semilla] ${biz.slug}: ${r.created} producto(s) creados en el inventario`);

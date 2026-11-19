@@ -1,0 +1,57 @@
+[
+  {
+    "canonical": "Cuarto de pollo (ala y pechuga)",
+    "keepInventory": "cuarto de pollo (ala y pechuga)",
+    "keepRecipe": "Cuarto de pollo (ala y pechuga)",
+    "dropInventory": ["¼ de pollo (ala y pechuga)"],
+    "dropRecipes": ["¼ de pollo (ala y pechuga)"],
+    "carta": ["¼ de pollo (ala y pechuga)"]
+  },
+  {
+    "canonical": "Cuarto de pollo (muslo y contramuslo)",
+    "keepInventory": "cuarto de pollo (muslo y contramuslo)",
+    "keepRecipe": "Cuarto de pollo (muslo y contramuslo)",
+    "dropInventory": ["¼ de pollo (muslo y contramuslo)"],
+    "dropRecipes": ["¼ de pollo (muslo y contramuslo)"],
+    "carta": ["¼ de pollo (muslo y contramuslo)"]
+  },
+  {
+    "canonical": "Medio pollo",
+    "keepInventory": "Medio pollo",
+    "keepRecipe": "Medio pollo",
+    "dropInventory": ["½ pollo"],
+    "dropRecipes": ["½ pollo"],
+    "carta": ["½ pollo"]
+  },
+  {
+    "canonical": "Medio pollo con consomé y ensalada",
+    "keepInventory": "medio pollo con consomé y ensalada",
+    "keepRecipe": "medio pollo con consomé y ensalada",
+    "dropInventory": ["½ pollo con consomé y ensalada"],
+    "dropRecipes": ["Combo Medio pollo con consomé y ensalada", "½ pollo con consomé y ensalada"],
+    "carta": ["½ pollo con consomé y ensalada"]
+  },
+  {
+    "canonical": "Pollo entero asado",
+    "keepInventory": "Pollo entero asado",
+    "keepRecipe": "Pollo entero asado",
+    "dropRecipes": ["Pollo entero"]
+  },
+  {
+    "canonical": "Pollo entero apanado",
+    "keepInventory": "POLLO ENTERO APANADO",
+    "keepRecipe": "POLLO ENTERO APANADO"
+  },
+  {
+    "canonical": "Tragón con papas francesas",
+    "keepInventory": "Tragón con papas a la francesa",
+    "keepRecipe": "Tragón con papas a la francesa",
+    "carta": ["Tragón con papas francesas"]
+  },
+  {
+    "canonical": "Tragón con papa al vapor",
+    "keepInventory": "Tragón con Consume",
+    "keepRecipe": "Tragón con Consume",
+    "carta": ["Tragón con papa al vapor"]
+  }
+]
