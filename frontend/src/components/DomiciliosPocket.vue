@@ -43,14 +43,20 @@
     <div v-if="form" class="dp-modal" @click.self="form = null">
       <form class="dp-form" @submit.prevent="save">
         <h3>{{ form.kind === 'pago' ? 'Pagar al domiciliario' : 'Gasto de la moto' }}</h3>
-        <label>{{ form.kind === 'pago' ? 'Pago del día ($)' : 'Valor ($)' }}
+        <label v-if="form.bucket !== 'ambos'">{{ form.kind === 'pago' ? 'Pago del día ($)' : 'Valor ($)' }}
           <input v-model.number="form.amount" type="number" min="0" step="500" required /></label>
+        <template v-else>
+          <label>💵 En efectivo ($)
+            <input v-model.number="form.cash" type="number" min="0" step="500" /></label>
+          <label>🏦 Por banco ($)
+            <input v-model.number="form.bank" type="number" min="0" step="500" /></label>
+        </template>
         <label v-if="form.kind === 'pago'">Incentivo ($, opcional)
           <input v-model.number="form.incentive" type="number" min="0" step="500" /></label>
         <label>Nota <input v-model="form.note" maxlength="120" :placeholder="form.kind === 'pago' ? 'Ej: 18 domicilios' : 'Ej: gasolina, cambio de aceite'" /></label>
         <label>Se paga en
-          <select v-model="form.bucket"><option value="efectivo">💵 Efectivo</option><option value="banco">🏦 Banco</option></select></label>
-        <p v-if="form.kind === 'pago'" class="dp-total">Total a pagar: <b>{{ money((form.amount || 0) + (form.incentive || 0)) }}</b></p>
+          <select v-model="form.bucket"><option value="efectivo">💵 Efectivo</option><option value="banco">🏦 Banco</option><option value="ambos">💵 + 🏦 Parte en efectivo y parte en banco</option></select></label>
+        <p v-if="form.kind === 'pago'" class="dp-total">Total a pagar: <b>{{ money(paid(form) + (form.kind === 'pago' ? (form.incentive || 0) : 0)) }}</b></p>
         <p v-if="err" class="dp-err">{{ err }}</p>
         <div class="dp-btns">
           <button type="button" class="btn btn-outline" @click="form = null">Cancelar</button>
@@ -91,11 +97,20 @@ async function load() {
   try { d.value = (await api.get(base(), { params: { date: day.value } })).data }
   catch { toast('No se pudo cargar el bolsillo de domicilios', 'error') }
 }
-function open(kind) { err.value = ''; form.value = { kind, amount: null, incentive: 0, note: '', bucket: 'efectivo' } }
+const paid = (f) => (f.bucket === 'ambos' ? (f.cash || 0) + (f.bank || 0) : (f.amount || 0))
+function open(kind) { err.value = ''; form.value = { kind, amount: null, cash: null, bank: null, incentive: 0, note: '', bucket: 'efectivo' } }
 async function save() {
   err.value = ''; saving.value = true
   try {
-    await api.post(base(), form.value)
+    const f = form.value
+    if (f.bucket === 'ambos') {
+      const cash = Math.round(f.cash || 0), bank = Math.round(f.bank || 0), inc = f.kind === 'pago' ? Math.round(f.incentive || 0) : 0
+      if (cash < 0 || bank < 0 || cash + bank + inc <= 0) { err.value = 'Escribe cuánto va en efectivo y cuánto por banco'; saving.value = false; return }
+      const note = f.note + (f.note ? ' · ' : '') + 'pago dividido'
+      // el incentivo sale con la parte en efectivo
+      if (cash > 0 || inc > 0) await api.post(base(), { kind: f.kind, amount: cash, incentive: inc, note, bucket: 'efectivo' })
+      if (bank > 0) await api.post(base(), { kind: f.kind, amount: bank, incentive: 0, note, bucket: 'banco' })
+    } else await api.post(base(), f)
     form.value = null
     await load(); emit('changed'); toast('Salida registrada', 'success')
   } catch (e) { err.value = e.response?.data?.error || 'No se pudo guardar' }
