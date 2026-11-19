@@ -340,6 +340,7 @@
                   <option value="servicios">⚡ Servicios (domicilio, transporte…)</option>
                   <option value="mercado">🛒 Mercado / compra rápida</option>
                   <option value="proveedor">🚚 Pago a proveedor</option>
+                  <option value="nomina">👥 Pago de nómina</option>
                   <option value="otros">📌 Otros</option>
                 </select>
               </div>

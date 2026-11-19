@@ -128,8 +128,8 @@ async function buildMovements(id) {
     for (const e of (s.expenses || [])) moves.push({
       id: `ex-${e.id}`, date: e.date || when, type: 'egreso', area: 'general',
       bucket: 'efectivo', amount: e.amount || 0,
-      label: e.kind === 'domicilio' ? `Bolsillo Domicilios${e.description ? ': ' + e.description : ''}` : `Caja menor${e.description ? ': ' + e.description : ''}`,
-      kind: e.kind || 'cajamenor', source: 'shift', locked: true
+      label: e.kind === 'domicilio' ? `Bolsillo Domicilios${e.description ? ': ' + e.description : ''}` : e.category === 'nomina' ? `Nómina (pagada de caja)${e.description ? ': ' + e.description : ''}` : `Caja menor${e.description ? ': ' + e.description : ''}`,
+      kind: e.kind || (e.category === 'nomina' ? 'nomina' : 'cajamenor'), source: 'shift', locked: true
     });
   }
 
